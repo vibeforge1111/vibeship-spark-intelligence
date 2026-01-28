@@ -41,11 +41,37 @@ class PromotionResult:
 
 
 def _write_patch(path: Path, before: str, after: str, filename: str) -> None:
+    # Back-compat wrapper (older callers pass a single filename).
     diff = difflib.unified_diff(
         before.splitlines(True),
         after.splitlines(True),
         fromfile=f"a/{filename}",
         tofile=f"b/{filename}",
+    )
+    path.write_text("".join(diff), encoding="utf-8")
+
+
+def _patch_relpath(file_path: Path, ws: Optional[Path] = None) -> str:
+    """Return a stable, workspace-relative path for patch headers.
+
+    Important: patch headers must include the relative directory (e.g. `memory/2026-01-28.md`)
+    otherwise applying the patch will create files in the wrong place.
+    """
+
+    ws = ws or get_workspace()
+    try:
+        rel = file_path.resolve().relative_to(ws.resolve())
+        return str(rel).replace("\\", "/")
+    except Exception:
+        return file_path.name
+
+
+def _write_patch_paths(path: Path, before: str, after: str, relpath: str) -> None:
+    diff = difflib.unified_diff(
+        before.splitlines(True),
+        after.splitlines(True),
+        fromfile=f"a/{relpath}",
+        tofile=f"b/{relpath}",
     )
     path.write_text("".join(diff), encoding="utf-8")
 
@@ -57,6 +83,9 @@ def propose_or_apply_file_edit(
     patch_name_hint: str = "edit",
 ) -> PromotionResult:
     after = new_content
+
+    ws = get_workspace()
+    relpath = _patch_relpath(file_path, ws=ws)
 
     # Missing file handling
     if not file_path.exists():
@@ -72,7 +101,7 @@ def propose_or_apply_file_edit(
             [],
             after.splitlines(True),
             fromfile="/dev/null",
-            tofile=f"b/{file_path.name}",
+            tofile=f"b/{relpath}",
         )
         patch_path.write_text("".join(diff), encoding="utf-8")
         return PromotionResult(patch_path=str(patch_path), applied=False, reason=f"proposed_create:{file_path}")
@@ -88,7 +117,7 @@ def propose_or_apply_file_edit(
 
     ts = time.strftime("%Y%m%d-%H%M%S")
     patch_path = proposals_dir() / f"{ts}-{patch_name_hint}.patch"
-    _write_patch(patch_path, before=before, after=after, filename=file_path.name)
+    _write_patch_paths(patch_path, before=before, after=after, relpath=relpath)
     return PromotionResult(patch_path=str(patch_path), applied=False, reason="proposed")
 
 
