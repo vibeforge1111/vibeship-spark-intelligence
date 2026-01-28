@@ -364,52 +364,65 @@ def update_spark_context(query: Optional[str] = None):
     return context
 
 
-def inject_to_memory(insight: str, category: str = "spark") -> bool:
-    """Inject a high-value insight into MEMORY.md."""
-    if not MEMORY_FILE.exists():
-        return False
-    
-    content = MEMORY_FILE.read_text()
+def inject_to_memory(insight: str, category: str = "spark", apply: bool = False) -> dict:
+    """Propose (or apply) injecting a high-value insight into MEMORY.md.
+
+    Default behavior is SAFE: write a patch proposal instead of mutating files.
+    Returns a small result dict.
+    """
+    from lib.clawdbot_promoter import inject_into_memory_md
+
     timestamp = datetime.now().strftime("%Y-%m-%d")
-    
-    # Find or create Spark Learnings section
-    marker = "## Spark Learnings"
-    if marker not in content:
-        content += f"\n\n{marker}\n"
-    
-    # Add the insight
-    new_line = f"- [{timestamp}] [{category}] {insight}\n"
-    
-    # Insert after the marker
-    parts = content.split(marker)
-    if len(parts) == 2:
-        content = parts[0] + marker + "\n" + new_line + parts[1].lstrip("\n")
-    
-    MEMORY_FILE.write_text(content)
-    return True
+    bullet = f"- [{timestamp}] [{category}] {insight}"
+
+    res, conflict = inject_into_memory_md(
+        memory_path=MEMORY_FILE,
+        bullet_line=bullet,
+        section_header="## Spark Learnings",
+        apply=apply,
+    )
+
+    out = {
+        "applied": res.applied,
+        "patch_path": res.patch_path,
+        "reason": res.reason,
+    }
+    if conflict:
+        out["conflict"] = conflict
+    return out
 
 
-def auto_promote_insights(min_reliability: float = 0.8, min_validations: int = 3):
-    """Auto-promote highly reliable insights to MEMORY.md."""
+def auto_promote_insights(min_reliability: float = 0.8, min_validations: int = 3, apply: bool = False):
+    """Promote highly reliable insights to MEMORY.md.
+
+    Default behavior is proposal-only (no file mutation).
+
+    If apply=True, we edit MEMORY.md directly and mark insights as promoted.
+    If apply=False, we generate patch files and do NOT mark promoted.
+    """
     from lib.cognitive_learner import CognitiveLearner
-    
+
     cognitive = CognitiveLearner()
-    promoted_count = 0
-    
+    proposed_or_applied = 0
+
     for key, insight in cognitive.insights.items():
-        # Check if meets threshold and not already promoted
-        if (insight.reliability >= min_reliability and 
-            insight.times_validated >= min_validations and 
-            not insight.promoted):
-            
-            # Inject to memory
-            if inject_to_memory(insight.insight, insight.category.value):
-                # Mark as promoted
+        if (
+            insight.reliability >= min_reliability
+            and insight.times_validated >= min_validations
+            and not insight.promoted
+        ):
+            result = inject_to_memory(insight.insight, insight.category.value, apply=apply)
+
+            # Only mark promoted if we actually applied the change
+            if apply and result.get("applied"):
                 insight.promoted = True
+                insight.promoted_to = "MEMORY.md"
                 cognitive._save_insights()
-                promoted_count += 1
-    
-    return promoted_count
+                proposed_or_applied += 1
+            elif (not apply) and (result.get("patch_path") or result.get("reason") == "already_present"):
+                proposed_or_applied += 1
+
+    return proposed_or_applied
 
 
 def bridge_status() -> Dict[str, Any]:
@@ -443,8 +456,8 @@ if __name__ == "__main__":
             print("OK Updated SPARK_CONTEXT.md")
         
         elif cmd == "promote":
-            count = auto_promote_insights()
-            print(f"OK Promoted {count} insights to MEMORY.md")
+            count = auto_promote_insights(apply=False)
+            print(f"OK Proposed {count} insight promotions (see <workspace>/.spark/proposals)")
         
         elif cmd == "status":
             status = bridge_status()

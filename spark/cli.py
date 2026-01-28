@@ -353,9 +353,12 @@ def cmd_bridge(args):
         update_spark_context(query=args.query)
         print("✓ Updated SPARK_CONTEXT.md with active learnings")
     elif args.promote:
-        count = auto_promote_insights()
+        count = auto_promote_insights(apply=args.apply)
         if count > 0:
-            print(f"✓ Promoted {count} high-value insights to MEMORY.md")
+            if args.apply:
+                print(f"✓ Applied {count} promotions to MEMORY.md")
+            else:
+                print(f"✓ Proposed {count} promotions (patches written under <workspace>/.spark/proposals)")
         else:
             print("No insights ready for promotion yet")
     elif args.status:
@@ -593,7 +596,8 @@ Examples:
     # bridge - connect learnings to behavior
     bridge_parser = subparsers.add_parser("bridge", help="Bridge learnings to operational context")
     bridge_parser.add_argument("--update", "-u", action="store_true", help="Update SPARK_CONTEXT.md")
-    bridge_parser.add_argument("--promote", "-p", action="store_true", help="Auto-promote insights to MEMORY.md")
+    bridge_parser.add_argument("--promote", "-p", action="store_true", help="Promote insights to MEMORY.md (default: proposal-only)")
+    bridge_parser.add_argument("--apply", action="store_true", help="Actually edit MEMORY.md (otherwise writes patch proposals)")
     bridge_parser.add_argument("--status", "-s", action="store_true", help="Show bridge status")
     bridge_parser.add_argument("--query", help="Optional: tailor context to a specific task")
 

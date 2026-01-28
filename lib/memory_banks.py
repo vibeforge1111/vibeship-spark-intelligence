@@ -44,6 +44,8 @@ class BankEntry:
     session_id: Optional[str] = None
     source: Optional[str] = None
     meta: Dict[str, Any] = None
+    share_scope: Optional[str] = None       # main_only|safe_general
+    sensitivity: Optional[str] = None       # low|medium|high
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -55,6 +57,8 @@ class BankEntry:
             "text": self.text,
             "session_id": self.session_id,
             "source": self.source,
+            "share_scope": self.share_scope,
+            "sensitivity": self.sensitivity,
             "meta": self.meta or {},
         }
 
@@ -188,7 +192,24 @@ def append_entry(entry: BankEntry) -> None:
         f.write(json.dumps(entry.to_dict(), ensure_ascii=False) + "\n")
 
 
-def store_memory(text: str, category: str, session_id: Optional[str] = None, source: str = "spark") -> BankEntry:
+def store_memory(
+    text: str,
+    category: str,
+    session_id: Optional[str] = None,
+    source: str = "spark",
+    share_scope: Optional[str] = None,
+    sensitivity: Optional[str] = None,
+    meta: Optional[Dict[str, Any]] = None,
+) -> BankEntry:
+    """Store a memory entry in Spark's portable banks.
+
+    Added fields:
+      - share_scope: main_only|safe_general
+      - sensitivity: low|medium|high
+
+    These are designed to align with Clawdbot's session privacy boundaries.
+    """
+
     _ensure_dirs()
     project_key = infer_project_key()
     scope, proj = choose_scope(text=text, category=category, project_key=project_key)
@@ -203,7 +224,9 @@ def store_memory(text: str, category: str, session_id: Optional[str] = None, sou
         text=text.strip(),
         session_id=session_id,
         source=source,
-        meta={},
+        share_scope=share_scope,
+        sensitivity=sensitivity,
+        meta=meta or {},
     )
     append_entry(entry)
     return entry
