@@ -15,6 +15,7 @@ from typing import List, Dict, Any, Optional
 from lib.memory_banks import infer_project_key, retrieve as bank_retrieve
 from lib.tastebank import infer_domain as taste_infer_domain, retrieve as taste_retrieve
 from lib.diagnostics import log_debug
+from lib.clawdbot_files import daily_memory_path, user_md
 
 # Paths
 SPARK_DIR = Path(__file__).parent.parent
@@ -423,6 +424,101 @@ def auto_promote_insights(min_reliability: float = 0.8, min_validations: int = 3
                 proposed_or_applied += 1
 
     return proposed_or_applied
+
+
+def propose_daily_digest(apply: bool = False, max_items: int = 6) -> dict:
+    """Propose (or apply) a small "Spark Digest" section into today's daily memory file.
+
+    This is intended to keep Clawdbot fast: daily files hold raw/near-term context,
+    while MEMORY.md stays curated.
+
+    Default is proposal-only.
+    """
+    from datetime import datetime, timedelta
+    from lib.cognitive_learner import CognitiveLearner
+    from lib.clawdbot_promoter import inject_into_daily_md
+    from lib.aha_tracker import AhaTracker
+
+    today = datetime.now()
+
+    cognitive = CognitiveLearner()
+
+    # Recent insights: last 24h
+    recent = []
+    cutoff = today - timedelta(hours=24)
+    for ins in cognitive.insights.values():
+        try:
+            created = datetime.fromisoformat(ins.created_at)
+        except Exception:
+            continue
+        if created >= cutoff:
+            recent.append(ins)
+
+    # Sort: newest first
+    recent.sort(key=lambda i: i.created_at, reverse=True)
+
+    aha = AhaTracker()
+    lessons = []
+    for s in aha.get_recent_surprises(20):
+        if s.lesson_extracted:
+            lessons.append(s.lesson_extracted)
+
+    lines = []
+    lines.append(f"- Updated: {today.strftime('%Y-%m-%d %H:%M')}")
+
+    if recent:
+        lines.append("- Insights:")
+        for ins in recent[: max_items]:
+            lines.append(f"  - [{ins.category.value}] {ins.insight}")
+
+    if lessons:
+        lines.append("- Lessons:")
+        for l in lessons[:3]:
+            lines.append(f"  - {l}")
+
+    res = inject_into_daily_md(
+        date_ymd=today.strftime("%Y-%m-%d"),
+        lines_to_add=lines,
+        section_header="## Spark Digest",
+        apply=apply,
+    )
+
+    return {"applied": res.applied, "patch_path": res.patch_path, "reason": res.reason}
+
+
+def propose_user_updates(apply: bool = False, min_reliability: float = 0.8, min_validations: int = 3) -> dict:
+    """Propose (or apply) stable preferences into USER.md.
+
+    We only add a dedicated section to avoid reshaping the doc.
+    Default is proposal-only.
+    """
+    from lib.cognitive_learner import CognitiveLearner
+    from lib.clawdbot_promoter import inject_into_user_md
+
+    path = user_md()
+    if not path.exists():
+        return {"applied": False, "patch_path": None, "reason": f"missing:{path}"}
+
+    cognitive = CognitiveLearner()
+
+    bullets = []
+    for ins in cognitive.insights.values():
+        if ins.category.value not in ("user_understanding", "communication"):
+            continue
+        if ins.reliability < min_reliability or ins.times_validated < min_validations:
+            continue
+        bullets.append(f"- {ins.insight} ({ins.reliability:.0%}, {ins.times_validated} validations)")
+
+    # keep short and stable
+    bullets = bullets[:8]
+
+    res = inject_into_user_md(
+        bullet_lines=bullets,
+        section_header="## Preferences (Spark)",
+        apply=apply,
+    )
+
+    return {"applied": res.applied, "patch_path": res.patch_path, "reason": res.reason}
 
 
 def bridge_status() -> Dict[str, Any]:

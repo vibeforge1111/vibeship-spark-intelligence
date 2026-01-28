@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from lib.clawdbot_files import daily_memory_path, user_md
+
 
 def get_workspace() -> Path:
     return Path(os.environ.get("SPARK_WORKSPACE", str(Path.home() / "clawd"))).expanduser()
@@ -54,11 +56,28 @@ def propose_or_apply_file_edit(
     apply: bool = False,
     patch_name_hint: str = "edit",
 ) -> PromotionResult:
+    after = new_content
+
+    # Missing file handling
     if not file_path.exists():
-        return PromotionResult(patch_path=None, applied=False, reason=f"missing:{file_path}")
+        if apply:
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(after, encoding="utf-8")
+            return PromotionResult(patch_path=None, applied=True, reason="created")
+
+        # Proposal: create a patch that represents a new file
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        patch_path = proposals_dir() / f"{ts}-{patch_name_hint}.patch"
+        diff = difflib.unified_diff(
+            [],
+            after.splitlines(True),
+            fromfile="/dev/null",
+            tofile=f"b/{file_path.name}",
+        )
+        patch_path.write_text("".join(diff), encoding="utf-8")
+        return PromotionResult(patch_path=str(patch_path), applied=False, reason=f"proposed_create:{file_path}")
 
     before = file_path.read_text(encoding="utf-8")
-    after = new_content
 
     if before == after:
         return PromotionResult(patch_path=None, applied=False, reason="no_change")
@@ -132,3 +151,94 @@ def inject_into_memory_md(
         patch_name_hint="memory",
     )
     return res, conflict
+
+
+def inject_into_daily_md(
+    date_ymd: str,
+    lines_to_add: List[str],
+    section_header: str = "## Spark Digest",
+    apply: bool = False,
+) -> PromotionResult:
+    """Propose (or apply) appending a small digest section into today's daily memory file.
+
+    - If the file doesn't exist, return missing (we avoid creating files silently).
+    - Insert directly after the section header if present; otherwise append a new section.
+    """
+
+    # parse date string is intentionally minimal; we trust caller format YYYY-MM-DD
+    from datetime import datetime
+
+    try:
+        d = datetime.strptime(date_ymd, "%Y-%m-%d")
+    except Exception:
+        return PromotionResult(None, False, reason=f"bad_date:{date_ymd}")
+
+    path = daily_memory_path(d)
+
+    before = path.read_text(encoding="utf-8") if path.exists() else ""
+
+    block = "\n".join([ln.rstrip() for ln in lines_to_add if (ln or "").strip()])
+    if not block.strip():
+        return PromotionResult(None, False, reason="empty")
+
+    # Dedupe: if block already present, no-op.
+    if block.strip() in before:
+        return PromotionResult(None, False, reason="already_present")
+
+    if section_header not in before:
+        after = before.rstrip() + f"\n\n{section_header}\n" + block.rstrip() + "\n"
+    else:
+        parts = before.split(section_header)
+        after = parts[0] + section_header + "\n" + block.rstrip() + "\n" + parts[1].lstrip("\n")
+
+    return propose_or_apply_file_edit(
+        file_path=path,
+        new_content=after,
+        apply=apply,
+        patch_name_hint="daily",
+    )
+
+
+def inject_into_user_md(
+    bullet_lines: List[str],
+    section_header: str = "## Preferences (Spark)",
+    apply: bool = False,
+) -> PromotionResult:
+    """Propose (or apply) adding preference bullets to USER.md.
+
+    We only ever *add* a dedicated section to avoid reshaping the user's doc.
+    """
+
+    path = user_md()
+    if not path.exists():
+        return PromotionResult(None, False, reason=f"missing:{path}")
+
+    before = path.read_text(encoding="utf-8")
+
+    # Deduplicate existing bullets
+    new_lines = []
+    for b in bullet_lines:
+        b = (b or "").rstrip()
+        if not b.strip():
+            continue
+        if b.strip() in before:
+            continue
+        new_lines.append(b)
+
+    if not new_lines:
+        return PromotionResult(None, False, reason="no_new_lines")
+
+    block = "\n".join(new_lines).rstrip() + "\n"
+
+    if section_header not in before:
+        after = before.rstrip() + f"\n\n{section_header}\n" + block
+    else:
+        parts = before.split(section_header)
+        after = parts[0] + section_header + "\n" + block + parts[1].lstrip("\n")
+
+    return propose_or_apply_file_edit(
+        file_path=path,
+        new_content=after,
+        apply=apply,
+        patch_name_hint="user",
+    )

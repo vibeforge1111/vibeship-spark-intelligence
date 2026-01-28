@@ -346,9 +346,11 @@ def cmd_bridge(args):
         generate_active_context, 
         update_spark_context, 
         auto_promote_insights,
-        bridge_status
+        propose_daily_digest,
+        propose_user_updates,
+        bridge_status,
     )
-    
+
     if args.update:
         update_spark_context(query=args.query)
         print("✓ Updated SPARK_CONTEXT.md with active learnings")
@@ -361,6 +363,22 @@ def cmd_bridge(args):
                 print(f"✓ Proposed {count} promotions (patches written under <workspace>/.spark/proposals)")
         else:
             print("No insights ready for promotion yet")
+    elif args.digest:
+        r = propose_daily_digest(apply=args.apply)
+        if r.get("patch_path"):
+            print(f"✓ Proposed daily digest patch: {r['patch_path']}")
+        elif r.get("applied"):
+            print("✓ Applied daily digest to today's memory file")
+        else:
+            print(f"No digest change: {r.get('reason')}")
+    elif args.user:
+        r = propose_user_updates(apply=args.apply)
+        if r.get("patch_path"):
+            print(f"✓ Proposed USER.md patch: {r['patch_path']}")
+        elif r.get("applied"):
+            print("✓ Applied USER.md updates")
+        else:
+            print(f"No USER.md change: {r.get('reason')}")
     elif args.status:
         status = bridge_status()
         print(f"\n  Bridge Status")
@@ -597,7 +615,9 @@ Examples:
     bridge_parser = subparsers.add_parser("bridge", help="Bridge learnings to operational context")
     bridge_parser.add_argument("--update", "-u", action="store_true", help="Update SPARK_CONTEXT.md")
     bridge_parser.add_argument("--promote", "-p", action="store_true", help="Promote insights to MEMORY.md (default: proposal-only)")
-    bridge_parser.add_argument("--apply", action="store_true", help="Actually edit MEMORY.md (otherwise writes patch proposals)")
+    bridge_parser.add_argument("--digest", action="store_true", help="Propose/apply a daily digest into memory/YYYY-MM-DD.md")
+    bridge_parser.add_argument("--user", action="store_true", help="Propose/apply stable preferences into USER.md")
+    bridge_parser.add_argument("--apply", action="store_true", help="Actually edit files (otherwise writes patch proposals)")
     bridge_parser.add_argument("--status", "-s", action="store_true", help="Show bridge status")
     bridge_parser.add_argument("--query", help="Optional: tailor context to a specific task")
 
