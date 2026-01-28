@@ -76,6 +76,51 @@ def _write_patch_paths(path: Path, before: str, after: str, relpath: str) -> Non
     path.write_text("".join(diff), encoding="utf-8")
 
 
+def _replace_md_section(before: str, header: str, body: str) -> str:
+    """Replace (or append) a markdown section by exact header line.
+
+    - If `header` exists, replace everything from that header until the next `## ` header.
+    - If not, append the section at the end.
+
+    Idempotent: if the resulting content equals `before`, caller can treat as no-op.
+    """
+
+    before = before or ""
+    header_line = header.strip()
+    body = (body or "").rstrip() + "\n"
+
+    lines = before.splitlines(True)  # keepends
+
+    # Find header line index
+    start = None
+    for i, ln in enumerate(lines):
+        if ln.strip() == header_line:
+            start = i
+            break
+
+    if start is None:
+        # append new section
+        base = before.rstrip() + "\n\n" if before.strip() else ""
+        return base + header_line + "\n" + body
+
+    # Find end of section (next '## ' header)
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith("## ") and lines[j].strip() != header_line:
+            end = j
+            break
+
+    # Rebuild
+    out = []
+    out.extend(lines[: start + 1])
+    # Ensure exactly one newline after header
+    if out and not out[-1].endswith("\n"):
+        out[-1] = out[-1] + "\n"
+    out.append(body)
+    out.extend(lines[end:])
+    return "".join(out)
+
+
 def propose_or_apply_file_edit(
     file_path: Path,
     new_content: str,
@@ -206,19 +251,11 @@ def inject_into_daily_md(
 
     before = path.read_text(encoding="utf-8") if path.exists() else ""
 
-    block = "\n".join([ln.rstrip() for ln in lines_to_add if (ln or "").strip()])
+    block = "\n".join([ln.rstrip() for ln in lines_to_add if (ln or "").strip()]).rstrip() + "\n"
     if not block.strip():
         return PromotionResult(None, False, reason="empty")
 
-    # Dedupe: if block already present, no-op.
-    if block.strip() in before:
-        return PromotionResult(None, False, reason="already_present")
-
-    if section_header not in before:
-        after = before.rstrip() + f"\n\n{section_header}\n" + block.rstrip() + "\n"
-    else:
-        parts = before.split(section_header)
-        after = parts[0] + section_header + "\n" + block.rstrip() + "\n" + parts[1].lstrip("\n")
+    after = _replace_md_section(before, header=section_header, body=block)
 
     return propose_or_apply_file_edit(
         file_path=path,
