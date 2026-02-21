@@ -45,7 +45,7 @@ def _is_low_value_insight(text: str) -> bool:
         from lib.promoter import is_operational_insight
         if is_operational_insight(t):
             return True
-    except Exception:
+    except ImportError:
         pass
     if "indicates task type" in t:
         return True

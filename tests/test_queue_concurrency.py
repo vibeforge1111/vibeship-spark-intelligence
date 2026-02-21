@@ -14,6 +14,10 @@ def _patch_queue_paths(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(queue, "EVENTS_FILE", queue_dir / "events.jsonl")
     monkeypatch.setattr(queue, "LOCK_FILE", queue_dir / ".queue.lock")
     monkeypatch.setattr(queue, "OVERFLOW_FILE", queue_dir / "events.overflow.jsonl")
+    # Isolate the queue state file so tests don't read/write the real
+    # ~/.spark/queue/state.json (head_bytes stored there would cause
+    # consume_processed to start at a wrong offset in the temp file).
+    monkeypatch.setattr(queue, "QUEUE_STATE_FILE", queue_dir / "state.json")
 
 
 def _merge_overflow(queue_mod):

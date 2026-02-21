@@ -53,8 +53,8 @@ def _load_queue_config() -> Dict[str, Any]:
                 cfg = data.get("queue") or {}
                 if isinstance(cfg, dict):
                     return cfg
-    except Exception:
-        pass
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
+        log_debug("queue", f"failed to load queue config from {TUNEABLES_FILE}", e)
     return {}
 
 
@@ -71,14 +71,14 @@ def _apply_queue_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
         try:
             MAX_EVENTS = max(100, min(1_000_000, int(cfg.get("max_events") or 100)))
             applied.append("max_events")
-        except Exception:
+        except (ValueError, TypeError):
             warnings.append("invalid_max_events")
 
     if "tail_chunk_bytes" in cfg:
         try:
             TAIL_CHUNK_BYTES = max(4096, min(4 * 1024 * 1024, int(cfg.get("tail_chunk_bytes") or 4096)))
             applied.append("tail_chunk_bytes")
-        except Exception:
+        except (ValueError, TypeError):
             warnings.append("invalid_tail_chunk_bytes")
 
     return {"applied": applied, "warnings": warnings}
@@ -109,7 +109,14 @@ def _load_queue_state() -> Dict[str, Any]:
         return {}
     try:
         return json.loads(QUEUE_STATE_FILE.read_text(encoding="utf-8"))
-    except Exception:
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        # Corrupted state file — log so the operator knows head_bytes reset.
+        # Returning {} causes head_bytes to fall back to 0, which is the safe
+        # default (re-processing events beats skipping them).
+        log_debug("queue", f"state file corrupted, resetting head_bytes: {QUEUE_STATE_FILE}", e)
+        return {}
+    except OSError as e:
+        log_debug("queue", "failed to read queue state file", e)
         return {}
 
 
@@ -695,18 +702,25 @@ class _queue_lock:
                 if time.time() - start >= self.timeout_s:
                     return self  # self.acquired stays False
                 time.sleep(0.01)
-            except Exception as e:
+            except OSError as e:
                 log_debug("queue", "lock acquire failed", e)
                 return self
 
     def __exit__(self, exc_type, exc, tb):
-        try:
-            if self.fd is not None:
+        # Close and unlink in separate try blocks so that a failure to close
+        # the fd does NOT prevent the lock file from being removed.  If both
+        # steps used a single try/except, an OSError on os.close() would skip
+        # LOCK_FILE.unlink() and permanently deadlock future lock attempts.
+        if self.fd is not None:
+            try:
                 os.close(self.fd)
+            except OSError as e:
+                log_debug("queue", "lock fd close failed", e)
+            finally:
                 self.fd = None
-            # Only delete the lock file if WE acquired it.
-            if self.acquired and LOCK_FILE.exists():
-                LOCK_FILE.unlink()
-        except Exception as e:
-            log_debug("queue", "lock release failed", e)
+        if self.acquired:
+            try:
+                LOCK_FILE.unlink(missing_ok=True)
+            except OSError as e:
+                log_debug("queue", "lock file unlink failed", e)
         self.acquired = False
