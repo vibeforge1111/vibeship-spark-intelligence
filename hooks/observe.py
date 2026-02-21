@@ -545,7 +545,7 @@ def main():
     """Main hook entry point."""
     try:
         input_data = json.load(sys.stdin)
-    except (json.JSONDecodeError, Exception) as e:
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
         log_debug("observe", "input JSON decode failed", e)
         sys.exit(0)
     
