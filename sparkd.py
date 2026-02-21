@@ -33,7 +33,7 @@ from lib.orchestration import register_agent, recommend_agent, record_handoff, g
 from lib.bridge_cycle import read_bridge_heartbeat, run_bridge_cycle, write_bridge_heartbeat
 from lib.pattern_detection.worker import get_pattern_backlog
 from lib.validation_loop import get_validation_backlog
-from lib.diagnostics import setup_component_logging
+from lib.diagnostics import setup_component_logging, log_debug
 from lib.ports import SPARKD_PORT
 
 PORT = SPARKD_PORT
@@ -267,7 +267,7 @@ def _parse_bool(value, default: bool = True) -> bool:
 def _safe_float(value, default: float = 0.0) -> float:
     try:
         return float(value)
-    except Exception:
+    except (ValueError, TypeError):
         return float(default)
 
 
@@ -307,8 +307,8 @@ def _load_openclaw_runtime_config(*, force: bool = False) -> dict:
                     section.get("async_dispatch_enabled"),
                     cfg["async_dispatch_enabled"],
                 )
-    except Exception:
-        pass
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
+        log_debug("sparkd", f"failed to load openclaw runtime config from {TUNEABLES_FILE}", e)
 
     env_advisory = os.environ.get("SPARKD_OPENCLAW_ADVISORY_BRIDGE_ENABLED")
     if env_advisory is not None:
