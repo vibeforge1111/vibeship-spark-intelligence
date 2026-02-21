@@ -178,3 +178,59 @@ def test_advice_source_counts_aggregates_sources():
     assert counts["semantic"] == 1
     assert counts["semantic-agentic"] == 1
     assert counts["cognitive"] == 1
+
+
+def test_load_engine_config_corrupt_json_logs_and_returns_empty(tmp_path, monkeypatch):
+    """Corrupt tuneables.json must log and return {} — not retry pointlessly."""
+    from unittest.mock import patch
+
+    cfg_path = tmp_path / "tuneables.json"
+    cfg_path.write_text("{bad json", encoding="utf-8")
+
+    logged = []
+    with patch("lib.advisory_engine.log_debug", side_effect=lambda *a, **kw: logged.append(a)):
+        result = advisory_engine._load_engine_config(path=cfg_path)
+
+    assert result == {}, f"Expected empty dict on corrupt JSON, got {result}"
+    assert any("engine config" in str(args).lower() for args in logged), (
+        f"Expected log_debug about config failure; got: {logged}"
+    )
+
+
+def test_load_engine_config_no_pointless_retry_on_json_error(tmp_path):
+    """A JSONDecodeError must NOT trigger the utf-8 retry path (same bytes → same error)."""
+    from unittest.mock import patch
+
+    cfg_path = tmp_path / "tuneables.json"
+    cfg_path.write_text("{invalid", encoding="utf-8")
+
+    logged = []
+    with patch("lib.advisory_engine.log_debug", side_effect=lambda *a, **kw: logged.append(a)):
+        result = advisory_engine._load_engine_config(path=cfg_path)
+
+    assert result == {}
+    # log_debug must be called exactly once — if the utf-8 retry ran, it would log twice
+    assert len(logged) == 1, (
+        f"Expected exactly 1 log_debug call (not {len(logged)}). "
+        "A pointless retry would produce a second log entry."
+    )
+
+
+def test_apply_engine_config_invalid_float_appends_warning_not_raises():
+    """Invalid float values must add a warning key, not raise."""
+    original = advisory_engine.get_engine_config()
+    try:
+        result = advisory_engine.apply_engine_config(
+            {
+                "max_ms": "not-a-number",
+                "live_quick_min_remaining_ms": "bad",
+                "fallback_rate_max_ratio": "not-a-float",
+                "delivery_stale_s": "oops",
+            }
+        )
+        assert "invalid_max_ms" in result["warnings"]
+        assert "invalid_live_quick_min_remaining_ms" in result["warnings"]
+        assert "invalid_fallback_rate_max_ratio" in result["warnings"]
+        assert "invalid_delivery_stale_s" in result["warnings"]
+    finally:
+        advisory_engine.apply_engine_config(original)

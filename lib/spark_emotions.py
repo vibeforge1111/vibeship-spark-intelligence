@@ -13,6 +13,8 @@ from typing import Any, Dict, Literal
 import json
 import os
 
+from .diagnostics import log_debug
+
 Mode = Literal["spark_alive", "real_talk", "calm_focus"]
 
 SPARK_DIR = Path.home() / ".spark"
@@ -132,8 +134,8 @@ class SparkEmotions:
                     )
                     self._save_state(state)
                 return state
-            except Exception:
-                pass
+            except Exception as e:
+                log_debug("spark_emotions", "failed to load emotion state, starting fresh", e)
         state = EmotionState(updated_at=self._now())
         self._refresh_emotion_labels(state)
         self._append_timeline("init", state.primary_emotion, note="Emotion state initialized", state=state)

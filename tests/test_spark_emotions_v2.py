@@ -84,3 +84,24 @@ def test_legacy_repo_local_state_migrates_to_runtime_path(tmp_path, monkeypatch)
     assert runtime_state.exists()
     assert emotions.state.warmth == 0.51
     assert len(emotions.state.emotion_timeline) >= 1
+
+
+def test_load_state_corrupt_json_logs_and_returns_default(tmp_path, monkeypatch):
+    """Corrupt emotion state file must log and return default EmotionState."""
+    from unittest.mock import patch
+    from lib.spark_emotions import SparkEmotions, EmotionState
+
+    state_file = tmp_path / "emotion_state.json"
+    state_file.write_text("{corrupt", encoding="utf-8")
+
+    logged = []
+    with patch("lib.spark_emotions.log_debug", side_effect=lambda *a, **kw: logged.append(a)):
+        se = SparkEmotions(state_file=state_file)
+
+    # Must recover to a fresh default state (not crash)
+    assert isinstance(se.state, EmotionState)
+    # Must have logged the failure
+    assert any("emotion state" in str(args).lower() or "starting fresh" in str(args).lower()
+               for args in logged), (
+        f"Expected log_debug about state load failure; got: {logged}"
+    )
