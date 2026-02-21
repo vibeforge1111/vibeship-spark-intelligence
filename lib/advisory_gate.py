@@ -144,14 +144,14 @@ def apply_gate_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
         try:
             MAX_EMIT_PER_CALL = max(1, min(10, int(cfg.get("max_emit_per_call") or 1)))
             applied.append("max_emit_per_call")
-        except Exception:
+        except (ValueError, TypeError):
             warnings.append("invalid_max_emit_per_call")
 
     if "tool_cooldown_s" in cfg:
         try:
             TOOL_COOLDOWN_S = max(1, min(3600, int(cfg.get("tool_cooldown_s") or 1)))
             applied.append("tool_cooldown_s")
-        except Exception:
+        except (ValueError, TypeError):
             warnings.append("invalid_tool_cooldown_s")
 
     if "advice_repeat_cooldown_s" in cfg:
@@ -160,7 +160,7 @@ def apply_gate_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
                 5, min(86400, int(cfg.get("advice_repeat_cooldown_s") or 5))
             )
             applied.append("advice_repeat_cooldown_s")
-        except Exception:
+        except (ValueError, TypeError):
             warnings.append("invalid_advice_repeat_cooldown_s")
 
     if "emit_whispers" in cfg:
@@ -240,13 +240,22 @@ def _load_gate_config(path: Optional[Path] = None) -> Dict[str, Any]:
     tuneables = path or (Path.home() / ".spark" / "tuneables.json")
     if not tuneables.exists():
         return {}
+    # The utf-8-sig fallback handles BOMs written by Windows editors.
+    # It must only trigger on UnicodeDecodeError — NOT on json.JSONDecodeError.
+    # Retrying a JSON parse failure with a different encoding reads the same
+    # bytes and raises the same error, wasting an I/O call and hiding the
+    # real problem from the operator.
     try:
         data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-    except Exception:
+    except UnicodeDecodeError:
         try:
             data = json.loads(tuneables.read_text(encoding="utf-8"))
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
+            log_debug("advisory_gate", f"failed to load gate config from {tuneables}", e)
             return {}
+    except (json.JSONDecodeError, OSError) as e:
+        log_debug("advisory_gate", f"failed to load gate config from {tuneables}", e)
+        return {}
     cfg = data.get("advisory_gate") or {}
     return cfg if isinstance(cfg, dict) else {}
 

@@ -52,7 +52,7 @@ BRIDGE_DISABLE_TIMEOUTS = os.environ.get("SPARK_BRIDGE_DISABLE_TIMEOUTS", "0").s
 # previous behavior.
 try:
     _BRIDGE_GC_EVERY = int(os.environ.get("SPARK_BRIDGE_GC_EVERY", "3"))
-except Exception:
+except ValueError:
     _BRIDGE_GC_EVERY = 3
 _BRIDGE_GC_EVERY = max(1, min(100, _BRIDGE_GC_EVERY))
 _BRIDGE_GC_COUNTER = 0
@@ -92,7 +92,7 @@ def _chips_enabled() -> bool:
 def _env_float(name: str, default: float, lo: float = 0.0, hi: float = 1.0) -> float:
     try:
         value = float(os.environ.get(name, str(default)))
-    except Exception:
+    except (ValueError, TypeError):
         value = float(default)
     return max(lo, min(hi, value))
 
@@ -251,12 +251,21 @@ def run_bridge_cycle(
         # --- Flush cognitive learner so memory-captured insights hit disk ---
         # Without this, batch mode defers all writes until the very end,
         # and any failure in later steps loses captured memories.
+        #
+        # end_batch() and begin_batch() are in SEPARATE try blocks so that a
+        # flush failure does not prevent re-entering batch mode.  If both were
+        # in the same block, an exception from end_batch() would skip
+        # begin_batch(), leaving the cognitive learner in a half-ended state
+        # for the rest of the cycle (writes go unbatched or fail outright).
         if cognitive:
             try:
                 cognitive.end_batch()
-                cognitive.begin_batch()
             except Exception as e:
                 log_debug("bridge_worker", f"mid-cycle cognitive flush failed ({e})", None)
+            try:
+                cognitive.begin_batch()
+            except Exception as e:
+                log_debug("bridge_worker", f"mid-cycle cognitive re-batch failed ({e})", None)
 
         # --- Run the processing pipeline ---
         pipeline_metrics = None
