@@ -33,8 +33,8 @@ _PRIM_KW = (
     "pattern",
 )
 
-_TOOL_RE = re.compile(r"\\b(" + "|".join(re.escape(t) for t in _TOOL_TOKENS) + r")\\b", re.I)
-_TOOL_ERROR_KEY_RE = re.compile(r"\\btool[_\\s-]*\\d+[_\\s-]*error\\b", re.I)
+_TOOL_RE = re.compile(r"\b(" + "|".join(re.escape(t) for t in _TOOL_TOKENS) + r")\b", re.I)
+_TOOL_ERROR_KEY_RE = re.compile(r"\btool[_\s-]*\d+[_\s-]*error\b", re.I)
 
 
 def is_primitive_text(text: str) -> bool:
