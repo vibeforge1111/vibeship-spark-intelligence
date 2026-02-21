@@ -675,8 +675,20 @@ def _load_advisor_config() -> None:
             return
         try:
             data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-        except Exception:
-            data = json.loads(tuneables.read_text(encoding="utf-8"))
+        except UnicodeDecodeError:
+            try:
+                data = json.loads(tuneables.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+                logging.getLogger("spark.advisor").warning(
+                    "advisor: failed to load tuneables.json (utf-8 fallback also failed); "
+                    "keeping defaults"
+                )
+                return
+        except (json.JSONDecodeError, OSError) as e:
+            logging.getLogger("spark.advisor").warning(
+                "advisor: failed to load tuneables.json: %s; keeping defaults", e
+            )
+            return
         cfg = data.get("advisor") or {}
         if not isinstance(cfg, dict):
             cfg = {}
@@ -738,8 +750,12 @@ def _load_advisor_config() -> None:
             REPLAY_MIN_CONTEXT_MATCH = max(
                 0.0, min(1.0, float(cfg.get("replay_min_context") or 0.0))
             )
-    except Exception:
-        pass  # Fail silently — keep hard-coded defaults
+    except Exception as e:
+        logging.getLogger("spark.advisor").warning(
+            "advisor: unexpected error applying tuneables.json config: %s; "
+            "keeping defaults",
+            e,
+        )
 
 
 _load_advisor_config()
