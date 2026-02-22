@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from lib.cognitive_learner import CognitiveCategory, get_cognitive_learner
 from lib.queue import read_recent_events, EventType
+from lib.diagnostics import log_debug
 from lib.memory_banks import store_memory
 from lib.outcome_log import append_outcome, make_outcome_id
 from lib.outcome_checkin import record_checkin_request
@@ -330,8 +331,8 @@ def _load_memory_capture_config() -> Dict[str, Any]:
                 cfg = data.get("memory_capture") or {}
                 if isinstance(cfg, dict):
                     return cfg
-    except Exception:
-        pass
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+        log_debug("memory_capture", "failed to load memory_capture config from tuneables.json", e)
     return {}
 
 
@@ -349,21 +350,21 @@ def _apply_memory_capture_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
         try:
             AUTO_SAVE_THRESHOLD = max(0.1, min(1.0, float(cfg.get("auto_save_threshold") or 0.1)))
             applied.append("auto_save_threshold")
-        except Exception:
+        except (ValueError, TypeError):
             warnings.append("invalid_auto_save_threshold")
 
     if "suggest_threshold" in cfg:
         try:
             SUGGEST_THRESHOLD = max(0.05, min(0.99, float(cfg.get("suggest_threshold") or 0.05)))
             applied.append("suggest_threshold")
-        except Exception:
+        except (ValueError, TypeError):
             warnings.append("invalid_suggest_threshold")
 
     if "max_capture_chars" in cfg:
         try:
             MAX_CAPTURE_CHARS = max(200, min(20000, int(cfg.get("max_capture_chars") or 200)))
             applied.append("max_capture_chars")
-        except Exception:
+        except (ValueError, TypeError):
             warnings.append("invalid_max_capture_chars")
 
     if SUGGEST_THRESHOLD > AUTO_SAVE_THRESHOLD:
