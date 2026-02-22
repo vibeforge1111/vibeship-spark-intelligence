@@ -19,6 +19,8 @@ Contradiction Types:
 4. UNCERTAIN: Not enough evidence to determine
 """
 
+from __future__ import annotations
+
 import json
 import re
 from dataclasses import dataclass, field
@@ -162,11 +164,11 @@ class ContradictionDetector:
 
     CONTRADICTIONS_FILE = Path.home() / ".spark" / "contradictions.json"
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.contradictions: List[Contradiction] = []
         self._load_contradictions()
 
-    def _load_contradictions(self):
+    def _load_contradictions(self) -> None:
         """Load existing contradictions."""
         if self.CONTRADICTIONS_FILE.exists():
             try:
@@ -175,7 +177,7 @@ class ContradictionDetector:
             except Exception:
                 pass
 
-    def _save_contradictions(self):
+    def _save_contradictions(self) -> None:
         """Save contradictions to disk."""
         self.CONTRADICTIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
         data = [c.to_dict() for c in self.contradictions]
@@ -287,7 +289,7 @@ class ContradictionDetector:
         # Default to uncertain
         return ContradictionType.UNCERTAIN
 
-    def resolve(self, contradiction_idx: int, resolution_type: str, resolution: str = ""):
+    def resolve(self, contradiction_idx: int, resolution_type: str, resolution: str = "") -> None:
         """
         Resolve a contradiction.
 

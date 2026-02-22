@@ -11,6 +11,8 @@ Features:
 - Tracks synced items to avoid duplicates
 """
 
+from __future__ import annotations
+
 import json
 import hashlib
 import os
@@ -95,8 +97,8 @@ class MindBridge:
     """
     Bridge between Spark's cognitive learning and Mind's persistent memory.
     """
-    
-    def __init__(self, mind_url: str = MIND_API_URL, user_id: str = DEFAULT_USER_ID):
+
+    def __init__(self, mind_url: str = MIND_API_URL, user_id: str = DEFAULT_USER_ID) -> None:
         self.mind_url = mind_url
         self.user_id = user_id
         self.sync_state = self._load_sync_state()
@@ -119,7 +121,7 @@ class MindBridge:
             float(2 ** min(self._health_failures, 6)),
         )
         self._health_backoff_until = now + backoff_s
-        
+
     def _load_sync_state(self) -> Dict[str, Any]:
         """Load sync state from disk."""
         if SYNC_STATE_FILE.exists():
@@ -128,24 +130,24 @@ class MindBridge:
             except Exception:
                 pass
         return {"synced_hashes": [], "last_sync": None}
-    
-    def _save_sync_state(self):
+
+    def _save_sync_state(self) -> None:
         """Save sync state to disk."""
         SYNC_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         self.sync_state["last_sync"] = datetime.now().isoformat()
         SYNC_STATE_FILE.write_text(json.dumps(self.sync_state, indent=2), encoding="utf-8")
-    
+
     def _insight_hash(self, insight: CognitiveInsight) -> str:
         """Generate unique hash for an insight."""
         content = f"{insight.category.value}:{insight.insight}:{insight.context}"
         return hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()[:16]
-    
+
     def _is_synced(self, insight: CognitiveInsight) -> bool:
         """Check if insight was already synced."""
         hash_val = self._insight_hash(insight)
         return hash_val in self.sync_state.get("synced_hashes", [])
-    
-    def _mark_synced(self, insight: CognitiveInsight):
+
+    def _mark_synced(self, insight: CognitiveInsight) -> None:
         """Mark insight as synced."""
         hash_val = self._insight_hash(insight)
         if "synced_hashes" not in self.sync_state:
@@ -155,7 +157,7 @@ class MindBridge:
             if len(self.sync_state["synced_hashes"]) > 1000:
                 self.sync_state["synced_hashes"] = self.sync_state["synced_hashes"][-1000:]
             self._save_sync_state()
-    
+
     def _category_to_temporal_level(self, category: CognitiveCategory) -> int:
         """Map cognitive category to Mind temporal level (1-4)."""
         mapping = {
@@ -169,7 +171,7 @@ class MindBridge:
             CognitiveCategory.CREATIVITY: 3,
         }
         return mapping.get(category, 3)
-    
+
     def _category_to_content_type(self, category: CognitiveCategory) -> str:
         """Map cognitive category to Mind content type."""
         mapping = {
@@ -183,14 +185,14 @@ class MindBridge:
             CognitiveCategory.CREATIVITY: "creative_approach",
         }
         return mapping.get(category, "cognitive_learning")
-    
+
     def insight_to_memory(self, insight: CognitiveInsight) -> Dict[str, Any]:
         """Convert CognitiveInsight to Mind memory format."""
         content_parts = [f"[{insight.category.value.upper()}] {insight.insight}"]
-        
+
         if insight.context and insight.context != "General principle":
             content_parts.append(f"Context: {insight.context}")
-        
+
         if insight.evidence:
             # Flatten evidence - handle both strings and lists
             flat_evidence = []
@@ -212,7 +214,7 @@ class MindBridge:
                     flat_counter.append(str(c))
             counter_str = "; ".join(flat_counter[:2])
             content_parts.append(f"Exceptions: {counter_str}")
-        
+
         content = "\n".join(content_parts)
         if len(content) > MAX_CONTENT_CHARS:
             content = content[:MAX_CONTENT_CHARS]
@@ -230,7 +232,7 @@ class MindBridge:
             "evidence_count": len(getattr(insight, "evidence", [])),
         }
         salience = max(0.5, min(0.95, insight.reliability))
-        
+
         return {
             "user_id": self.user_id,
             "content": content,
@@ -241,7 +243,7 @@ class MindBridge:
             "advisory_quality": advisory_quality,
             "advisory_readiness": round(advisory_readiness, 4),
         }
-    
+
     def _check_mind_health(self, *, force: bool = False, timeout_s: Optional[float] = None) -> bool:
         """Check if Mind API is available."""
         if not HAS_REQUESTS:
@@ -263,11 +265,11 @@ class MindBridge:
         except Exception:
             self._record_health_result(False)
             return False
-    
-    def _queue_for_later(self, insight: CognitiveInsight, memory_data: Dict):
+
+    def _queue_for_later(self, insight: CognitiveInsight, memory_data: Dict) -> None:
         """Queue insight for later sync."""
         OFFLINE_QUEUE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        
+
         entry = {
             "timestamp": datetime.now().isoformat(),
             "insight_hash": self._insight_hash(insight),
@@ -277,31 +279,31 @@ class MindBridge:
             "advisory_quality": memory_data.get("advisory_quality") if isinstance(memory_data, dict) else {},
             "advisory_readiness": memory_data.get("advisory_readiness") if isinstance(memory_data, dict) else None,
         }
-        
+
         with open(OFFLINE_QUEUE_FILE, "a") as f:
             f.write(json.dumps(entry) + "\n")
-    
+
     def sync_insight(self, insight: CognitiveInsight) -> SyncResult:
         """Sync a single cognitive insight to Mind."""
         if not HAS_REQUESTS:
             return SyncResult(status=SyncStatus.DISABLED, error="requests not installed")
-        
+
         if self._is_synced(insight):
             return SyncResult(status=SyncStatus.DUPLICATE)
-        
+
         memory_data = self.insight_to_memory(insight)
-        
+
         if not self._check_mind_health():
             self._queue_for_later(insight, memory_data)
             return SyncResult(status=SyncStatus.OFFLINE, queued=True)
-        
+
         try:
             response = requests.post(
                 f"{self.mind_url}/v1/memories/",
                 json=memory_data,
                 timeout=MIND_POST_TIMEOUT_S
             )
-            
+
             if response.status_code == 201:
                 result = response.json()
                 self._record_health_result(True)
@@ -315,35 +317,35 @@ class MindBridge:
             error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
             print(f"[SPARK] Mind sync error: {error_msg}")
             return SyncResult(status=SyncStatus.ERROR, error=error_msg)
-                
+
         except Exception as e:
             self._record_health_result(False)
             self._queue_for_later(insight, memory_data)
             return SyncResult(status=SyncStatus.OFFLINE, queued=True, error=str(e))
-    
+
     def sync_all_insights(self) -> Dict[str, int]:
         """Sync all cognitive insights to Mind."""
         cognitive = get_cognitive_learner()
         stats = {"synced": 0, "duplicate": 0, "queued": 0, "error": 0, "disabled": 0}
-        
+
         for insight in cognitive.insights.values():
             result = self.sync_insight(insight)
             stats[result.status.value] = stats.get(result.status.value, 0) + 1
-        
+
         print(f"[SPARK] Sync complete: {stats}")
         return stats
-    
+
     def process_offline_queue(self) -> int:
         """Process queued items."""
         if not OFFLINE_QUEUE_FILE.exists():
             return 0
-        
+
         if not HAS_REQUESTS or not self._check_mind_health():
             return 0
-        
+
         synced = 0
         remaining = []
-        
+
         with open(OFFLINE_QUEUE_FILE, "r") as f:
             for line in f:
                 try:
@@ -353,7 +355,7 @@ class MindBridge:
                         json=entry["memory_data"],
                         timeout=MIND_POST_TIMEOUT_S
                     )
-                    
+
                     if response.status_code == 201:
                         self._record_health_result(True)
                         synced += 1
@@ -366,32 +368,32 @@ class MindBridge:
                 except Exception:
                     self._record_health_result(False)
                     remaining.append(entry)
-        
+
         if remaining:
             with open(OFFLINE_QUEUE_FILE, "w") as f:
                 for entry in remaining:
                     f.write(json.dumps(entry) + "\n")
         else:
             OFFLINE_QUEUE_FILE.unlink(missing_ok=True)
-        
+
         if synced > 0:
             self._save_sync_state()
             print(f"[SPARK] Processed queue: {synced} synced, {len(remaining)} remaining")
-        
+
         return synced
-    
+
     def retrieve_relevant(self, query: str, limit: int = 5) -> List[Dict]:
         """Retrieve relevant memories from Mind."""
         if not HAS_REQUESTS or not self._check_mind_health():
             return []
-        
+
         try:
             response = requests.post(
                 f"{self.mind_url}/v1/memories/retrieve",
                 json={"user_id": self.user_id, "query": query, "limit": limit},
                 timeout=MIND_RETRIEVE_TIMEOUT_S
             )
-            
+
             if response.status_code == 200:
                 self._record_health_result(True)
                 memories = response.json().get("memories", [])
@@ -429,14 +431,14 @@ class MindBridge:
         except Exception:
             self._record_health_result(False)
             return []
-    
+
     def get_stats(self) -> Dict:
         """Get bridge statistics."""
         queue_size = 0
         if OFFLINE_QUEUE_FILE.exists():
             with open(OFFLINE_QUEUE_FILE, "r") as f:
                 queue_size = sum(1 for _ in f)
-        
+
         return {
             "synced_count": len(self.sync_state.get("synced_hashes", [])),
             "last_sync": self.sync_state.get("last_sync"),

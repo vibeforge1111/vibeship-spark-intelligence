@@ -17,6 +17,7 @@ from datetime import datetime
 
 from lib.cognitive_learner import get_cognitive_learner, CognitiveCategory
 from lib.exposure_tracker import record_exposures
+from lib.diagnostics import log_debug
 from lib.queue import _tail_lines
 from lib.chips.registry import get_registry
 
@@ -212,7 +213,8 @@ def _load_merge_tuneables() -> Dict[str, float]:
             section = data.get("chip_merge") or {}
             if isinstance(section, dict):
                 cfg = section
-    except Exception:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+        log_debug("chip_merger", "failed to load chip_merge config from tuneables.json", e)
         cfg = {}
 
     ratio = DUPLICATE_CHURN_RATIO
@@ -221,15 +223,15 @@ def _load_merge_tuneables() -> Dict[str, float]:
 
     try:
         ratio = max(0.5, min(1.0, float(cfg.get("duplicate_churn_ratio", ratio))))
-    except Exception:
+    except (ValueError, TypeError):
         pass
     try:
         min_processed = max(5, min(1000, int(cfg.get("duplicate_churn_min_processed", min_processed))))
-    except Exception:
+    except (ValueError, TypeError):
         pass
     try:
         cooldown_s = max(60, min(24 * 3600, int(cfg.get("duplicate_churn_cooldown_s", cooldown_s))))
-    except Exception:
+    except (ValueError, TypeError):
         pass
     min_cognitive_value = 0.35
     min_actionability = 0.25
@@ -237,19 +239,19 @@ def _load_merge_tuneables() -> Dict[str, float]:
     min_statement_len = 28
     try:
         min_cognitive_value = max(0.0, min(1.0, float(cfg.get("min_cognitive_value", min_cognitive_value))))
-    except Exception:
+    except (ValueError, TypeError):
         pass
     try:
         min_actionability = max(0.0, min(1.0, float(cfg.get("min_actionability", min_actionability))))
-    except Exception:
+    except (ValueError, TypeError):
         pass
     try:
         min_transferability = max(0.0, min(1.0, float(cfg.get("min_transferability", min_transferability))))
-    except Exception:
+    except (ValueError, TypeError):
         pass
     try:
         min_statement_len = max(12, min(240, int(cfg.get("min_statement_len", min_statement_len))))
-    except Exception:
+    except (ValueError, TypeError):
         pass
 
     return {

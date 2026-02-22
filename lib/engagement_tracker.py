@@ -8,6 +8,8 @@ predicts engagement, and detects surprise over/underperformance.
 "The algorithm remembers what you forget. Track everything."
 """
 
+from __future__ import annotations
+
 import json
 import time
 from dataclasses import dataclass, field, asdict
@@ -108,12 +110,12 @@ class EngagementTracker:
     SURPRISE_THRESHOLD_HIGH = 2.0  # actual/predicted > 2x = overperform
     SURPRISE_THRESHOLD_LOW = 0.3  # actual/predicted < 0.3x = underperform
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.tracked: Dict[str, TrackedTweet] = {}
         self._prediction_history: List[Dict] = []
         self._load()
 
-    def _load(self):
+    def _load(self) -> None:
         """Load tracked tweets from disk."""
         if TRACKED_FILE.exists():
             try:
@@ -124,7 +126,7 @@ class EngagementTracker:
             except Exception:
                 pass
 
-    def _save(self):
+    def _save(self) -> None:
         """Persist tracked tweets."""
         PULSE_DIR.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -329,7 +331,7 @@ class EngagementTracker:
 
     # ------ Surprise Detection ------
 
-    def _check_surprise(self, tweet: TrackedTweet, snapshot: EngagementSnapshot):
+    def _check_surprise(self, tweet: TrackedTweet, snapshot: EngagementSnapshot) -> None:
         """Check if actual engagement is a surprise vs prediction."""
         if not tweet.prediction:
             return
@@ -437,7 +439,7 @@ class EngagementTracker:
             "prediction_accuracy": self.get_prediction_accuracy(),
         }
 
-    def cleanup_old(self, max_age_days: int = 7):
+    def cleanup_old(self, max_age_days: int = 7) -> None:
         """Remove tweets older than max_age_days."""
         cutoff = time.time() - (max_age_days * 86400)
         to_remove = [

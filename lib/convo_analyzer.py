@@ -8,6 +8,8 @@ and recommends hooks. Learns what makes conversations land.
 "Every great reply starts with understanding the conversation."
 """
 
+from __future__ import annotations
+
 import json
 import re
 import time
@@ -148,12 +150,12 @@ class ConvoAnalyzer:
     - Study high-engagement replies for patterns
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.dna_patterns: Dict[str, ConversationDNA] = {}
         self.x_voice: XVoice = get_x_voice()
         self._load_dna()
 
-    def _load_dna(self):
+    def _load_dna(self) -> None:
         """Load conversation DNA patterns from disk."""
         if DNA_FILE.exists():
             try:
@@ -163,7 +165,7 @@ class ConvoAnalyzer:
             except Exception:
                 pass
 
-    def _save_dna(self):
+    def _save_dna(self) -> None:
         """Persist conversation DNA patterns."""
         CONVO_DIR.mkdir(parents=True, exist_ok=True)
         payload = {k: asdict(v) for k, v in self.dna_patterns.items()}
@@ -542,7 +544,7 @@ class ConvoAnalyzer:
         author_handle: str,
         tone_used: str,
         hook_type: str,
-    ):
+    ) -> None:
         """Log a sent reply for later outcome tracking."""
         CONVO_DIR.mkdir(parents=True, exist_ok=True)
         entry = {
