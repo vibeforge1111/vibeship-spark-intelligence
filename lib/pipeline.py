@@ -65,8 +65,8 @@ def _load_pipeline_config() -> None:
         if isinstance(values, dict) and "queue_batch_size" in values:
             batch = int(values["queue_batch_size"])
             DEFAULT_BATCH_SIZE = max(MIN_BATCH_SIZE, min(MAX_BATCH_SIZE, batch))
-    except Exception:
-        pass
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError, TypeError) as e:
+        log_debug("pipeline", "failed to load pipeline config from tuneables.json", e)
 
 
 _load_pipeline_config()
@@ -101,7 +101,7 @@ QUEUE_CRITICAL = 2000     # Maximum batch size + drain mode
 IMPORTANCE_SAMPLING_ENABLED = os.getenv("SPARK_PIPELINE_IMPORTANCE_SAMPLING", "0") == "1"
 try:
     LOW_PRIORITY_KEEP_RATE = float(os.getenv("SPARK_PIPELINE_LOW_KEEP_RATE", "0.25"))
-except Exception:
+except (ValueError, TypeError):
     LOW_PRIORITY_KEEP_RATE = 0.25
 LOW_PRIORITY_KEEP_RATE = max(0.0, min(1.0, LOW_PRIORITY_KEEP_RATE))
 
@@ -109,21 +109,21 @@ LOW_PRIORITY_KEEP_RATE = max(0.0, min(1.0, LOW_PRIORITY_KEEP_RATE))
 MACROS_ENABLED = os.getenv("SPARK_MACROS_ENABLED", "0") == "1"
 try:
     MACRO_MIN_COUNT = max(2, min(20, int(os.getenv("SPARK_MACRO_MIN_COUNT", "3") or 3)))
-except Exception:
+except (ValueError, TypeError):
     MACRO_MIN_COUNT = 3
 
 # Distillation floor: ensure high-volume cycles produce at least one durable insight.
 try:
     MIN_INSIGHTS_FLOOR = max(0, min(3, int(os.getenv("SPARK_PIPELINE_MIN_INSIGHTS_FLOOR", "1") or 1)))
-except Exception:
+except (ValueError, TypeError):
     MIN_INSIGHTS_FLOOR = 1
 try:
     FLOOR_EVENTS_THRESHOLD = max(1, min(200, int(os.getenv("SPARK_PIPELINE_MIN_INSIGHTS_EVENTS", "20") or 20)))
-except Exception:
+except (ValueError, TypeError):
     FLOOR_EVENTS_THRESHOLD = 20
 try:
     FLOOR_SOFT_MIN_EVENTS = max(1, min(50, int(os.getenv("SPARK_PIPELINE_SOFT_MIN_INSIGHTS_EVENTS", "2") or 2)))
-except Exception:
+except (ValueError, TypeError):
     FLOOR_SOFT_MIN_EVENTS = 2
 
 # Processing health metrics file

@@ -27,8 +27,8 @@ def _load_promotion_config_interval() -> int:
             data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
             cfg = data.get("promotion") or {}
             return int(cfg.get("auto_interval_s", DEFAULT_INTERVAL_S))
-    except Exception:
-        pass
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError, TypeError) as e:
+        log_debug("auto_promote", "failed to load promotion config from tuneables.json", e)
     return DEFAULT_INTERVAL_S
 
 
@@ -40,8 +40,8 @@ def _should_run() -> bool:
             last_ts = float(LAST_PROMOTION_FILE.read_text(encoding="utf-8").strip())
             if time.time() - last_ts < interval_s:
                 return False
-    except Exception:
-        pass  # If file is corrupted, just run
+    except (OSError, ValueError, TypeError):
+        pass  # If file is missing or corrupted, just run
     return True
 
 
