@@ -12,6 +12,7 @@ import os
 import re
 
 from .cognitive_learner import CognitiveLearner, CognitiveInsight
+from .diagnostics import log_debug
 from .output_adapters import (
     write_claude_code,
     write_cursor,
@@ -80,7 +81,8 @@ def _load_sync_adapter_policy() -> Dict[str, Any]:
             raw = data.get("sync") or {}
             if isinstance(raw, dict):
                 cfg = raw
-    except Exception:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+        log_debug("context_sync", "failed to load sync config from tuneables.json", e)
         cfg = {}
 
     cfg_mode = str(cfg.get("mode") or "").strip().lower()
@@ -180,7 +182,7 @@ def _build_advisory_payload(
     chip_highlights: List[Dict[str, Any]],
     project_profile: Optional[Dict[str, Any]],
     key_by_id: Dict[int, str],
-    effective_reliability,
+    effective_reliability: Any,
     diagnostics: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
@@ -248,7 +250,7 @@ def _advisory_readiness_score(insight: CognitiveInsight) -> float:
     return 0.0
 
 
-def _category_weight(category) -> int:
+def _category_weight(category: Any) -> int:
     order = {
         "wisdom": 7,
         "reasoning": 6,

@@ -9,12 +9,14 @@ Usage:
     spark status  # via CLI
 """
 
+from __future__ import annotations
+
 import json
 import os
 import time
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 # Paths
 CLAUDE_DIR = Path.home() / ".claude"
@@ -292,7 +294,7 @@ def get_full_status() -> Dict:
     }
 
 
-def print_status():
+def print_status() -> Dict[str, Any]:
     """Print formatted status to console."""
     status = get_full_status()
 

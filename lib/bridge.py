@@ -5,6 +5,8 @@ Spark Bridge - Connect learnings to operational context
 The missing link: learnings that actually influence behavior.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -75,10 +77,10 @@ def get_high_value_insights(
 ) -> List[Dict]:
     """Get insights that have proven reliable enough to act on."""
     from lib.cognitive_learner import CognitiveLearner
-    
+
     cognitive = CognitiveLearner()
     valuable = []
-    
+
     for key, insight in cognitive.insights.items():
         if _is_low_value_insight(insight.insight):
             continue
@@ -94,7 +96,7 @@ def get_high_value_insights(
                 "validations": insight.times_validated,
                 "promoted": insight.promoted,
             })
-    
+
     # De-dupe by normalized insight text
     seen = set()
     deduped = []
@@ -116,10 +118,10 @@ def get_high_value_insights(
 def get_recent_lessons() -> List[Dict]:
     """Get lessons extracted from surprises - these are gold."""
     from lib.aha_tracker import AhaTracker
-    
+
     aha = AhaTracker()
     lessons = []
-    
+
     for surprise in aha.get_recent_surprises(20):
         if isinstance(surprise, dict):
             lesson = surprise.get("lesson_extracted")
@@ -139,7 +141,7 @@ def get_recent_lessons() -> List[Dict]:
                 "actual": surprise.actual_outcome[:50],
                 "type": surprise.surprise_type,
             })
-    
+
     return lessons[:10]  # Top 10 lessons
 
 
@@ -195,7 +197,7 @@ def get_failure_warnings(
 def get_strong_opinions() -> List[Dict]:
     """Get opinions that are forming strongly."""
     from lib.spark_voice import SparkVoice
-    
+
     voice = SparkVoice()
     return [
         {"topic": o.topic, "preference": o.preference, "strength": o.strength}
@@ -206,7 +208,7 @@ def get_strong_opinions() -> List[Dict]:
 def get_growth_moments() -> List[Dict]:
     """Get recorded growth moments."""
     from lib.spark_voice import SparkVoice
-    
+
     voice = SparkVoice()
     return [
         {"before": g.before, "after": g.after, "trigger": g.trigger}
@@ -450,7 +452,7 @@ def generate_active_context(query: Optional[str] = None) -> str:
             record_exposures("spark_context:skills", exposures, session_id=session_id, trace_id=trace_id)
         except Exception:
             pass
-    
+
     lines = [
         "=" * 50,
         "  SPARK ACTIVE CONTEXT",
@@ -458,7 +460,7 @@ def generate_active_context(query: Optional[str] = None) -> str:
         "=" * 50,
         "",
     ]
-    
+
     # Current focus (task-relevant)
     if query:
         lines.append("## Current Focus")
@@ -600,34 +602,34 @@ def generate_active_context(query: Optional[str] = None) -> str:
             )
         except Exception:
             pass
-    
+
     # Lessons from surprises (hard-won knowledge)
     if lessons:
         lines.append("## Lessons Learned (don't repeat mistakes)")
         for lesson in lessons[:5]:
             lines.append(f"- {lesson['lesson']}")
         lines.append("")
-    
+
     # Strong opinions (this is who I am)
     if opinions:
         lines.append("## My Opinions (these define me)")
         for op in opinions[:5]:
             lines.append(f"- {op['topic']}: {op['preference']}")
         lines.append("")
-    
+
     # Growth (how I've changed)
     if growth:
         lines.append("## How I've Grown")
         for g in growth[:3]:
             lines.append(f"- Was: {g['before']} -> Now: {g['after']}")
         lines.append("")
-    
+
     lines.append("=" * 50)
-    
+
     return "\n".join(lines)
 
 
-def update_spark_context(query: Optional[str] = None):
+def update_spark_context(query: Optional[str] = None) -> str:
     """Update SPARK_CONTEXT.md with active, useful context.
 
     If query is provided, we tailor the context to that task.
@@ -641,47 +643,47 @@ def inject_to_memory(insight: str, category: str = "spark") -> bool:
     """Inject a high-value insight into MEMORY.md."""
     if not MEMORY_FILE.exists():
         return False
-    
+
     content = MEMORY_FILE.read_text(encoding="utf-8")
     timestamp = datetime.now().strftime("%Y-%m-%d")
-    
+
     # Find or create Spark Learnings section
     marker = "## Spark Learnings"
     if marker not in content:
         content += f"\n\n{marker}\n"
-    
+
     # Add the insight
     new_line = f"- [{timestamp}] [{category}] {insight}\n"
-    
+
     # Insert after the marker
     parts = content.split(marker)
     if len(parts) == 2:
         content = parts[0] + marker + "\n" + new_line + parts[1].lstrip("\n")
-    
+
     MEMORY_FILE.write_text(content, encoding="utf-8")
     return True
 
 
-def auto_promote_insights(min_reliability: float = 0.8, min_validations: int = 3):
+def auto_promote_insights(min_reliability: float = 0.8, min_validations: int = 3) -> int:
     """Auto-promote highly reliable insights to MEMORY.md."""
     from lib.cognitive_learner import CognitiveLearner
-    
+
     cognitive = CognitiveLearner()
     promoted_count = 0
-    
+
     for key, insight in cognitive.insights.items():
         # Check if meets threshold and not already promoted
-        if (insight.reliability >= min_reliability and 
-            insight.times_validated >= min_validations and 
+        if (insight.reliability >= min_reliability and
+            insight.times_validated >= min_validations and
             not insight.promoted):
-            
+
             # Inject to memory
             if inject_to_memory(insight.insight, insight.category.value):
                 # Mark as promoted
                 insight.promoted = True
                 cognitive._save_insights()
                 promoted_count += 1
-    
+
     return promoted_count
 
 
@@ -690,7 +692,7 @@ def bridge_status() -> Dict[str, Any]:
     insights = get_high_value_insights()
     lessons = get_recent_lessons()
     opinions = get_strong_opinions()
-    
+
     return {
         "high_value_insights": len(insights),
         "lessons_learned": len(lessons),
@@ -704,25 +706,25 @@ def bridge_status() -> Dict[str, Any]:
 
 if __name__ == "__main__":
     import sys
-    
+
     if len(sys.argv) > 1:
         cmd = sys.argv[1]
-        
+
         if cmd == "context":
             print(generate_active_context())
-        
+
         elif cmd == "update":
             update_spark_context()
             print("OK Updated SPARK_CONTEXT.md")
-        
+
         elif cmd == "promote":
             count = auto_promote_insights()
             print(f"OK Promoted {count} insights to MEMORY.md")
-        
+
         elif cmd == "status":
             status = bridge_status()
             print(json.dumps(status, indent=2))
-        
+
         else:
             print(f"Unknown command: {cmd}")
             print("Usage: bridge.py [context|update|promote|status]")
