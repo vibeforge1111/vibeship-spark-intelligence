@@ -14,7 +14,7 @@ import math
 import os
 import re
 from collections import Counter
-from typing import List, Optional
+from typing import Any, List, Optional
 
 # --- Backend selection ---
 _BACKEND = None
@@ -105,7 +105,7 @@ _FASTEMBED = None
 _FASTEMBED_ERROR = None
 
 
-def _get_fastembed():
+def _get_fastembed() -> Optional[Any]:
     global _FASTEMBED, _FASTEMBED_ERROR
     if _FASTEMBED is not None:
         return _FASTEMBED

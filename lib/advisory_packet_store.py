@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from .diagnostics import log_debug
+
 try:
     import httpx as _HTTPX
 except Exception:
@@ -609,11 +611,15 @@ def _load_packet_store_config(path: Optional[Path] = None) -> Dict[str, Any]:
         return {}
     try:
         data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-    except Exception:
+    except UnicodeDecodeError:
         try:
             data = json.loads(tuneables.read_text(encoding="utf-8"))
-        except Exception:
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+            log_debug("advisory_packet_store", "failed to load packet store config from tuneables.json", e)
             return {}
+    except (json.JSONDecodeError, OSError) as e:
+        log_debug("advisory_packet_store", "failed to load packet store config from tuneables.json", e)
+        return {}
     section = data.get("advisory_packet_store") if isinstance(data, dict) else {}
     return section if isinstance(section, dict) else {}
 
@@ -621,15 +627,15 @@ def _load_packet_store_config(path: Optional[Path] = None) -> Dict[str, Any]:
 def _to_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
-    except Exception:
-        return int(default)
+    except (ValueError, TypeError):
+        return default
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
-    except Exception:
-        return float(default)
+    except (ValueError, TypeError):
+        return default
 
 
 def _safe_list(value: Any, *, max_items: int = 20) -> List[str]:

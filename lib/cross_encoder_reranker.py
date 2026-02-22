@@ -37,7 +37,7 @@ def preload_reranker() -> None:
 
     import threading
 
-    def _load():
+    def _load() -> None:
         global _reranker_instance, _reranker_load_attempted, _reranker_loading
         try:
             _reranker_instance = CrossEncoderReranker()
@@ -78,7 +78,7 @@ class CrossEncoderReranker:
     # Maximum pairs to score in one batch (latency guard)
     MAX_PAIRS = 24
 
-    def __init__(self, model_name: Optional[str] = None):
+    def __init__(self, model_name: Optional[str] = None) -> None:
         from sentence_transformers import CrossEncoder
         self._model = CrossEncoder(model_name or self.MODEL_NAME)
 

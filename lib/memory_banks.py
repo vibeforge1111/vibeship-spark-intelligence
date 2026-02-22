@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from lib.queue import read_recent_events, EventType, _tail_lines
+from lib.diagnostics import log_debug
 
 
 BANK_DIR = Path.home() / ".spark" / "banks"
@@ -75,7 +76,8 @@ def _load_memory_emotion_config() -> Dict[str, Any]:
                 mem = data.get("memory_emotion")
                 if isinstance(mem, dict):
                     cfg = mem
-    except Exception:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+        log_debug("memory_banks", "failed to load memory_emotion config from tuneables.json", e)
         cfg = {}
     return cfg
 

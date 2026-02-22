@@ -84,7 +84,7 @@ class Agent:
 
 
 class SparkOrchestrator:
-    def __init__(self, root_dir: Optional[Path] = None):
+    def __init__(self, root_dir: Optional[Path] = None) -> None:
         self.root_dir = root_dir or (Path.home() / ".spark" / "orchestration")
         self.agents_file = self.root_dir / "agents.json"
         self.handoffs_file = self.root_dir / "handoffs.jsonl"

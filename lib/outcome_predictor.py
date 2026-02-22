@@ -36,6 +36,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from .diagnostics import log_debug
+
 
 PREDICTOR_ENABLED = os.getenv("SPARK_OUTCOME_PREDICTOR", "0") == "1"
 STORE_PATH = Path.home() / ".spark" / "outcome_predictor.json"
@@ -95,7 +97,8 @@ def _load_store() -> Dict[str, Any]:
         data = json.loads(STORE_PATH.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             data = {}
-    except Exception:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+        log_debug("outcome_predictor", "failed to read outcome predictor store", e)
         data = {}
 
     keys = data.get("keys")

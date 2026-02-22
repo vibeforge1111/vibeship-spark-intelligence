@@ -128,7 +128,7 @@ def _read_json(path: Path) -> dict:
     return {}
 
 
-def _write_json_atomic(path: Path, data: dict):
+def _write_json_atomic(path: Path, data: dict) -> None:
     """Write JSON atomically via temp file + replace.
 
     If this is the tuneables file, validates via schema (clamping out-of-bounds
@@ -172,7 +172,7 @@ class AutoTuner:
     BOOST_MIN = 0.2
     BOOST_MAX = 2.0
 
-    def __init__(self, tuneables_path: Path = TUNEABLES_PATH):
+    def __init__(self, tuneables_path: Path = TUNEABLES_PATH) -> None:
         self.tuneables_path = tuneables_path
         self._tuneables = _read_json(tuneables_path)
         self._config = self._tuneables.get("auto_tuner", {})
@@ -564,7 +564,7 @@ class AutoTuner:
         new_effectiveness: Dict[str, float],
         timestamp: str,
         data_basis: str,
-    ):
+    ) -> None:
         """Write boost changes to tuneables.json atomically."""
         effective_changes = [c for c in changes if not _values_equal(c.old_boost, c.new_boost)]
         if not effective_changes:

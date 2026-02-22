@@ -242,11 +242,15 @@ def _load_gate_config(path: Optional[Path] = None) -> Dict[str, Any]:
         return {}
     try:
         data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-    except Exception:
+    except UnicodeDecodeError:
         try:
             data = json.loads(tuneables.read_text(encoding="utf-8"))
-        except Exception:
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+            log_debug("advisory_gate", "failed to load advisory_gate config from tuneables.json", e)
             return {}
+    except (json.JSONDecodeError, OSError) as e:
+        log_debug("advisory_gate", "failed to load advisory_gate config from tuneables.json", e)
+        return {}
     cfg = data.get("advisory_gate") or {}
     return cfg if isinstance(cfg, dict) else {}
 
