@@ -55,7 +55,7 @@ class TasteItem:
         }
 
 
-def _ensure():
+def _ensure() -> None:
     TASTE_DIR.mkdir(parents=True, exist_ok=True)
 
 

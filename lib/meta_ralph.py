@@ -27,6 +27,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import logging
 import re
 
 # Tuneables — defaults overridden by ~/.spark/tuneables.json → "meta_ralph" section.
@@ -125,8 +126,10 @@ def _load_meta_ralph_config() -> None:
                 QUALITY_WINDOW_EXCLUDE_TEXT_PREFIXES = [
                     str(item).strip().lower() for item in raw if str(item).strip()
                 ]
-    except Exception:
-        pass
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError, TypeError) as e:
+        logging.getLogger("spark.meta_ralph").warning(
+            "meta_ralph: failed to apply tuneables.json config: %s; keeping defaults", e
+        )
 
 
 _load_meta_ralph_config()

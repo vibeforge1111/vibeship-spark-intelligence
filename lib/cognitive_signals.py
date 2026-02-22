@@ -8,6 +8,8 @@ Moved from hooks/observe.py so that lib modules (bridge_cycle, etc.) can
 import it without a backwards cross-layer dependency on the hooks package.
 """
 
+from __future__ import annotations
+
 import re
 from typing import Any, Dict, Optional
 
@@ -150,7 +152,7 @@ COGNITIVE_PATTERNS = {
 }
 
 
-def extract_cognitive_signals(text: str, session_id: str, trace_id: Optional[str] = None, source: str = ""):
+def extract_cognitive_signals(text: str, session_id: str, trace_id: Optional[str] = None, source: str = "") -> None:
     """Extract cognitive signals from user messages and route to Meta-Ralph.
 
     Uses three scoring systems:

@@ -92,8 +92,8 @@ def _chips_enabled() -> bool:
 def _env_float(name: str, default: float, lo: float = 0.0, hi: float = 1.0) -> float:
     try:
         value = float(os.environ.get(name, str(default)))
-    except Exception:
-        value = float(default)
+    except (ValueError, TypeError):
+        value = default
     return max(lo, min(hi, value))
 
 

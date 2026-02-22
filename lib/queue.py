@@ -53,8 +53,8 @@ def _load_queue_config() -> Dict[str, Any]:
                 cfg = data.get("queue") or {}
                 if isinstance(cfg, dict):
                     return cfg
-    except Exception:
-        pass
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+        log_debug("queue", "failed to load queue config from tuneables.json", e)
     return {}
 
 
@@ -71,14 +71,14 @@ def _apply_queue_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
         try:
             MAX_EVENTS = max(100, min(1_000_000, int(cfg.get("max_events") or 100)))
             applied.append("max_events")
-        except Exception:
+        except (ValueError, TypeError):
             warnings.append("invalid_max_events")
 
     if "tail_chunk_bytes" in cfg:
         try:
             TAIL_CHUNK_BYTES = max(4096, min(4 * 1024 * 1024, int(cfg.get("tail_chunk_bytes") or 4096)))
             applied.append("tail_chunk_bytes")
-        except Exception:
+        except (ValueError, TypeError):
             warnings.append("invalid_tail_chunk_bytes")
 
     return {"applied": applied, "warnings": warnings}
