@@ -7,10 +7,12 @@ promotion runs at most once per configured interval (default: 1 hour).
 Called from hooks/observe.py on session end events (Stop, SessionEnd).
 """
 
+from __future__ import annotations
+
 import json
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from .diagnostics import log_debug
 
@@ -45,7 +47,7 @@ def _should_run() -> bool:
     return True
 
 
-def _mark_run():
+def _mark_run() -> None:
     """Record that promotion ran now."""
     try:
         LAST_PROMOTION_FILE.parent.mkdir(parents=True, exist_ok=True)

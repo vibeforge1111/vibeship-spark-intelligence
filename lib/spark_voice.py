@@ -9,6 +9,8 @@ Not a complex trait system. Just a consistent voice that shows growth.
 "I have opinions now: I prefer A over B."
 """
 
+from __future__ import annotations
+
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -68,10 +70,10 @@ class SparkVoice:
         ],
     }
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.data = self._load()
-    
-    def _load(self) -> Dict:
+
+    def _load(self) -> Dict[str, Any]:
         if VOICE_FILE.exists():
             try:
                 return json.loads(VOICE_FILE.read_text(encoding="utf-8"))
@@ -85,11 +87,11 @@ class SparkVoice:
             "interactions": 0,
         }
     
-    def _save(self):
+    def _save(self) -> None:
         SPARK_DIR.mkdir(parents=True, exist_ok=True)
         VOICE_FILE.write_text(json.dumps(self.data, indent=2), encoding="utf-8")
     
-    def record_interaction(self):
+    def record_interaction(self) -> None:
         """Track that an interaction happened."""
         self.data["interactions"] = self.data.get("interactions", 0) + 1
         self._save()
@@ -191,8 +193,8 @@ class SparkVoice:
         self,
         area: str,
         assessment: str,
-        confidence: float
-    ):
+        confidence: float,
+    ) -> None:
         """Record a self-assessment."""
         self.data["self_assessments"].append({
             "area": area,

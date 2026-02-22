@@ -54,7 +54,7 @@ class XVoice:
     transition table for `update_warmth`.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._state = self._load()
 
     def _load(self) -> Dict[str, str]:
@@ -67,7 +67,7 @@ class XVoice:
                 pass
         return {}
 
-    def _save(self):
+    def _save(self) -> None:
         X_VOICE_DIR.mkdir(parents=True, exist_ok=True)
         PROFILES_FILE.write_text(
             json.dumps(self._state, indent=2, default=str),
@@ -88,12 +88,12 @@ class XVoice:
         normalized = self._normalize_handle(handle)
         return self._state.get(normalized, "cold")
 
-    def _set_user_warmth(self, handle: str, warmth: str):
+    def _set_user_warmth(self, handle: str, warmth: str) -> None:
         normalized = self._normalize_handle(handle)
         self._state[normalized] = warmth
         self._save()
 
-    def update_warmth(self, handle: str, event_type: str):
+    def update_warmth(self, handle: str, event_type: str) -> None:
         normalized = self._normalize_handle(handle)
         warmth = self._state.get(normalized, "cold")
         idx = self._clamp_warmth(_WARMTH_PROGRESS.index(warmth))
