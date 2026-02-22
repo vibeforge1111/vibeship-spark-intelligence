@@ -20,6 +20,8 @@ Knowledge Gap Types:
 5. WHO gaps: "Works for them" → "Who is 'them'?"
 """
 
+from __future__ import annotations
+
 import json
 import re
 from dataclasses import dataclass, field
@@ -185,12 +187,12 @@ class CuriosityEngine:
 
     GAPS_FILE = Path.home() / ".spark" / "knowledge_gaps.json"
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.gaps: Dict[str, KnowledgeGap] = {}  # gap_id -> gap
         self.question_success_rate: Dict[str, float] = {}  # gap_type -> success rate
         self._load_gaps()
 
-    def _load_gaps(self):
+    def _load_gaps(self) -> None:
         """Load existing knowledge gaps."""
         if self.GAPS_FILE.exists():
             try:
@@ -202,7 +204,7 @@ class CuriosityEngine:
             except Exception:
                 pass
 
-    def _save_gaps(self):
+    def _save_gaps(self) -> None:
         """Save knowledge gaps to disk."""
         self.GAPS_FILE.parent.mkdir(parents=True, exist_ok=True)
         data = {
@@ -281,7 +283,7 @@ class CuriosityEngine:
 
         return [g for _, g in relevant[:limit]]
 
-    def fill_gap(self, gap_id: str, answer: str, valuable: bool = True):
+    def fill_gap(self, gap_id: str, answer: str, valuable: bool = True) -> None:
         """
         Fill a knowledge gap with an answer.
 
