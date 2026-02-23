@@ -53,13 +53,15 @@ VALID_SYNTH_PROVIDERS = {"auto", "ollama", "openai", "minimax", "anthropic", "ge
 
 
 def _read_json(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
     try:
-        if not path.exists():
-            return {}
+        return json.loads(path.read_text(encoding="utf-8-sig"))
+    except UnicodeDecodeError:
         try:
-            return json.loads(path.read_text(encoding="utf-8-sig"))
-        except Exception:
             return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
     except Exception:
         return {}
 

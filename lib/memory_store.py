@@ -95,7 +95,7 @@ def _safe_bool(value: Any, default: bool) -> bool:
 def _safe_float(value: Any, default: float) -> float:
     try:
         return float(value)
-    except Exception:
+    except (ValueError, TypeError):
         return float(default)
 
 
@@ -132,7 +132,7 @@ def _load_memory_emotion_config(*, force: bool = False) -> Dict[str, Any]:
                     section.get("retrieval_min_state_similarity"),
                     cfg["retrieval_min_state_similarity"],
                 )
-    except Exception:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         pass
 
     env_enabled = os.getenv("SPARK_MEMORY_EMOTION_ENABLED")
@@ -186,7 +186,7 @@ def _load_memory_learning_config(*, force: bool = False) -> Dict[str, Any]:
                     section.get("calm_mode_bonus"),
                     cfg["calm_mode_bonus"],
                 )
-    except Exception:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         pass
 
     env_enabled = os.getenv("SPARK_MEMORY_LEARNING_ENABLED")
@@ -228,7 +228,7 @@ def _load_memory_retrieval_guard_config(*, force: bool = False) -> Dict[str, Any
                 cfg["enabled"] = _safe_bool(section.get("enabled"), cfg["enabled"])
                 cfg["base_score_floor"] = _safe_float(section.get("base_score_floor"), cfg["base_score_floor"])
                 cfg["max_total_boost"] = _safe_float(section.get("max_total_boost"), cfg["max_total_boost"])
-    except Exception:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         pass
 
     env_enabled = os.getenv("SPARK_MEMORY_RETRIEVAL_GUARD_ENABLED")

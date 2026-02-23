@@ -223,3 +223,37 @@ def test_apply_quality_uplift_sets_minimax_model(monkeypatch, tmp_path):
     assert calls["synth"]["preferred_provider"] == "minimax"
     assert calls["synth"]["minimax_model"] == "MiniMax-M2.5"
     assert data["synthesizer"]["minimax_model"] == "MiniMax-M2.5"
+
+
+def test_read_json_supports_bom_encoded_file(tmp_path):
+    """_read_json must parse a UTF-8-BOM-prefixed JSON file correctly."""
+    p = tmp_path / "prefs.json"
+    p.write_text(json.dumps({"memory_mode": "replay"}), encoding="utf-8-sig")
+    result = prefs._read_json(p)
+    assert result["memory_mode"] == "replay"
+
+
+def test_read_json_corrupt_json_returns_empty_without_double_read(tmp_path):
+    """Corrupt JSON must return {} and must NOT trigger the utf-8 retry (reads file once)."""
+    from pathlib import Path
+    from unittest.mock import patch
+
+    p = tmp_path / "prefs.json"
+    p.write_text("{bad json!!!", encoding="utf-8")
+
+    read_count = [0]
+    original_read = Path.read_text
+
+    def counted_read(self, *args, **kwargs):
+        if self.name == "prefs.json":
+            read_count[0] += 1
+        return original_read(self, *args, **kwargs)
+
+    with patch.object(Path, "read_text", counted_read):
+        result = prefs._read_json(p)
+
+    assert result == {}, f"Expected empty dict for corrupt JSON; got {result!r}"
+    assert read_count[0] == 1, (
+        f"prefs.json was read {read_count[0]} time(s); expected 1. "
+        "JSONDecodeError must not trigger the pointless utf-8 retry."
+    )
