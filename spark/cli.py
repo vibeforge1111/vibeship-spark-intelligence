@@ -109,6 +109,7 @@ from lib.capture_cli import format_pending
 from lib.memory_migrate import migrate as migrate_memory
 from lib.personality_evolver import load_personality_evolver
 from lib.doctor import run_doctor, format_doctor_human
+from lib.onboard import run_onboard, show_onboard_status, reset_onboard
 
 # Chips imports (lazy to avoid startup cost if not used)
 def _get_chips_registry():
@@ -493,6 +494,48 @@ def cmd_doctor(args):
         sys.exit(0)
     elif repair and result.repaired_count > 0:
         sys.exit(3)
+    else:
+        sys.exit(1)
+
+
+def cmd_onboard(args):
+    """First-time onboarding wizard."""
+    use_json = getattr(args, "json", False)
+    subcmd = getattr(args, "onboard_cmd", None)
+
+    if subcmd == "status":
+        result = show_onboard_status()
+        if use_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"\n  Onboarding: {result.get('status', 'unknown')}")
+            if result.get("progress"):
+                print(f"  Progress: {result['progress']}")
+            if result.get("agent"):
+                print(f"  Agent: {result['agent']}")
+            print()
+        return
+
+    if subcmd == "reset":
+        result = reset_onboard()
+        if use_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"\n  {result['message']}\n")
+        return
+
+    # Main onboard flow
+    agent = getattr(args, "agent", "") or ""
+    quick = getattr(args, "quick", False)
+    auto_yes = getattr(args, "yes", False)
+
+    result = run_onboard(agent=agent, quick=quick, auto_yes=auto_yes, use_json=use_json)
+
+    if use_json:
+        print(json.dumps(result, indent=2))
+
+    if result.get("ok"):
+        sys.exit(0)
     else:
         sys.exit(1)
 
@@ -2707,6 +2750,16 @@ Examples:
     doctor_parser.add_argument("--repair", "--fix", action="store_true", help="Attempt safe auto-repair of issues")
     doctor_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
 
+    # onboard - first-time wizard
+    onboard_parser = subparsers.add_parser("onboard", help="First-time onboarding wizard")
+    onboard_parser.add_argument("--agent", choices=["claude", "cursor", "openclaw"], help="Agent type for hook setup")
+    onboard_parser.add_argument("--quick", action="store_true", help="Non-interactive fast path (lite mode)")
+    onboard_parser.add_argument("--yes", "-y", action="store_true", help="Auto-confirm prompts")
+    onboard_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+    onboard_sub = onboard_parser.add_subparsers(dest="onboard_cmd")
+    onboard_sub.add_parser("status", help="Show onboarding progress")
+    onboard_sub.add_parser("reset", help="Reset onboarding state")
+
     # events
     events_parser = subparsers.add_parser("events", help="Show recent events")
     events_parser.add_argument("--limit", "-n", type=int, default=20, help="Number to show")
@@ -3089,6 +3142,7 @@ Examples:
         "decay": cmd_decay,
         "health": cmd_health,
         "doctor": cmd_doctor,
+        "onboard": cmd_onboard,
         "events": cmd_events,
         "opportunities": cmd_opportunities,
         "advisory": cmd_advisory,
