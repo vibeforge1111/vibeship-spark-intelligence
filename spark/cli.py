@@ -2970,37 +2970,40 @@ def main():
         description="Spark CLI - Self-evolving intelligence layer",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Commands:
+Getting Started:
+  onboard     First-time setup wizard (start here!)
+  run         Start services + health check in one step
+  doctor      Diagnose and repair system issues
+  health      Quick health check (5 subsystems)
   status      Show overall system status
-  services    Show daemon/service status
+
+Services:
   up          Start background services
-  ensure      Start missing services if not running
   down        Stop background services
-  sync        Sync cognitive insights to Mind
-  queue       Process offline queue
-  process     Run bridge worker cycle or drain backlog
-  validate    Run validation scan on recent events
+  services    Show daemon/service status
+  logs        View service logs (--service, --tail, --since)
+
+Configuration:
+  config      Get/set/diff tuneables (config get advisor.max_items)
+  advisory    Configure advisory preferences
+
+Intelligence:
   learnings   Show recent cognitive insights
   promote     Run promotion check
-  write       Write learnings to markdown files
-  health      Run health check
-  events      Show recent events from queue
-  capture     Memory capture suggestions (portable)
+  capture     Memory capture suggestions
+  process     Run bridge worker cycle / drain backlog
 
 Examples:
-  spark status
-  spark services
-  spark up --sync-context
-  spark sync
-  spark promote --dry-run
-  spark learnings --limit 20
-  spark capture --list
-  spark capture --accept <id>
-  spark advisory
-  spark advisory on
-  spark advisory doctor
-  spark advisory repair
-  spark advisory quality --profile enhanced
+  spark onboard                         # First-time setup
+  spark run                             # Start everything + health check
+  spark doctor --deep                   # Full diagnostics
+  spark health --json                   # Machine-readable health
+  spark config get meta_ralph.quality_threshold
+  spark config diff                     # Runtime vs versioned config
+  spark logs -s sparkd --tail 100       # Last 100 sparkd log lines
+  spark services --json                 # Service status as JSON
+  spark advisory doctor                 # Advisory system diagnostics
+  spark learnings --limit 20            # Recent learnings
 """
     )
     
@@ -3018,28 +3021,86 @@ Examples:
         p.add_argument("--sync-context", action="store_true", help="run sync-context after start")
         p.add_argument("--project", "-p", default=None, help="project root for sync-context")
 
+    # === GETTING STARTED (beginner-first) ===
+
+    # onboard - first-time wizard
+    onboard_parser = subparsers.add_parser("onboard", help="First-time setup wizard (start here!)")
+    onboard_parser.add_argument("--agent", choices=["claude", "cursor", "openclaw"], help="Agent type for hook setup")
+    onboard_parser.add_argument("--quick", action="store_true", help="Non-interactive fast path (lite mode)")
+    onboard_parser.add_argument("--yes", "-y", action="store_true", help="Auto-confirm prompts")
+    onboard_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+    onboard_sub = onboard_parser.add_subparsers(dest="onboard_cmd")
+    onboard_sub.add_parser("status", help="Show onboarding progress")
+    onboard_sub.add_parser("reset", help="Reset onboarding state")
+
+    # run - convenience start + health + sync
+    run_parser = subparsers.add_parser("run", help="Start services + health check in one step")
+    run_parser.add_argument("--lite", action="store_true", help="Lite mode (sparkd + bridge only)")
+    run_parser.add_argument("--no-sync", dest="sync", action="store_false", help="Skip context sync step")
+    run_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    # doctor - comprehensive diagnostics and repair
+    doctor_parser = subparsers.add_parser("doctor", help="Diagnose and repair system issues")
+    doctor_parser.add_argument("--deep", action="store_true", help="Run deep checks (port conflicts, recent events)")
+    doctor_parser.add_argument("--repair", "--fix", action="store_true", help="Attempt safe auto-repair of issues")
+    doctor_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    # health
+    health_parser = subparsers.add_parser("health", help="Quick health check (5 subsystems)")
+    health_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
     # status
     subparsers.add_parser("status", help="Show overall system status")
+
+    # === SERVICES ===
+
+    # up
+    up_parser = subparsers.add_parser("up", help="Start background services")
+    _add_up_args(up_parser)
+
+    # down
+    subparsers.add_parser("down", help="Stop background services")
 
     # services
     services_parser = subparsers.add_parser("services", help="Show daemon/service status")
     services_parser.add_argument("--bridge-stale-s", type=int, default=90, help="bridge_worker stale threshold (seconds)")
     services_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
 
-    # up
-    up_parser = subparsers.add_parser("up", help="Start background services")
-    _add_up_args(up_parser)
-
     # ensure
     ensure_parser = subparsers.add_parser("ensure", help="Start missing services if not running")
     _add_up_args(ensure_parser)
 
-    # down
-    subparsers.add_parser("down", help="Stop background services")
-    
+    # logs - unified log access
+    logs_parser = subparsers.add_parser("logs", help="View service logs")
+    logs_parser.add_argument("--service", "-s", choices=["sparkd", "bridge_worker", "mind", "pulse", "watchdog", "scheduler"],
+                             help="Show logs for specific service")
+    logs_parser.add_argument("--tail", "-n", type=int, default=50, help="Number of lines to show (default: 50)")
+    logs_parser.add_argument("--follow", "-f", action="store_true", help="Follow log output (live tail)")
+    logs_parser.add_argument("--since", help="Show logs since time (e.g., 1h, 30m, 2d)")
+    logs_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    # === CONFIGURATION ===
+
+    # config - tuneables management
+    config_parser = subparsers.add_parser("config", help="Get/set/diff tuneables configuration")
+    config_sub = config_parser.add_subparsers(dest="config_cmd")
+    config_get = config_sub.add_parser("get", help="Get a config value by dot-path (e.g., advisor.max_emit)")
+    config_get.add_argument("key", help="Dot-path key (e.g., meta_ralph.quality_threshold)")
+    config_set = config_sub.add_parser("set", help="Set a config value")
+    config_set.add_argument("key", help="Dot-path key")
+    config_set.add_argument("value", help="Value to set (auto-parsed: numbers, booleans, JSON)")
+    config_unset = config_sub.add_parser("unset", help="Remove a key from runtime config")
+    config_unset.add_argument("key", help="Dot-path key to remove")
+    config_sub.add_parser("validate", help="Validate runtime config against known sections")
+    config_sub.add_parser("diff", help="Show differences between runtime and versioned config")
+    config_show = config_sub.add_parser("show", help="Show full runtime config")
+    config_show.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    # === INTELLIGENCE ===
+
     # sync
     subparsers.add_parser("sync", help="Sync insights to Mind")
-    
+
     # queue
     subparsers.add_parser("queue", help="Process offline queue")
 
@@ -3056,16 +3117,16 @@ Examples:
     # validate
     validate_parser = subparsers.add_parser("validate", help="Run validation scan on recent events")
     validate_parser.add_argument("--limit", "-n", type=int, default=200, help="Events to scan")
-    
+
     # learnings
     learnings_parser = subparsers.add_parser("learnings", help="Show recent learnings")
     learnings_parser.add_argument("--limit", "-n", type=int, default=10, help="Number to show")
-    
+
     # promote
     promote_parser = subparsers.add_parser("promote", help="Run promotion check")
     promote_parser.add_argument("--dry-run", action="store_true", help="Don't actually promote")
     promote_parser.add_argument("--no-project", action="store_true", help="Skip PROJECT.md update")
-    
+
     # write
     subparsers.add_parser("write", help="Write learnings to markdown")
 
@@ -3084,56 +3145,6 @@ Examples:
     decay.add_argument("--min-effective", type=float, default=0.2, help="Min effective reliability to keep")
     decay.add_argument("--limit", type=int, default=20, help="Max candidates to show in dry-run")
     decay.add_argument("--apply", action="store_true", help="Actually prune stale insights")
-
-    # health
-    health_parser = subparsers.add_parser("health", help="Health check")
-    health_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
-
-    # doctor - comprehensive diagnostics and repair
-    doctor_parser = subparsers.add_parser("doctor", help="Comprehensive system diagnostics and optional repair")
-    doctor_parser.add_argument("--deep", action="store_true", help="Run deep checks (port conflicts, recent events)")
-    doctor_parser.add_argument("--repair", "--fix", action="store_true", help="Attempt safe auto-repair of issues")
-    doctor_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
-
-    # onboard - first-time wizard
-    onboard_parser = subparsers.add_parser("onboard", help="First-time onboarding wizard")
-    onboard_parser.add_argument("--agent", choices=["claude", "cursor", "openclaw"], help="Agent type for hook setup")
-    onboard_parser.add_argument("--quick", action="store_true", help="Non-interactive fast path (lite mode)")
-    onboard_parser.add_argument("--yes", "-y", action="store_true", help="Auto-confirm prompts")
-    onboard_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
-    onboard_sub = onboard_parser.add_subparsers(dest="onboard_cmd")
-    onboard_sub.add_parser("status", help="Show onboarding progress")
-    onboard_sub.add_parser("reset", help="Reset onboarding state")
-
-    # logs - unified log access
-    logs_parser = subparsers.add_parser("logs", help="View service logs")
-    logs_parser.add_argument("--service", "-s", choices=["sparkd", "bridge_worker", "mind", "pulse", "watchdog", "scheduler"],
-                             help="Show logs for specific service")
-    logs_parser.add_argument("--tail", "-n", type=int, default=50, help="Number of lines to show (default: 50)")
-    logs_parser.add_argument("--follow", "-f", action="store_true", help="Follow log output (live tail)")
-    logs_parser.add_argument("--since", help="Show logs since time (e.g., 1h, 30m, 2d)")
-    logs_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
-
-    # config - tuneables management
-    config_parser = subparsers.add_parser("config", help="Get, set, or inspect tuneables configuration")
-    config_sub = config_parser.add_subparsers(dest="config_cmd")
-    config_get = config_sub.add_parser("get", help="Get a config value by dot-path (e.g., advisor.max_emit)")
-    config_get.add_argument("key", help="Dot-path key (e.g., meta_ralph.quality_threshold)")
-    config_set = config_sub.add_parser("set", help="Set a config value")
-    config_set.add_argument("key", help="Dot-path key")
-    config_set.add_argument("value", help="Value to set (auto-parsed: numbers, booleans, JSON)")
-    config_unset = config_sub.add_parser("unset", help="Remove a key from runtime config")
-    config_unset.add_argument("key", help="Dot-path key to remove")
-    config_sub.add_parser("validate", help="Validate runtime config against known sections")
-    config_sub.add_parser("diff", help="Show differences between runtime and versioned config")
-    config_show = config_sub.add_parser("show", help="Show full runtime config")
-    config_show.add_argument("--json", action="store_true", help="Machine-readable JSON output")
-
-    # run - convenience start + health + sync
-    run_parser = subparsers.add_parser("run", help="Start services, run health check, sync context")
-    run_parser.add_argument("--lite", action="store_true", help="Lite mode (sparkd + bridge only)")
-    run_parser.add_argument("--no-sync", dest="sync", action="store_false", help="Skip context sync step")
-    run_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
 
     # events
     events_parser = subparsers.add_parser("events", help="Show recent events")
