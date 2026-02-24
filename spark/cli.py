@@ -613,6 +613,242 @@ def _line_after(line: str, cutoff: float) -> bool:
     return True
 
 
+def cmd_config(args):
+    """Get, set, or inspect tuneables configuration."""
+    runtime_path = Path.home() / ".spark" / "tuneables.json"
+    versioned_path = Path(__file__).resolve().parent.parent / "config" / "tuneables.json"
+
+    def _load_json(p):
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8-sig"))
+        return {}
+
+    def _resolve_dot(data, key):
+        """Resolve dot-path like 'advisor.max_emit' -> nested value."""
+        parts = key.split(".")
+        cur = data
+        for part in parts:
+            if isinstance(cur, dict) and part in cur:
+                cur = cur[part]
+            else:
+                return None, False
+        return cur, True
+
+    def _set_dot(data, key, value):
+        """Set a value at dot-path, creating intermediate dicts."""
+        parts = key.split(".")
+        cur = data
+        for part in parts[:-1]:
+            if part not in cur or not isinstance(cur[part], dict):
+                cur[part] = {}
+            cur = cur[part]
+        cur[parts[-1]] = value
+
+    def _del_dot(data, key):
+        """Delete a value at dot-path. Returns True if found."""
+        parts = key.split(".")
+        cur = data
+        for part in parts[:-1]:
+            if isinstance(cur, dict) and part in cur:
+                cur = cur[part]
+            else:
+                return False
+        if isinstance(cur, dict) and parts[-1] in cur:
+            del cur[parts[-1]]
+            return True
+        return False
+
+    sub = getattr(args, "config_cmd", None)
+
+    if sub == "get":
+        key = args.key
+        runtime = _load_json(runtime_path)
+        val, found = _resolve_dot(runtime, key)
+        if not found:
+            # Fall back to versioned defaults
+            versioned = _load_json(versioned_path)
+            val, found = _resolve_dot(versioned, key)
+        if not found:
+            print(f"  Key not found: {key}")
+            sys.exit(1)
+        if isinstance(val, (dict, list)):
+            print(json.dumps(val, indent=2))
+        else:
+            print(val)
+
+    elif sub == "set":
+        key = args.key
+        raw = args.value
+        # Auto-parse types
+        try:
+            value = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            value = raw
+
+        runtime = _load_json(runtime_path)
+        # Backup before write
+        if runtime_path.exists():
+            backup = runtime_path.with_suffix(".json.bak")
+            backup.write_text(runtime_path.read_text(encoding="utf-8"), encoding="utf-8")
+        _set_dot(runtime, key, value)
+        runtime_path.parent.mkdir(parents=True, exist_ok=True)
+        runtime_path.write_text(json.dumps(runtime, indent=2), encoding="utf-8")
+        print(f"  {key} = {json.dumps(value)}")
+        print(f"  Saved to {runtime_path}")
+
+    elif sub == "unset":
+        key = args.key
+        runtime = _load_json(runtime_path)
+        if not _del_dot(runtime, key):
+            print(f"  Key not found in runtime config: {key}")
+            sys.exit(1)
+        # Backup before write
+        backup = runtime_path.with_suffix(".json.bak")
+        if runtime_path.exists():
+            backup.write_text(runtime_path.read_text(encoding="utf-8"), encoding="utf-8")
+        runtime_path.write_text(json.dumps(runtime, indent=2), encoding="utf-8")
+        print(f"  Removed: {key}")
+
+    elif sub == "validate":
+        runtime = _load_json(runtime_path)
+        versioned = _load_json(versioned_path)
+        known_sections = set(versioned.keys())
+        runtime_sections = set(runtime.keys())
+        unknown = runtime_sections - known_sections
+        errors = []
+        if unknown:
+            errors.append(f"Unknown sections in runtime: {', '.join(sorted(unknown))}")
+        if errors:
+            print("  Validation issues:")
+            for e in errors:
+                print(f"    - {e}")
+            sys.exit(1)
+        else:
+            print(f"  Config valid ({len(runtime_sections)} sections, {len(known_sections)} known)")
+
+    elif sub == "diff":
+        runtime = _load_json(runtime_path)
+        versioned = _load_json(versioned_path)
+        diffs = []
+        for section in sorted(set(list(runtime.keys()) + list(versioned.keys()))):
+            r_val = runtime.get(section, {})
+            v_val = versioned.get(section, {})
+            if not isinstance(r_val, dict) or not isinstance(v_val, dict):
+                if r_val != v_val:
+                    diffs.append((section, v_val, r_val))
+                continue
+            for key in sorted(set(list(r_val.keys()) + list(v_val.keys()))):
+                rv = r_val.get(key)
+                vv = v_val.get(key)
+                if rv != vv:
+                    diffs.append((f"{section}.{key}", vv, rv))
+        if not diffs:
+            print("  No differences between runtime and versioned config.")
+        else:
+            print(f"  {len(diffs)} difference(s):")
+            for path, ver, run in diffs:
+                ver_s = json.dumps(ver) if ver is not None else "(missing)"
+                run_s = json.dumps(run) if run is not None else "(missing)"
+                print(f"    {path}")
+                print(f"      versioned: {ver_s}")
+                print(f"      runtime:   {run_s}")
+
+    elif sub == "show":
+        runtime = _load_json(runtime_path)
+        if getattr(args, "json", False):
+            print(json.dumps(runtime, indent=2))
+        else:
+            print(f"  Runtime config: {runtime_path}")
+            print(f"  Versioned config: {versioned_path}")
+            print(f"  Sections: {', '.join(sorted(runtime.keys())) if runtime else '(empty)'}")
+            for section in sorted(runtime.keys()):
+                vals = runtime[section]
+                if isinstance(vals, dict):
+                    print(f"\n  [{section}] ({len(vals)} keys)")
+                    for k, v in sorted(vals.items()):
+                        print(f"    {k} = {json.dumps(v)}")
+                else:
+                    print(f"\n  [{section}] = {json.dumps(vals)}")
+
+    else:
+        # Default: show summary
+        runtime = _load_json(runtime_path)
+        print(f"  Runtime: {runtime_path} ({'exists' if runtime_path.exists() else 'not found'})")
+        print(f"  Versioned: {versioned_path} ({'exists' if versioned_path.exists() else 'not found'})")
+        if runtime:
+            print(f"  Sections: {', '.join(sorted(runtime.keys()))}")
+        print("  Use: spark config get <key> | set <key> <value> | unset <key> | diff | validate | show")
+
+
+def cmd_run(args):
+    """Convenience wrapper: start services, run health check, optionally sync context."""
+    use_json = getattr(args, "json", False)
+    steps = []
+
+    # Step 1: Start services
+    if not use_json:
+        print("\n  [1/3] Starting services...")
+    lite_env = os.environ.get("SPARK_LITE", "").lower() in ("1", "true", "yes")
+    lite = bool(getattr(args, "lite", False)) or lite_env
+    try:
+        results = start_services(
+            include_mind=not lite,
+            include_pulse=not lite,
+            include_watchdog=not lite,
+        )
+        steps.append({"step": "services", "ok": True, "detail": results})
+        if not use_json:
+            for name, result in results.items():
+                print(f"    {name}: {result}")
+    except Exception as e:
+        steps.append({"step": "services", "ok": False, "error": str(e)})
+        if not use_json:
+            print(f"    Error starting services: {e}")
+
+    # Step 2: Health check
+    if not use_json:
+        print("  [2/3] Running health check...")
+    try:
+        from lib.doctor import run_doctor
+        doc_result = run_doctor(deep=False)
+        ok = doc_result.ok
+        issues = [c.message for c in doc_result.checks if c.status in ("FAIL", "WARN")]
+        steps.append({"step": "health", "ok": ok, "issues": issues})
+        if not use_json:
+            status_icon = "[+]" if ok else "[!]"
+            print(f"    {status_icon} {'Healthy' if ok else f'{len(issues)} issue(s)'}")
+            for iss in issues[:3]:
+                print(f"      - {iss}")
+    except Exception as e:
+        steps.append({"step": "health", "ok": False, "error": str(e)})
+        if not use_json:
+            print(f"    Error running health check: {e}")
+
+    # Step 3: Sync context (optional)
+    if getattr(args, "sync", True):
+        if not use_json:
+            print("  [3/3] Syncing context...")
+        try:
+            project_dir = Path.cwd()
+            sync_context(project_dir=project_dir)
+            steps.append({"step": "sync_context", "ok": True, "project": str(project_dir)})
+            if not use_json:
+                print(f"    Synced: {project_dir}")
+        except Exception as e:
+            steps.append({"step": "sync_context", "ok": False, "error": str(e)})
+            if not use_json:
+                print(f"    Error syncing: {e}")
+    else:
+        steps.append({"step": "sync_context", "ok": True, "skipped": True})
+
+    all_ok = all(s["ok"] for s in steps)
+    if use_json:
+        print(json.dumps({"ok": all_ok, "steps": steps}, indent=2))
+    else:
+        print(f"\n  {'Ready!' if all_ok else 'Started with issues — run spark doctor for details.'}\n")
+    sys.exit(0 if all_ok else 1)
+
+
 def cmd_services(args):
     """Show daemon/service status."""
     status = service_status(bridge_stale_s=args.bridge_stale_s)
@@ -2841,6 +3077,27 @@ Examples:
     logs_parser.add_argument("--follow", "-f", action="store_true", help="Follow log output (live tail)")
     logs_parser.add_argument("--since", help="Show logs since time (e.g., 1h, 30m, 2d)")
 
+    # config - tuneables management
+    config_parser = subparsers.add_parser("config", help="Get, set, or inspect tuneables configuration")
+    config_sub = config_parser.add_subparsers(dest="config_cmd")
+    config_get = config_sub.add_parser("get", help="Get a config value by dot-path (e.g., advisor.max_emit)")
+    config_get.add_argument("key", help="Dot-path key (e.g., meta_ralph.quality_threshold)")
+    config_set = config_sub.add_parser("set", help="Set a config value")
+    config_set.add_argument("key", help="Dot-path key")
+    config_set.add_argument("value", help="Value to set (auto-parsed: numbers, booleans, JSON)")
+    config_unset = config_sub.add_parser("unset", help="Remove a key from runtime config")
+    config_unset.add_argument("key", help="Dot-path key to remove")
+    config_sub.add_parser("validate", help="Validate runtime config against known sections")
+    config_sub.add_parser("diff", help="Show differences between runtime and versioned config")
+    config_show = config_sub.add_parser("show", help="Show full runtime config")
+    config_show.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    # run - convenience start + health + sync
+    run_parser = subparsers.add_parser("run", help="Start services, run health check, sync context")
+    run_parser.add_argument("--lite", action="store_true", help="Lite mode (sparkd + bridge only)")
+    run_parser.add_argument("--no-sync", dest="sync", action="store_false", help="Skip context sync step")
+    run_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
     # events
     events_parser = subparsers.add_parser("events", help="Show recent events")
     events_parser.add_argument("--limit", "-n", type=int, default=20, help="Number to show")
@@ -3225,6 +3482,8 @@ Examples:
         "doctor": cmd_doctor,
         "onboard": cmd_onboard,
         "logs": cmd_logs,
+        "config": cmd_config,
+        "run": cmd_run,
         "events": cmd_events,
         "opportunities": cmd_opportunities,
         "advisory": cmd_advisory,
