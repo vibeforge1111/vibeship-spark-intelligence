@@ -494,7 +494,7 @@ def cmd_health(args):
 def cmd_doctor(args):
     """Comprehensive system diagnostics and optional repair."""
     deep = getattr(args, "deep", False)
-    repair = getattr(args, "repair", False) or getattr(args, "fix", False)
+    repair = getattr(args, "repair", False)
     use_json = getattr(args, "json", False)
 
     result = run_doctor(deep=deep, repair=repair)
@@ -521,6 +521,8 @@ def cmd_onboard(args):
     if subcmd == "status":
         result = show_onboard_status()
         if use_json:
+            result.setdefault("ok", True)
+            result.setdefault("command", "onboard status")
             print(json.dumps(result, indent=2))
         else:
             print(f"\n  Onboarding: {result.get('status', 'unknown')}")
@@ -534,6 +536,8 @@ def cmd_onboard(args):
     if subcmd == "reset":
         result = reset_onboard()
         if use_json:
+            result.setdefault("ok", True)
+            result.setdefault("command", "onboard reset")
             print(json.dumps(result, indent=2))
         else:
             print(f"\n  {result['message']}\n")
@@ -636,9 +640,33 @@ def _parse_since(since_str: str) -> float | None:
 
 
 def _line_after(line: str, cutoff: float) -> bool:
-    """Heuristic: check if a log line timestamp is after cutoff."""
-    # Most Spark logs use ISO-style or epoch timestamps
-    # Just include all lines if we can't parse — safer than dropping
+    """Heuristic: check if a log line timestamp is after cutoff.
+
+    Most Spark service logs do not include timestamps in a consistent format,
+    so we attempt a few common patterns and default to including the line
+    if we cannot parse it (safer than silently dropping content).
+    """
+    import re
+    # Try ISO-style: 2026-02-24T12:34:56 or 2026-02-24 12:34:56
+    m = re.match(r"(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})", line)
+    if m:
+        try:
+            from datetime import datetime, timezone
+            dt = datetime.fromisoformat(m.group(1)).replace(tzinfo=timezone.utc)
+            return dt.timestamp() >= cutoff
+        except (ValueError, OSError):
+            pass
+    # Try epoch float at start of line
+    m = re.match(r"^(\d{10,13}(?:\.\d+)?)\b", line)
+    if m:
+        try:
+            ts = float(m.group(1))
+            if ts > 1e12:  # milliseconds
+                ts /= 1000
+            return ts >= cutoff
+        except (ValueError, OverflowError):
+            pass
+    # Cannot parse — include the line
     return True
 
 
@@ -785,7 +813,7 @@ def cmd_config(args):
     elif sub == "show":
         runtime = _load_json(runtime_path)
         if getattr(args, "json", False):
-            print(json.dumps(runtime, indent=2))
+            print(json.dumps({"ok": True, "command": "config", "config": runtime}, indent=2))
         else:
             print(f"  Runtime config: {runtime_path}")
             print(f"  Versioned config: {versioned_path}")
@@ -841,8 +869,8 @@ def cmd_run(args):
         from lib.doctor import run_doctor
         doc_result = run_doctor(deep=False)
         ok = doc_result.ok
-        issues = [c.message for c in doc_result.checks if c.status in ("FAIL", "WARN")]
-        steps.append({"step": "health", "ok": ok, "issues": issues})
+        issues = [c.message for c in doc_result.checks if c.status in ("fail", "warn")]
+        steps.append({"step": "health", "ok": ok, "command": "run", "issues": issues})
         if not use_json:
             status_icon = "[+]" if ok else "[!]"
             print(f"    {status_icon} {'Healthy' if ok else f'{len(issues)} issue(s)'}")
@@ -872,7 +900,7 @@ def cmd_run(args):
 
     all_ok = all(s["ok"] for s in steps)
     if use_json:
-        print(json.dumps({"ok": all_ok, "steps": steps}, indent=2))
+        print(json.dumps({"ok": all_ok, "command": "run", "steps": steps}, indent=2))
     else:
         print(f"\n  {'Ready!' if all_ok else 'Started with issues — run spark doctor for details.'}\n")
     sys.exit(0 if all_ok else 1)

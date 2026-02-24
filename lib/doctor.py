@@ -20,14 +20,11 @@ from __future__ import annotations
 
 import json
 import os
-import platform
 import shutil
-import subprocess
 import sys
 import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Optional
 
 # ── Spark imports (lazy where possible to keep startup fast) ──
 
@@ -334,7 +331,7 @@ def _check_queue(result: DoctorResult):
         from lib.queue import get_queue_stats
         stats = get_queue_stats()
         count = stats.get("event_count", 0)
-        size_mb = stats.get("file_size_bytes", 0) / (1024 * 1024)
+        size_mb = stats.get("size_mb", 0) or (stats.get("size_bytes", 0) / (1024 * 1024))
 
         if count > 0:
             result.add(Check(

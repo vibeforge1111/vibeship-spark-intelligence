@@ -27,8 +27,6 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
-from lib.doctor import run_doctor, Check, DoctorResult
-
 SPARK_DIR = Path.home() / ".spark"
 STATE_FILE = SPARK_DIR / "onboarding_state.json"
 
