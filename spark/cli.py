@@ -108,6 +108,7 @@ from lib.memory_capture import (
 from lib.capture_cli import format_pending
 from lib.memory_migrate import migrate as migrate_memory
 from lib.personality_evolver import load_personality_evolver
+from lib.doctor import run_doctor, format_doctor_human
 
 # Chips imports (lazy to avoid startup cost if not used)
 def _get_chips_registry():
@@ -472,6 +473,28 @@ def cmd_health(args):
         print(f"? Learnings Dir: Will be created on first write")
     
     print()
+
+
+def cmd_doctor(args):
+    """Comprehensive system diagnostics and optional repair."""
+    deep = getattr(args, "deep", False)
+    repair = getattr(args, "repair", False) or getattr(args, "fix", False)
+    use_json = getattr(args, "json", False)
+
+    result = run_doctor(deep=deep, repair=repair)
+
+    if use_json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        print(format_doctor_human(result))
+
+    # Exit codes per blueprint: 0=healthy, 1=issues, 3=partial repair
+    if result.ok:
+        sys.exit(0)
+    elif repair and result.repaired_count > 0:
+        sys.exit(3)
+    else:
+        sys.exit(1)
 
 
 def cmd_services(args):
@@ -2677,7 +2700,13 @@ Examples:
 
     # health
     subparsers.add_parser("health", help="Health check")
-    
+
+    # doctor - comprehensive diagnostics and repair
+    doctor_parser = subparsers.add_parser("doctor", help="Comprehensive system diagnostics and optional repair")
+    doctor_parser.add_argument("--deep", action="store_true", help="Run deep checks (port conflicts, recent events)")
+    doctor_parser.add_argument("--repair", "--fix", action="store_true", help="Attempt safe auto-repair of issues")
+    doctor_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
     # events
     events_parser = subparsers.add_parser("events", help="Show recent events")
     events_parser.add_argument("--limit", "-n", type=int, default=20, help="Number to show")
@@ -3059,6 +3088,7 @@ Examples:
         "sync-context": cmd_sync_context,
         "decay": cmd_decay,
         "health": cmd_health,
+        "doctor": cmd_doctor,
         "events": cmd_events,
         "opportunities": cmd_opportunities,
         "advisory": cmd_advisory,
