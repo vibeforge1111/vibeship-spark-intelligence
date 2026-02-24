@@ -436,44 +436,59 @@ def cmd_decay(args):
 
 def cmd_health(args):
     """Health check."""
-    print("\nðŸ¥ Health Check\n")
-    
+    use_json = getattr(args, "json", False)
+    checks = []
+
     # Check cognitive learner
     try:
         cognitive = get_cognitive_learner()
-        print("âœ“ Cognitive Learner: OK")
+        checks.append({"name": "cognitive_learner", "ok": True})
     except Exception as e:
-        print(f"âœ— Cognitive Learner: {e}")
-    
+        checks.append({"name": "cognitive_learner", "ok": False, "error": str(e)})
+
     # Check Mind connection
-    bridge = get_mind_bridge()
-    if bridge._check_mind_health():
-        print("âœ“ Mind API: OK")
-    else:
-        print("âœ— Mind API: Not available (will queue offline)")
-    
+    try:
+        bridge = get_mind_bridge()
+        mind_ok = bridge._check_mind_health()
+        checks.append({"name": "mind_api", "ok": mind_ok})
+    except Exception as e:
+        checks.append({"name": "mind_api", "ok": False, "error": str(e)})
+
     # Check queue
     try:
         stats = get_queue_stats()
-        print(f"âœ“ Event Queue: OK ({stats['event_count']} events)")
+        checks.append({"name": "event_queue", "ok": True, "events": stats["event_count"]})
     except Exception as e:
-        print(f"âœ— Event Queue: {e}")
-    
+        checks.append({"name": "event_queue", "ok": False, "error": str(e)})
+
     # Check bridge worker heartbeat
     hb_age = bridge_heartbeat_age_s()
-    if hb_age is None:
-        print("Ã¢Å¡Â  bridge_worker: No heartbeat (start bridge_worker)")
-    else:
-        print(f"Ã¢Å“â€œ bridge_worker: heartbeat {int(hb_age)}s ago")
+    bridge_ok = hb_age is not None and hb_age <= 90
+    checks.append({"name": "bridge_worker", "ok": bridge_ok, "heartbeat_age_s": int(hb_age) if hb_age else None})
 
     # Check learnings dir
     writer = get_markdown_writer()
-    if writer.learnings_dir.exists():
-        print(f"âœ“ Learnings Dir: OK ({writer.learnings_dir})")
+    checks.append({"name": "learnings_dir", "ok": writer.learnings_dir.exists(), "path": str(writer.learnings_dir)})
+
+    all_ok = all(c["ok"] for c in checks)
+
+    if use_json:
+        print(json.dumps({"ok": all_ok, "command": "health", "checks": checks}, indent=2))
     else:
-        print(f"? Learnings Dir: Will be created on first write")
-    
-    print()
+        print("\n  Health Check\n")
+        for c in checks:
+            icon = "[+]" if c["ok"] else "[X]"
+            detail = ""
+            if c.get("events"):
+                detail = f" ({c['events']} events)"
+            if c.get("heartbeat_age_s") is not None:
+                detail = f" ({c['heartbeat_age_s']}s ago)"
+            if c.get("error"):
+                detail = f" - {c['error']}"
+            print(f"  {icon} {c['name']}{detail}")
+        print()
+
+    sys.exit(0 if all_ok else 1)
 
 
 def cmd_doctor(args):
@@ -542,14 +557,18 @@ def cmd_onboard(args):
 
 def cmd_logs(args):
     """View service logs."""
+    use_json = getattr(args, "json", False)
     log_dir = Path(os.environ.get("SPARK_LOG_DIR", Path.home() / ".spark" / "logs"))
     service = getattr(args, "service", None)
     tail_n = getattr(args, "tail", 50)
     follow = getattr(args, "follow", False)
 
     if not log_dir.exists():
-        print(f"  No log directory found at {log_dir}")
-        print("  Start services first: spark up")
+        if use_json:
+            print(json.dumps({"ok": False, "error": f"No log directory at {log_dir}"}, indent=2))
+        else:
+            print(f"  No log directory found at {log_dir}")
+            print("  Start services first: spark up")
         sys.exit(1)
 
     # Determine which files to read
@@ -559,18 +578,24 @@ def cmd_logs(args):
         targets = sorted(log_dir.glob("*.log"), key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
 
     if not targets:
-        print("  No log files found.")
+        if use_json:
+            print(json.dumps({"ok": True, "logs": []}, indent=2))
+        else:
+            print("  No log files found.")
         sys.exit(0)
 
+    json_logs = []
     for log_file in targets:
         if not log_file.exists():
-            print(f"  [{log_file.stem}] No log file")
+            if not use_json:
+                print(f"  [{log_file.stem}] No log file")
             continue
 
         try:
             lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
         except Exception as e:
-            print(f"  [{log_file.stem}] Error reading: {e}")
+            if not use_json:
+                print(f"  [{log_file.stem}] Error reading: {e}")
             continue
 
         # Apply --since filter
@@ -584,15 +609,19 @@ def cmd_logs(args):
         if tail_n and len(lines) > tail_n:
             lines = lines[-tail_n:]
 
-        if lines:
+        if use_json:
+            json_logs.append({"service": log_file.stem, "lines": lines, "count": len(lines)})
+        elif lines:
             print(f"\n  === {log_file.stem} ({len(lines)} lines) ===")
             for line in lines:
                 print(f"  {line}")
 
-    if follow:
-        print("\n  [--follow is not yet implemented — showing latest snapshot]")
-
-    print()
+    if use_json:
+        print(json.dumps({"ok": True, "command": "logs", "logs": json_logs}, indent=2))
+    else:
+        if follow:
+            print("\n  [--follow is not yet implemented -- showing latest snapshot]")
+        print()
 
 
 def _parse_since(since_str: str) -> float | None:
@@ -851,11 +880,16 @@ def cmd_run(args):
 
 def cmd_services(args):
     """Show daemon/service status."""
+    use_json = getattr(args, "json", False)
     status = service_status(bridge_stale_s=args.bridge_stale_s)
-    print("")
-    for line in format_status_lines(status, bridge_stale_s=args.bridge_stale_s):
-        print(line)
-    print("")
+
+    if use_json:
+        print(json.dumps({"ok": True, "command": "services", "services": status}, indent=2))
+    else:
+        print("")
+        for line in format_status_lines(status, bridge_stale_s=args.bridge_stale_s):
+            print(line)
+        print("")
 
 
 def _should_start_watchdog(args) -> bool:
@@ -2990,6 +3024,7 @@ Examples:
     # services
     services_parser = subparsers.add_parser("services", help="Show daemon/service status")
     services_parser.add_argument("--bridge-stale-s", type=int, default=90, help="bridge_worker stale threshold (seconds)")
+    services_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
 
     # up
     up_parser = subparsers.add_parser("up", help="Start background services")
@@ -3051,7 +3086,8 @@ Examples:
     decay.add_argument("--apply", action="store_true", help="Actually prune stale insights")
 
     # health
-    subparsers.add_parser("health", help="Health check")
+    health_parser = subparsers.add_parser("health", help="Health check")
+    health_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
 
     # doctor - comprehensive diagnostics and repair
     doctor_parser = subparsers.add_parser("doctor", help="Comprehensive system diagnostics and optional repair")
@@ -3076,6 +3112,7 @@ Examples:
     logs_parser.add_argument("--tail", "-n", type=int, default=50, help="Number of lines to show (default: 50)")
     logs_parser.add_argument("--follow", "-f", action="store_true", help="Follow log output (live tail)")
     logs_parser.add_argument("--since", help="Show logs since time (e.g., 1h, 30m, 2d)")
+    logs_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
 
     # config - tuneables management
     config_parser = subparsers.add_parser("config", help="Get, set, or inspect tuneables configuration")
