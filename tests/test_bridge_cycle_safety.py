@@ -11,7 +11,7 @@ Usage:
 
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -86,7 +86,7 @@ def test_bridge_cycle_calls_batch_mode():
                 with patch("lib.cognitive_learner.get_cognitive_learner", return_value=mock_cognitive):
                     with patch("lib.meta_ralph.get_meta_ralph", return_value=mock_ralph):
                         from lib.bridge_cycle import run_bridge_cycle
-                        stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
+                        run_bridge_cycle(memory_limit=5, pattern_limit=5)
 
     # begin_batch should have been called
     mock_cognitive.begin_batch.assert_called()
@@ -122,3 +122,50 @@ def test_run_step_handles_exception():
     ok, result, error = _run_step("test_boom", boom)
     assert not ok
     assert error is not None
+
+
+def test_chip_events_filtered_to_project_path_when_cwd_present():
+    from lib.bridge_cycle import _filter_chip_events_for_project
+
+    chip_events = [
+        {"cwd": "C:/repo/a", "event_type": "post_tool"},
+        {"cwd": "C:/repo/a/src", "event_type": "post_tool"},
+        {"cwd": "C:/repo/b", "event_type": "post_tool"},
+        {"cwd": "", "event_type": "post_tool"},
+    ]
+
+    filtered, meta = _filter_chip_events_for_project(chip_events, "C:/repo/a")
+    assert len(filtered) == 2
+    assert meta["enabled"] is True
+    assert meta["fallback_used"] is False
+    assert meta["filtered_events"] == 2
+
+
+def test_chip_events_filter_fails_open_when_no_matching_cwd():
+    from lib.bridge_cycle import _filter_chip_events_for_project
+
+    chip_events = [
+        {"cwd": "C:/repo/x", "event_type": "post_tool"},
+        {"cwd": "C:/repo/y", "event_type": "post_tool"},
+    ]
+
+    filtered, meta = _filter_chip_events_for_project(chip_events, "C:/repo/a")
+    assert len(filtered) == len(chip_events)
+    assert meta["enabled"] is True
+    assert meta["fallback_used"] is True
+    assert meta["reason"] == "no_matching_cwd_fallback"
+
+
+def test_chip_events_no_project_path_keeps_all():
+    from lib.bridge_cycle import _filter_chip_events_for_project
+
+    chip_events = [
+        {"cwd": "C:/repo/a", "event_type": "post_tool"},
+        {"cwd": "C:/repo/b", "event_type": "post_tool"},
+    ]
+
+    filtered, meta = _filter_chip_events_for_project(chip_events, None)
+    assert len(filtered) == len(chip_events)
+    assert meta["enabled"] is False
+    assert meta["fallback_used"] is False
+    assert meta["reason"] == "no_project_path"

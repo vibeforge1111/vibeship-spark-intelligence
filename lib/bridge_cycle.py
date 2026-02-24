@@ -9,29 +9,31 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import re
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from lib.bridge import update_spark_context
-from lib.openclaw_paths import discover_openclaw_workspaces
-from lib.memory_capture import process_recent_memory_events
-from lib.tastebank import parse_like_message, add_item
-from lib.queue import read_recent_events, EventType
-from lib.pattern_detection import process_pattern_events
-from lib.validation_loop import process_validation_events, process_outcome_validation
-from lib.prediction_loop import process_prediction_cycle
-from lib.content_learner import learn_from_edit_event
-from lib.chips import process_chip_events
-from lib.chip_merger import merge_chip_insights
-from lib.context_sync import sync_context
 from lib.advisory_quarantine import record_quarantine_item
+from lib.bridge import update_spark_context
+from lib.chip_merger import merge_chip_insights
+from lib.chips import process_chip_events
+from lib.content_learner import learn_from_edit_event
+from lib.context_sync import sync_context
 from lib.diagnostics import log_debug
+from lib.memory_capture import process_recent_memory_events
+from lib.noise_patterns import API_ERROR_STRINGS, GENERIC_ADVICE_STRINGS
+from lib.openclaw_paths import discover_openclaw_workspaces
 from lib.opportunity_scanner_adapter import scan_runtime_opportunities
+from lib.pattern_detection import process_pattern_events
+from lib.prediction_loop import process_prediction_cycle
+from lib.queue import EventType, read_recent_events
 from lib.runtime_hygiene import cleanup_runtime_artifacts
-
+from lib.tastebank import add_item, parse_like_message
+from lib.validation_loop import process_outcome_validation, process_validation_events
 
 BRIDGE_HEARTBEAT_FILE = Path.home() / ".spark" / "bridge_worker_heartbeat.json"
 
@@ -123,6 +125,68 @@ def _parse_bool(value: Any, default: bool) -> bool:
     if text in {"0", "false", "no", "off"}:
         return False
     return bool(default)
+
+
+def _normalize_project_path(path: Optional[str]) -> str:
+    text = str(path or "").strip()
+    if not text:
+        return ""
+    try:
+        return os.path.normcase(os.path.normpath(text))
+    except Exception:
+        return text.lower()
+
+
+def _same_project_path(a: Optional[str], b: Optional[str]) -> bool:
+    pa = _normalize_project_path(a)
+    pb = _normalize_project_path(b)
+    if not pa or not pb:
+        return False
+    if pa == pb:
+        return True
+    sep = os.sep
+    return pa.startswith(pb + sep) or pb.startswith(pa + sep)
+
+
+def _filter_chip_events_for_project(
+    chip_events: list[Dict[str, Any]],
+    project_path: Optional[str],
+) -> tuple[list[Dict[str, Any]], Dict[str, Any]]:
+    total = len(chip_events or [])
+    if total <= 0:
+        return [], {"enabled": False, "reason": "no_events", "input_events": 0, "filtered_events": 0, "fallback_used": False}
+
+    if not _normalize_project_path(project_path):
+        return list(chip_events), {
+            "enabled": False,
+            "reason": "no_project_path",
+            "input_events": total,
+            "filtered_events": total,
+            "fallback_used": False,
+        }
+
+    filtered = []
+    for event in chip_events:
+        cwd = (event or {}).get("cwd")
+        if _same_project_path(cwd, project_path):
+            filtered.append(event)
+
+    if not filtered:
+        return list(chip_events), {
+            "enabled": True,
+            "reason": "no_matching_cwd_fallback",
+            "input_events": total,
+            "filtered_events": total,
+            "fallback_used": True,
+        }
+
+    return filtered, {
+        "enabled": True,
+        "reason": "matched_project_cwd",
+        "input_events": total,
+        "filtered_events": len(filtered),
+        "fallback_used": False,
+    }
 
 
 CHIP_MERGE_MIN_CONFIDENCE = _env_float("SPARK_CHIP_MERGE_MIN_CONFIDENCE", 0.55)
@@ -561,15 +625,16 @@ def run_bridge_cycle(
 
         chips_enabled = _chips_enabled()
         if chips_enabled:
-            # TODO: Filter chips by project context (game-dev shouldn't fire during spark-checker work)
-            # See: spark_reports/day1_fixes_plan.md for details
-
             # --- Chip processing (uses pre-built chip_events list, capped for speed) ---
+            project_chip_events, project_chip_filter = _filter_chip_events_for_project(chip_events, project_path)
             # Cap at 30 events to keep cycle time under 30s (was 60s+ with 67 events x 13 chips)
-            capped_chip_events = chip_events[-30:] if len(chip_events) > 30 else chip_events
+            capped_chip_events = (
+                project_chip_events[-30:] if len(project_chip_events) > 30 else project_chip_events
+            )
             ok, chip_stats, error = _run_step("chips", process_chip_events, capped_chip_events, project_path, timeout_s=30)
             if ok:
                 stats["chips"] = chip_stats or {}
+                stats["chips"]["project_filter"] = project_chip_filter
             else:
                 stats["errors"].append("chips")
                 log_debug("bridge_worker", f"chip processing failed ({error})", None)
@@ -660,8 +725,7 @@ def run_bridge_cycle(
 
         if patterns_found >= 5 or insights_merged >= 2:
             try:
-                from lib.llm import synthesize_advisory, interpret_patterns
-                from lib.cognitive_learner import get_cognitive_learner, CognitiveCategory
+                from lib.llm import synthesize_advisory
 
                 # 1. Build rich pattern summaries from actual event data
                 pattern_summaries = _build_pattern_summaries(
@@ -702,7 +766,6 @@ def run_bridge_cycle(
         # EIDOS distillation (less frequent — every 10th cycle with patterns)
         try:
             from lib.llm import distill_eidos
-            cycle_count = stats.get("pipeline", {}).get("health", {}).get("queue_depth_before", 0)
             # Use a simple file counter
             _eidos_counter_file = Path.home() / ".spark" / "eidos_llm_counter.txt"
             counter = 0
@@ -824,8 +887,6 @@ def run_bridge_cycle(
     return stats
 
 
-import re
-
 # --- Noise patterns to filter from insights before LLM prompt ---
 _INSIGHT_NOISE_PATTERNS = [
     "Strong reasoning on",       # depth forge benchmark scores
@@ -897,7 +958,7 @@ def _get_filtered_insights(limit: int = 10, source: str = "") -> list:
     If source is specified, strongly prefer insights from that adapter.
     Untagged (legacy) insights are included but ranked lower.
     """
-    from lib.cognitive_learner import get_cognitive_learner, CognitiveCategory
+    from lib.cognitive_learner import CognitiveCategory, get_cognitive_learner
 
     cog = get_cognitive_learner()
     filtered = []
@@ -1028,9 +1089,6 @@ def _write_llm_advisory(advisory: str) -> None:
     except Exception as e:
         log_debug("bridge_worker", f"Failed to write advisory: {e}", None)
 
-
-# Import shared noise patterns and extend with EIDOS-specific ones.
-from lib.noise_patterns import API_ERROR_STRINGS, GENERIC_ADVICE_STRINGS
 
 _EIDOS_NOISE_PATTERNS = list(API_ERROR_STRINGS | GENERIC_ADVICE_STRINGS) + [
     # EIDOS-specific tautologies not in shared set
@@ -1186,10 +1244,18 @@ def _is_generic_advisory(text: str) -> bool:
     t = text.lower()
     matches = sum(1 for phrase in _GENERIC_ADVISORY_PHRASES if phrase in t)
     # If more than half the recommendations match generic phrases, skip
-    lines = [l for l in text.strip().split('\n') if l.strip().startswith(('1.', '2.', '3.', '4.', '5.'))]
+    lines = [
+        line
+        for line in text.strip().split('\n')
+        if line.strip().startswith(('1.', '2.', '3.', '4.', '5.'))
+    ]
     if not lines:
         return matches >= 2
-    generic_lines = sum(1 for l in lines if any(p in l.lower() for p in _GENERIC_ADVISORY_PHRASES))
+    generic_lines = sum(
+        1
+        for line in lines
+        if any(phrase in line.lower() for phrase in _GENERIC_ADVISORY_PHRASES)
+    )
     return generic_lines > len(lines) / 2
 
 
@@ -1215,7 +1281,7 @@ def _recent_exec_commands(events: list, limit: int = 12) -> list[str]:
 
 def _line_matches_recent_action(line: str, recent_cmds: list[str]) -> bool:
     """Return True when an advisory line recommends something already done recently."""
-    l = line.lower()
+    lower_line = line.lower()
 
     # 1) Direct command repetition via backticks: `openclaw session-status`
     for cmd in re.findall(r"`([^`]+)`", line):
@@ -1227,7 +1293,7 @@ def _line_matches_recent_action(line: str, recent_cmds: list[str]) -> bool:
 
     # 2) High-signal heuristic for codex usage checks already completed
     if any("session-status" in rc for rc in recent_cmds):
-        if "session-status" in l or ("codex" in l and "usage" in l):
+        if "session-status" in lower_line or ("codex" in lower_line and "usage" in lower_line):
             return True
 
     return False
