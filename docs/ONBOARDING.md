@@ -120,12 +120,17 @@ Register in `config/chips.yaml` and restart sparkd.
 
 ### Tuning the System
 
-See **[TUNEABLES.md](../TUNEABLES.md)** for all configurable parameters:
+All configuration flows through **Config Authority** (`lib/config_authority.py`), a 4-layer resolver:
+schema defaults → versioned baseline → runtime overrides → env overrides.
 
-- **Memory Gate threshold** (default 0.5) — Controls what gets persisted
-- **Pattern confidence** — Minimum confidence to surface a pattern
-- **Bridge cycle interval** — How often Claude reviews patterns (default 60 min)
-- **Advisory priority weights** — What gets flagged as HIGH vs MED vs LOW
+See [`docs/CONFIG_AUTHORITY.md`](CONFIG_AUTHORITY.md) for the full architectural contract and [`docs/TUNEABLES_REFERENCE.md`](TUNEABLES_REFERENCE.md) for every tuneable key, type, and range.
+
+Key tuneables to know:
+
+- **`meta_ralph.quality_threshold`** (default 4.5) — Score floor for learning acceptance
+- **`advisor.min_rank_score`** (default 0.4) — Minimum fusion score for advisory ranking
+- **`advisory_gate.max_emit_per_call`** (default 2) — Max advice items per tool call
+- **`advisory_engine.max_ms`** (default 4000) — Advisory engine time budget in ms
 
 ### The `advice_action_rate` Metric
 

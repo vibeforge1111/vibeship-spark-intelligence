@@ -7,11 +7,55 @@ Auto-generated from `lib/tuneables_schema.py`. Do not edit manually.
 
 ## Overview
 
-All tuneables are stored in `~/.spark/tuneables.json` (runtime) and `config/tuneables.json` (version-controlled baseline).
+All tuneables follow a **4-layer precedence model** managed by `lib/config_authority.py`:
 
+1. **Schema defaults** (`lib/tuneables_schema.py`) — hardcoded baseline
+2. **Versioned baseline** (`config/tuneables.json`) — checked into git
+3. **Runtime overrides** (`~/.spark/tuneables.json`) — local machine state
+4. **Environment overrides** — opt-in per key, highest priority
+
+For the full architectural contract, see [`docs/CONFIG_AUTHORITY.md`](CONFIG_AUTHORITY.md).
+
+- **Canonical reader**: `lib/config_authority.py` — all modules use `resolve_section()`
 - **Validation**: `lib/tuneables_schema.py` validates on load
-- **Hot-reload**: `lib/tuneables_reload.py` watches for file changes
+- **Hot-reload**: `lib/tuneables_reload.py` watches for file changes and notifies registered callbacks
 - **Drift tracking**: `lib/tuneables_drift.py` monitors distance from baseline
+
+## Reading Config in Code
+
+Use `resolve_section()` from `lib/config_authority.py`. **Do not** read `tuneables.json` directly — direct reads bypass env overrides and schema defaults.
+
+```python
+from lib.config_authority import resolve_section, env_float, env_bool
+
+# Basic usage — returns ResolvedSection(data, sources, warnings)
+section = resolve_section("advisory_gate")
+ttl = section.data.get("shown_advice_ttl_s", 600)
+
+# With environment override support
+section = resolve_section(
+    "meta_ralph",
+    env_overrides={
+        "quality_threshold": env_float("SPARK_QUALITY_THRESHOLD", lo=0.0, hi=10.0),
+    },
+)
+threshold = float(section.data.get("quality_threshold", 4.5))
+
+# Source attribution — know where each value came from
+for key, source in section.sources.items():
+    print(f"  {key}: {source}")  # "schema", "baseline", "runtime", or "env:VAR_NAME"
+```
+
+**Env override helpers:** `env_bool()`, `env_int()`, `env_float()`, `env_str()` — each returns an `EnvOverride` with a parser that validates and clamps the value.
+
+**Empty string fallback pattern:** When a schema default is `""` (meaning "use code default"), use `or` not `get(..., default)`:
+```python
+# Correct — empty string falls through to code default
+vault_dir = str(section.data.get("vault_dir") or DEFAULT_PATH)
+
+# Wrong — schema always provides the key, so fallback never triggers
+vault_dir = str(section.data.get("vault_dir", DEFAULT_PATH))
+```
 
 ## Section Index
 
