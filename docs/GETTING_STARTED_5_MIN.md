@@ -119,6 +119,8 @@ The goal is simple:
 
 Next after setup:
 - Daily runtime operations and CLI workflow: `docs/QUICKSTART.md`
+- Configure behavior (thresholds, timing, gates): `docs/QUICKSTART.md#configuring-tuneables`
+- Full config reference (231 keys, 31 sections): `docs/TUNEABLES_REFERENCE.md`
 
 ## Troubleshooting (Fast)
 

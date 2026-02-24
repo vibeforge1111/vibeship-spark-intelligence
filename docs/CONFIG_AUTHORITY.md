@@ -58,6 +58,102 @@ Resolver implementation:
 - Env overrides should use explicit mappings (`env_bool/env_int/env_float/env_str`).
 - Reload callbacks should re-resolve through `ConfigAuthority` rather than raw section payloads.
 
+## Environment Variable Override Reference
+
+Only keys with explicit `env_overrides` mappings respond to env vars. All others require file edits.
+
+### Advisory Engine (`advisory_engine`)
+| Env Var | Key | Type |
+|---------|-----|------|
+| `SPARK_ADVISORY_ENGINE` | `enabled` | bool |
+| `SPARK_ADVISORY_MAX_MS` | `max_ms` | float |
+| `SPARK_ADVISORY_INCLUDE_MIND` | `include_mind` | bool |
+| `SPARK_ADVISORY_PREFETCH_QUEUE` | `prefetch_queue_enabled` | bool |
+| `SPARK_ADVISORY_PREFETCH_INLINE` | `prefetch_inline_enabled` | bool |
+| `SPARK_ADVISORY_PACKET_FALLBACK_EMIT` | `packet_fallback_emit_enabled` | bool |
+| `SPARK_ADVISORY_FALLBACK_RATE_GUARD` | `fallback_rate_guard_enabled` | bool |
+| `SPARK_ADVISORY_FALLBACK_RATE_MAX_RATIO` | `fallback_rate_max_ratio` | float |
+| `SPARK_ADVISORY_FALLBACK_RATE_WINDOW` | `fallback_rate_window` | int |
+| `SPARK_ADVISORY_FALLBACK_BUDGET_CAP` | `fallback_budget_cap` | int |
+| `SPARK_ADVISORY_FALLBACK_BUDGET_WINDOW` | `fallback_budget_window` | int |
+| `SPARK_ADVISORY_PREFETCH_INLINE_MAX_JOBS` | `prefetch_inline_max_jobs` | int |
+| `SPARK_ADVISORY_REQUIRE_ACTION` | `actionability_enforce` | bool |
+| `SPARK_ADVISORY_FORCE_PROGRAMMATIC_SYNTH` | `force_programmatic_synth` | bool |
+| `SPARK_ADVISORY_SELECTIVE_AI_SYNTH` | `selective_ai_synth_enabled` | bool |
+| `SPARK_ADVISORY_SELECTIVE_AI_MIN_REMAINING_MS` | `selective_ai_min_remaining_ms` | float |
+| `SPARK_ADVISORY_SELECTIVE_AI_MIN_AUTHORITY` | `selective_ai_min_authority` | str |
+| `SPARK_ADVISORY_SESSION_KEY_INCLUDE_RECENT_TOOLS` | `session_key_include_recent_tools` | bool |
+| `SPARK_ADVISORY_STALE_S` | `delivery_stale_s` | float |
+| `SPARK_ADVISORY_TEXT_REPEAT_COOLDOWN_S` | `advisory_text_repeat_cooldown_s` | float |
+| `SPARK_ADVISORY_GLOBAL_DEDUPE_COOLDOWN_S` | `global_dedupe_cooldown_s` | float |
+
+### Advisory Gate (`advisory_gate`)
+| Env Var | Key | Type |
+|---------|-----|------|
+| `SPARK_ADVISORY_AGREEMENT_GATE` | `agreement_gate_enabled` | bool |
+| `SPARK_ADVISORY_AGREEMENT_MIN_SOURCES` | `agreement_min_sources` | int |
+| `SPARK_ADVISORY_EMIT_WHISPERS` | `emit_whispers` | bool |
+| `SPARK_ADVISORY_SHOWN_TTL_S` | `shown_advice_ttl_s` | int |
+
+### Synthesizer (`synthesizer`)
+| Env Var | Key | Type |
+|---------|-----|------|
+| `SPARK_SYNTH_MODE` | `mode` | str |
+| `SPARK_SYNTH_TIMEOUT` | `ai_timeout_s` | float |
+| `SPARK_SYNTH_PREFERRED_PROVIDER` | `preferred_provider` | str |
+| `SPARK_MINIMAX_MODEL` | `minimax_model` | str |
+
+### Bridge Worker (`bridge_worker`)
+| Env Var | Key | Type |
+|---------|-----|------|
+| `SPARK_BRIDGE_MIND_SYNC_ENABLED` | `mind_sync_enabled` | bool |
+| `SPARK_BRIDGE_MIND_SYNC_LIMIT` | `mind_sync_limit` | int |
+| `SPARK_BRIDGE_MIND_SYNC_MIN_READINESS` | `mind_sync_min_readiness` | float |
+| `SPARK_BRIDGE_MIND_SYNC_MIN_RELIABILITY` | `mind_sync_min_reliability` | float |
+| `SPARK_BRIDGE_MIND_SYNC_MAX_AGE_S` | `mind_sync_max_age_s` | int |
+| `SPARK_BRIDGE_MIND_SYNC_DRAIN_QUEUE` | `mind_sync_drain_queue` | bool |
+| `SPARK_BRIDGE_MIND_SYNC_QUEUE_BUDGET` | `mind_sync_queue_budget` | int |
+
+### Context Sync (`sync`)
+| Env Var | Key | Type |
+|---------|-----|------|
+| `SPARK_SYNC_MODE` | `mode` | str |
+| `SPARK_SYNC_MIND_LIMIT` | `mind_limit` | int |
+
+### Advisory Prefetch (`advisory_prefetch`)
+| Env Var | Key | Type |
+|---------|-----|------|
+| `SPARK_ADVISORY_PREFETCH_WORKER` | `worker_enabled` | bool |
+
+### Memory (`memory_emotion`)
+| Env Var | Key | Type |
+|---------|-----|------|
+| `SPARK_MEMORY_EMOTION_WRITE_CAPTURE` | `write_capture_enabled` | bool |
+
+## Hot-Reload Status
+
+Modules with `register_reload()` pick up file changes automatically (1-30s). Others require restart.
+
+| Section | Hot-Reload | Module |
+|---------|-----------|--------|
+| `advisory_engine` | Yes | `advisory_engine.py` |
+| `advisory_gate` | Yes | `advisory_gate.py`, `advisory_state.py` |
+| `advisor` | Yes | `advisor.py` |
+| `meta_ralph` | Yes | `meta_ralph.py` |
+| `pipeline` | Yes | `pipeline.py` |
+| `bridge_worker` | Yes | `bridge_cycle.py` |
+| `queue` | Yes | `queue.py` |
+| `eidos` | Yes | `eidos/models.py` |
+| `synthesizer` | Yes | `advisory_synthesizer.py` |
+| `advisory_packet_store` | Yes | `advisory_packet_store.py` |
+| `advisory_prefetch` | Yes | `advisory_prefetch_worker.py` |
+| `memory_capture` | Yes | `memory_capture.py` |
+| `request_tracker` | Yes | `request_tracker.py` |
+| `flow` | Yes | `validate_and_store.py` |
+| `semantic` | **No** | `semantic_retriever.py` |
+| `triggers` | **No** | `semantic_retriever.py` |
+| `sync` | **No** | `context_sync.py` |
+
 ## Verification
 - `tests/test_config_authority.py`
 - `tests/test_tuneables_alignment.py`

@@ -40,9 +40,9 @@ Canonical navigation hub. Start here.
 - `docs/SELF_IMPROVEMENT_SYSTEMS.md`
 
 ## Tuneables and routing
-- `TUNEABLES.md` — All tuneable parameters, section map, hot-reload matrix
-- `docs/CONFIG_AUTHORITY.md` — Canonical precedence model and resolver contract
-- `docs/TUNEABLES_REFERENCE.md` — Auto-generated schema reference from `lib/tuneables_schema.py`
+- `docs/CONFIG_AUTHORITY.md` — Canonical precedence model, env var reference, hot-reload matrix
+- `docs/TUNEABLES_REFERENCE.md` — Auto-generated schema reference (231 keys, 31 sections) with code examples
+- `docs/QUICKSTART.md#configuring-tuneables` — User-facing guide: how to change, precedence, troubleshooting
 - `lib/tuneables_schema.py` — Central schema validator (type, bounds, defaults)
 - `lib/tuneables_reload.py` — Hot-reload coordinator (mtime-based callback dispatch)
 - `lib/tuneables_drift.py` — Drift distance from baseline (`config/tuneables.json`)

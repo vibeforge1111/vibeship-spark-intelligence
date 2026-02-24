@@ -377,6 +377,140 @@ Semantic retrieval logs and metrics:
 - `~/.spark/logs/semantic_retrieval.jsonl`
 - `~/.spark/advisor/metrics.json`
 
+## Configuring Tuneables
+
+Tuneables control every runtime behavior — quality thresholds, advisory timing, gate limits, retrieval weights, and more.
+231 keys across 31 sections, all configurable without code changes.
+
+For the full key reference, see [`docs/TUNEABLES_REFERENCE.md`](TUNEABLES_REFERENCE.md).
+For the architectural contract, see [`docs/CONFIG_AUTHORITY.md`](CONFIG_AUTHORITY.md).
+
+### How to Change a Tuneable
+
+**Option A: Edit the runtime file** (most common)
+
+```json
+// ~/.spark/tuneables.json
+{
+  "advisory_gate": {
+    "max_emit_per_call": 3,
+    "tool_cooldown_s": 20
+  },
+  "meta_ralph": {
+    "quality_threshold": 5.0
+  }
+}
+```
+
+Save the file. Changes take effect automatically within 1-30 seconds (next bridge cycle).
+
+**Option B: Environment variables** (for CI, containers, or quick overrides)
+
+```bash
+# Windows
+set SPARK_ADVISORY_MAX_MS=10000
+set SPARK_ADVISORY_EMIT_WHISPERS=false
+
+# Mac/Linux
+export SPARK_ADVISORY_MAX_MS=10000
+export SPARK_ADVISORY_EMIT_WHISPERS=false
+```
+
+Env vars override everything — they win over both files. Must be set **before** starting Spark.
+Only ~43 keys have env overrides wired. See [`docs/CONFIG_AUTHORITY.md`](CONFIG_AUTHORITY.md) for the full list.
+
+### Precedence (Highest Wins Last)
+
+```
+1. Schema defaults   (lib/tuneables_schema.py)     <- hardcoded baseline
+2. Versioned baseline (config/tuneables.json)       <- checked into git
+3. Runtime overrides  (~/.spark/tuneables.json)     <- your local edits
+4. Env overrides      (SPARK_* env vars)            <- highest priority
+```
+
+You almost always edit layer 3 (`~/.spark/tuneables.json`). Layer 2 (`config/tuneables.json`) is the project baseline and shouldn't be edited for local use. Env overrides (layer 4) are for temporary or deployment-specific needs.
+
+### Hot-Reload
+
+Most modules pick up changes automatically — no restart needed:
+
+| Modules with hot-reload | Section |
+|-------------------------|---------|
+| `advisory_engine.py` | `advisory_engine` |
+| `advisory_gate.py`, `advisory_state.py` | `advisory_gate` |
+| `advisor.py` | `advisor` |
+| `meta_ralph.py` | `meta_ralph` |
+| `pipeline.py` | `pipeline` |
+| `bridge_cycle.py` | `bridge_worker` |
+| `queue.py` | `queue` |
+| `eidos/models.py` | `eidos` |
+| `advisory_synthesizer.py` | `synthesizer` |
+| `advisory_packet_store.py` | `advisory_packet_store` |
+| `advisory_prefetch_worker.py` | `advisory_prefetch` |
+| `memory_capture.py` | `memory_capture` |
+| `request_tracker.py` | `request_tracker` |
+| `validate_and_store.py` | `flow` |
+
+**Restart required** for: `semantic_retriever.py` (`semantic`, `triggers`), `context_sync.py` (`sync`).
+
+### Reconciliation
+
+On startup, Spark runs `reconcile_with_defaults()` which removes stale copies from `~/.spark/tuneables.json` — if a runtime value matches the baseline exactly, it's stripped so the code default wins. This prevents old overrides from defeating newer defaults after upgrades.
+
+The `auto_tuner` section is exempt (its values are intentionally evolved).
+
+### Auto-Tuner
+
+The auto-tuner runs every 12 hours and adjusts `auto_tuner.source_boosts` based on measured effectiveness. It writes to `~/.spark/tuneables.json` but only touches its own section unless `apply_cross_section_recommendations` is explicitly enabled.
+
+Disable it:
+```json
+{ "auto_tuner": { "enabled": false } }
+```
+
+Monitor it:
+```bash
+python -c "from lib.config_authority import resolve_section; import json; s=resolve_section('auto_tuner'); print(json.dumps({k:v for k,v in s.data.items() if k in ('enabled','mode','source_boosts','last_run')}, indent=2))"
+```
+
+### Common Tuneables
+
+| What | Key | Default | Effect |
+|------|-----|---------|--------|
+| Quality gate strictness | `meta_ralph.quality_threshold` | `4.5` | Higher = fewer learnings pass (0-10) |
+| Advice items per tool call | `advisory_gate.max_emit_per_call` | `2` | How many tips shown per action |
+| Advisory time budget | `advisory_engine.max_ms` | `4000` | ms budget for advisory engine |
+| Repeat cooldown | `advisory_gate.advice_repeat_cooldown_s` | `300` | Seconds before same advice re-emits |
+| Shown advice TTL | `advisory_gate.shown_advice_ttl_s` | `600` | How long "already shown" suppression lasts |
+| Tool cooldown | `advisory_gate.tool_cooldown_s` | `15` | Same-tool suppression cooldown (s) |
+| Retrieval min score | `advisor.min_rank_score` | `0.4` | Floor for advisory ranking fusion score |
+| Mind sync enabled | `bridge_worker.mind_sync_enabled` | `true` | Whether bridge syncs to Mind |
+| Prefetch queue | `advisory_engine.prefetch_queue_enabled` | `false` | Predictive advisory pre-computation |
+| Semantic retrieval | `semantic.enabled` | `true` | Enable semantic matching |
+
+### Troubleshooting Tuneables
+
+**"I changed a value but nothing happened"**
+- Check if the module has hot-reload (table above). If not, restart services.
+- Env vars set after startup are ignored — restart required.
+- Verify JSON is valid: `python -c "import json; json.load(open('path/to/tuneables.json'))"`
+
+**"My override disappeared after restart"**
+- Reconciliation strips values matching the baseline. If you intentionally want a value that happens to match the baseline, that's fine — the baseline already provides it.
+
+**"Lock file stuck"**
+- Delete `~/.spark/tuneables.json.lock` if a process crashed mid-write.
+
+**"How do I see what's active?"**
+```bash
+python -c "
+from lib.config_authority import resolve_section
+section = resolve_section('advisory_gate')
+for k, v in sorted(section.data.items()):
+    print(f'  {k} = {v!r}  [{section.sources.get(k, \"?\")}]')
+"
+```
+
 ## Claude Code Integration
 
 Use the maintained integration flow in `docs/claude_code.md`.
