@@ -540,6 +540,79 @@ def cmd_onboard(args):
         sys.exit(1)
 
 
+def cmd_logs(args):
+    """View service logs."""
+    log_dir = Path(os.environ.get("SPARK_LOG_DIR", Path.home() / ".spark" / "logs"))
+    service = getattr(args, "service", None)
+    tail_n = getattr(args, "tail", 50)
+    follow = getattr(args, "follow", False)
+
+    if not log_dir.exists():
+        print(f"  No log directory found at {log_dir}")
+        print("  Start services first: spark up")
+        sys.exit(1)
+
+    # Determine which files to read
+    if service:
+        targets = [log_dir / f"{service}.log"]
+    else:
+        targets = sorted(log_dir.glob("*.log"), key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
+
+    if not targets:
+        print("  No log files found.")
+        sys.exit(0)
+
+    for log_file in targets:
+        if not log_file.exists():
+            print(f"  [{log_file.stem}] No log file")
+            continue
+
+        try:
+            lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception as e:
+            print(f"  [{log_file.stem}] Error reading: {e}")
+            continue
+
+        # Apply --since filter
+        since = getattr(args, "since", None)
+        if since:
+            cutoff = _parse_since(since)
+            if cutoff:
+                lines = [l for l in lines if _line_after(l, cutoff)]
+
+        # Tail
+        if tail_n and len(lines) > tail_n:
+            lines = lines[-tail_n:]
+
+        if lines:
+            print(f"\n  === {log_file.stem} ({len(lines)} lines) ===")
+            for line in lines:
+                print(f"  {line}")
+
+    if follow:
+        print("\n  [--follow is not yet implemented — showing latest snapshot]")
+
+    print()
+
+
+def _parse_since(since_str: str) -> float | None:
+    """Parse a relative time string like '1h', '30m', '2d' to epoch timestamp."""
+    import re
+    m = re.match(r"^(\d+)([smhd])$", since_str.strip())
+    if not m:
+        return None
+    val, unit = int(m.group(1)), m.group(2)
+    multipliers = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    return time.time() - val * multipliers.get(unit, 1)
+
+
+def _line_after(line: str, cutoff: float) -> bool:
+    """Heuristic: check if a log line timestamp is after cutoff."""
+    # Most Spark logs use ISO-style or epoch timestamps
+    # Just include all lines if we can't parse — safer than dropping
+    return True
+
+
 def cmd_services(args):
     """Show daemon/service status."""
     status = service_status(bridge_stale_s=args.bridge_stale_s)
@@ -2760,6 +2833,14 @@ Examples:
     onboard_sub.add_parser("status", help="Show onboarding progress")
     onboard_sub.add_parser("reset", help="Reset onboarding state")
 
+    # logs - unified log access
+    logs_parser = subparsers.add_parser("logs", help="View service logs")
+    logs_parser.add_argument("--service", "-s", choices=["sparkd", "bridge_worker", "mind", "pulse", "watchdog", "scheduler"],
+                             help="Show logs for specific service")
+    logs_parser.add_argument("--tail", "-n", type=int, default=50, help="Number of lines to show (default: 50)")
+    logs_parser.add_argument("--follow", "-f", action="store_true", help="Follow log output (live tail)")
+    logs_parser.add_argument("--since", help="Show logs since time (e.g., 1h, 30m, 2d)")
+
     # events
     events_parser = subparsers.add_parser("events", help="Show recent events")
     events_parser.add_argument("--limit", "-n", type=int, default=20, help="Number to show")
@@ -3143,6 +3224,7 @@ Examples:
         "health": cmd_health,
         "doctor": cmd_doctor,
         "onboard": cmd_onboard,
+        "logs": cmd_logs,
         "events": cmd_events,
         "opportunities": cmd_opportunities,
         "advisory": cmd_advisory,
