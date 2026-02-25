@@ -9,7 +9,9 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -182,17 +184,41 @@ def _tail_jsonl(path: Path, count: int) -> List[Dict[str, Any]]:
         return []
 
 
+_jsonl_cap_locks: Dict[Path, threading.Lock] = {}
+_jsonl_cap_locks_mutex = threading.Lock()
+
+
+def _get_cap_lock(path: Path) -> threading.Lock:
+    with _jsonl_cap_locks_mutex:
+        if path not in _jsonl_cap_locks:
+            _jsonl_cap_locks[path] = threading.Lock()
+        return _jsonl_cap_locks[path]
+
+
 def _append_jsonl_capped(path: Path, entry: Dict[str, Any], max_lines: int) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
-        if max_lines <= 0:
-            return
-        probe = _tail_jsonl(path, max_lines + 1)
-        if len(probe) <= max_lines:
-            return
-        path.write_text("\n".join(json.dumps(r) for r in probe[-max_lines:]) + "\n", encoding="utf-8")
+        with _get_cap_lock(path):
+            with path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(entry) + "\n")
+            if max_lines <= 0:
+                return
+            probe = _tail_jsonl(path, max_lines + 1)
+            if len(probe) <= max_lines:
+                return
+            # Atomic truncation: write to temp then replace so concurrent
+            # readers never see a partial file.
+            fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+            try:
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    f.write("\n".join(json.dumps(r) for r in probe[-max_lines:]) + "\n")
+                os.replace(tmp_path, path)
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
     except Exception:
         return
 
