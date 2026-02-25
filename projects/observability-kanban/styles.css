@@ -242,6 +242,43 @@ body::before {
   color: #f0f6ff;
 }
 
+.pulse-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.pulse-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.pulse-widget {
+  border: 1px solid #2a3f5a;
+  border-radius: 12px;
+  background: rgba(86, 212, 255, 0.04);
+  padding: 10px;
+  display: grid;
+  gap: 7px;
+}
+
+.pulse-widget h3 {
+  margin: 0;
+  font-size: 0.86rem;
+  color: #eff6ff;
+}
+
+.pulse-widget p {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.pulse-removed {
+  margin-top: 10px;
+}
+
 .audit-table-wrap {
   border: 1px solid #2a3f5a;
   border-radius: 12px;

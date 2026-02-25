@@ -24,6 +24,7 @@ let questionsState = null;
 let historyState = null;
 let suppressionAuditState = null;
 let buildQueueState = null;
+let pulseWidgetsState = null;
 
 async function loadJson(path) {
   const res = await fetch(path);
@@ -346,6 +347,61 @@ function renderOperatorNow(queue, board) {
         <ul>${blockerRows}</ul>
       </article>
     </div>
+  `;
+}
+
+function renderPulseCleanup(pulseData) {
+  const host = document.getElementById('pulseCleanup');
+  const widgets = pulseData?.widgets || [];
+  if (!widgets.length) {
+    host.innerHTML = '<div class="empty-state">No Pulse widget definitions found.</div>';
+    return;
+  }
+
+  const dead = widgets.filter((w) => w.status === 'dead');
+  const live = widgets.filter((w) => w.status !== 'dead');
+
+  const summary = `
+    <div class="pulse-summary">
+      <article class="analytics-card">
+        <p class="kpi-key">Widgets Total</p>
+        <div class="analytics-value">${widgets.length}</div>
+      </article>
+      <article class="analytics-card">
+        <p class="kpi-key">Live Panels</p>
+        <div class="analytics-value">${live.length}</div>
+      </article>
+      <article class="analytics-card ${dead.length ? 'warn' : ''}">
+        <p class="kpi-key">Removed Dead Widgets</p>
+        <div class="analytics-value">${dead.length}</div>
+      </article>
+    </div>
+  `;
+
+  const liveRows = live.map((w) => `
+    <article class="pulse-widget">
+      <h3>${escapeHtml(w.title || 'Untitled widget')}</h3>
+      <p class="muted">${escapeHtml(w.description || '')}</p>
+      <div class="meta">
+        <span class="metric-chip">${escapeHtml(w.source || 'unknown source')}</span>
+        <span class="metric-chip">${escapeHtml(w.refresh || 'unknown refresh')}</span>
+      </div>
+    </article>
+  `).join('');
+
+  const removedRows = dead.length
+    ? dead.map((w) => `<li><span class="mono">${escapeHtml(w.id || 'n/a')}</span> ${escapeHtml(w.title || 'Untitled')}</li>`).join('')
+    : '<li class="muted">No dead widgets in current snapshot.</li>';
+
+  host.innerHTML = `
+    ${summary}
+    <div class="pulse-grid">
+      ${liveRows || '<div class="empty-state">No live Pulse widgets available.</div>'}
+    </div>
+    <details class="history pulse-removed">
+      <summary>Removed Widgets (${dead.length})</summary>
+      <ul>${removedRows}</ul>
+    </details>
   `;
 }
 
@@ -792,18 +848,20 @@ function renderAll() {
   renderAnalytics(boardState);
   renderOperatorNow(buildQueueState, boardState);
   renderSuppressionAudit(suppressionAuditState);
+  renderPulseCleanup(pulseWidgetsState);
   renderBoard(boardState);
   renderQuestions(questionsState);
 }
 
 (async function init() {
   try {
-    const [defaultBoard, questions, history, suppressionAudit, buildQueue] = await Promise.all([
+    const [defaultBoard, questions, history, suppressionAudit, buildQueue, pulseWidgets] = await Promise.all([
       loadJson('data/board.json'),
       loadJson('data/questions_backlog.json'),
       loadJson('data/kpi_history.json'),
       loadJson('data/suppression_audit.json'),
-      loadJson('data/terminal_build_queue.json')
+      loadJson('data/terminal_build_queue.json'),
+      loadJson('data/pulse_widgets.json')
     ]);
 
     boardState = loadPersistedBoard(defaultBoard);
@@ -811,6 +869,7 @@ function renderAll() {
     historyState = history;
     suppressionAuditState = suppressionAudit;
     buildQueueState = buildQueue;
+    pulseWidgetsState = pulseWidgets;
 
     ensureTaskMeta();
 
