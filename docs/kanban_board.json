@@ -1,0 +1,58 @@
+{
+  "updated_at": "2026-02-25",
+  "scoring": {
+    "formula": "(impact + urgency + risk_reduction) / effort",
+    "ranges": {
+      "impact": "1-10",
+      "urgency": "1-10",
+      "risk_reduction": "1-10",
+      "effort": "1-13"
+    }
+  },
+  "kpis": [
+    {"key": "memory_noise_ratio", "baseline": 0.356, "target": 0.20},
+    {"key": "context_p50_chars", "baseline": 53, "target": 120},
+    {"key": "advisory_emit_rate", "baseline": 0.076, "target": 0.20},
+    {"key": "semantic_low_sim_ratio", "baseline": 0.235, "target": 0.15},
+    {"key": "metric_drift_incidents_per_day", "baseline": 2, "target": 1}
+  ],
+  "columns": {
+    "in_progress": [
+      {"id":"CB-004","task":"Capture noise filtering","intent":"Stop low-value memory ingress","kpi":"memory_noise_ratio","baseline":0.356,"target":0.20,"impact":10,"urgency":9,"risk_reduction":10,"effort":5,"priority_score":5.8},
+      {"id":"CB-005","task":"Context window uplift","intent":"Preserve condition-action-reason in memory","kpi":"context_p50_chars","baseline":53,"target":120,"impact":9,"urgency":8,"risk_reduction":8,"effort":5,"priority_score":5.0},
+      {"id":"CB-006","task":"Threshold calibration","intent":"Improve precision-first capture","kpi":"memory_noise_ratio","baseline":0.356,"target":0.25,"impact":8,"urgency":7,"risk_reduction":8,"effort":5,"priority_score":4.6},
+      {"id":"CB-007","task":"Daily memory observatory","intent":"Make quality measurable daily","kpi":"memory_quality_grade","baseline":"RED","target":"GREEN","impact":9,"urgency":9,"risk_reduction":9,"effort":3,"priority_score":9.0},
+      {"id":"CB-030","task":"5-section nightly self-interrogation","intent":"Continuous optimization loop","kpi":"daily_action_quality","baseline":"ad_hoc","target":"systematic","impact":8,"urgency":8,"risk_reduction":8,"effort":2,"priority_score":12.0}
+    ],
+    "ready": [
+      {"id":"CB-009","task":"Suppression cause audit","intent":"Identify over-suppression drivers","kpi":"advisory_emit_rate","baseline":0.076,"target":0.14,"impact":10,"urgency":9,"risk_reduction":9,"effort":3,"priority_score":9.3},
+      {"id":"CB-010","task":"Dedupe policy tuning","intent":"Restore useful emission while keeping quality","kpi":"advisory_emit_rate_and_noise_burden","baseline":"0.076/0.744","target":"0.20/0.65","impact":10,"urgency":9,"risk_reduction":10,"effort":8,"priority_score":3.6},
+      {"id":"CB-019","task":"Observatory Operator-Now block","intent":"Top actions visible instantly","kpi":"triage_time_seconds","baseline":300,"target":90,"impact":8,"urgency":8,"risk_reduction":8,"effort":3,"priority_score":8.0},
+      {"id":"CB-020","task":"Memory quality in flow health","intent":"Expose memory risk in front page","kpi":"memory_visibility","baseline":0,"target":1,"impact":7,"urgency":7,"risk_reduction":7,"effort":2,"priority_score":10.5},
+      {"id":"CB-023","task":"Pulse dead-widget cleanup","intent":"Remove misleading empty panes","kpi":"dashboard_trust","baseline":"low","target":"high","impact":8,"urgency":8,"risk_reduction":8,"effort":3,"priority_score":8.0},
+      {"id":"CB-024","task":"Pulse endpoint rewiring","intent":"Use existing live data","kpi":"dashboard_utility","baseline":"partial","target":"core_full","impact":9,"urgency":9,"risk_reduction":8,"effort":5,"priority_score":5.2},
+      {"id":"CB-027","task":"Cross-surface drift checker","intent":"Detect metric inconsistencies daily","kpi":"metric_drift_incidents_per_day","baseline":2,"target":1,"impact":9,"urgency":8,"risk_reduction":10,"effort":5,"priority_score":5.4}
+    ],
+    "backlog": [
+      {"id":"CB-014","task":"Onboarding telemetry instrumentation","impact":9,"urgency":8,"risk_reduction":8,"effort":8,"priority_score":3.1},
+      {"id":"CB-015","task":"Progressive onboarding flow spec","impact":8,"urgency":7,"risk_reduction":7,"effort":8,"priority_score":2.8},
+      {"id":"CB-016","task":"Error->remediation map","impact":8,"urgency":7,"risk_reduction":8,"effort":5,"priority_score":4.6},
+      {"id":"CB-017","task":"LLM lane UX strategy","impact":7,"urgency":6,"risk_reduction":7,"effort":8,"priority_score":2.5},
+      {"id":"CB-018","task":"Onboard verify contract","impact":8,"urgency":7,"risk_reduction":8,"effort":8,"priority_score":2.9},
+      {"id":"CB-021","task":"Observatory regression ledger","impact":7,"urgency":6,"risk_reduction":8,"effort":3,"priority_score":7.0},
+      {"id":"CB-022","task":"Metric contract page","impact":8,"urgency":7,"risk_reduction":9,"effort":5,"priority_score":4.8},
+      {"id":"CB-025","task":"Pulse no-BS mode","impact":8,"urgency":7,"risk_reduction":8,"effort":5,"priority_score":4.6},
+      {"id":"CB-026","task":"Pulse next-action hints","impact":7,"urgency":6,"risk_reduction":8,"effort":5,"priority_score":4.2},
+      {"id":"CB-028","task":"Resolve drift mismatches","impact":9,"urgency":8,"risk_reduction":10,"effort":8,"priority_score":3.4},
+      {"id":"CB-029","task":"Confidence/freshness labels","impact":7,"urgency":6,"risk_reduction":7,"effort":3,"priority_score":6.7},
+      {"id":"CB-031","task":"Daily top-5 actions with owners","impact":8,"urgency":8,"risk_reduction":8,"effort":2,"priority_score":12.0},
+      {"id":"CB-032","task":"48h escalation protocol","impact":7,"urgency":7,"risk_reduction":9,"effort":2,"priority_score":11.5},
+      {"id":"CB-033","task":"Weekly SOTA delta review","impact":7,"urgency":6,"risk_reduction":8,"effort":3,"priority_score":7.0}
+    ],
+    "blocked": [],
+    "done": [
+      {"id":"CB-030-setup","task":"Nightly interrogation scheduling","outcome":"active"},
+      {"id":"MEM-OBS-BOOTSTRAP","task":"Memory observatory generation","outcome":"implemented"}
+    ]
+  }
+}
