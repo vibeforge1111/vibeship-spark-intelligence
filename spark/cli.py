@@ -849,9 +849,9 @@ def cmd_run(args):
     lite = bool(getattr(args, "lite", False)) or lite_env
     try:
         results = start_services(
-            include_mind=not lite,
+            include_mind=True,
             include_pulse=not lite,
-            include_watchdog=not lite,
+            include_watchdog=True,
         )
         steps.append({"step": "services", "ok": True, "detail": results})
         if not use_json:
@@ -938,9 +938,9 @@ def cmd_up(args):
         bridge_interval=args.bridge_interval,
         bridge_query=args.bridge_query,
         watchdog_interval=args.watchdog_interval,
-        include_mind=(not args.no_mind) and (not lite),
+        include_mind=not args.no_mind,
         include_pulse=(not args.no_pulse) and (not lite),
-        include_watchdog=include_watchdog and (not lite),
+        include_watchdog=include_watchdog,
         bridge_stale_s=args.bridge_stale_s,
     )
 
@@ -3042,7 +3042,7 @@ Examples:
         p.add_argument("--bridge-query", default=None, help="optional fixed query for bridge_worker")
         p.add_argument("--watchdog-interval", type=int, default=60, help="watchdog interval (seconds)")
         p.add_argument("--bridge-stale-s", type=int, default=90, help="bridge_worker stale threshold (seconds)")
-        p.add_argument("--lite", action="store_true", help="start only core services (no dashboards/pulse/watchdog)")
+        p.add_argument("--lite", action="store_true", help="skip Pulse dashboard")
         p.add_argument("--no-mind", action="store_true", help="do not start mind server")
         p.add_argument("--no-watchdog", action="store_true", help="do not start watchdog")
         p.add_argument("--no-pulse", action="store_true", help="do not start spark pulse")
@@ -3063,7 +3063,7 @@ Examples:
 
     # run - convenience start + health + sync
     run_parser = subparsers.add_parser("run", help="Start services + health check in one step")
-    run_parser.add_argument("--lite", action="store_true", help="Lite mode (sparkd + bridge only)")
+    run_parser.add_argument("--lite", action="store_true", help="Lite mode (skip Pulse dashboard)")
     run_parser.add_argument("--no-sync", dest="sync", action="store_false", help="Skip context sync step")
     run_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
 
