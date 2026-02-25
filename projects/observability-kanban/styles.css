@@ -120,6 +120,25 @@ body {
 .prio-p0 { color:#ff7f8f; }
 .prio-p1 { color:#ffd166; }
 
+.analytics-card.warn {
+  border-color: var(--warn);
+  box-shadow: inset 0 0 0 1px rgba(243,156,18,.25);
+}
+
+.col.wip-over {
+  border-color: var(--warn);
+  box-shadow: inset 0 0 0 1px rgba(243,156,18,.2);
+}
+
+.age {
+  color: #bcd3ff;
+}
+
+.effect-ok {
+  color: var(--ok);
+  font-weight: 700;
+}
+
 @media (max-width: 980px) {
   .topbar { align-items: flex-start; flex-direction: column; }
   .board { grid-template-columns: 1fr; }

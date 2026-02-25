@@ -1,10 +1,18 @@
-const STORAGE_KEY = 'observability_kanban_board_v1';
+const STORAGE_KEY = 'observability_kanban_board_v2';
 const COLUMN_LABELS = {
   in_progress: 'IN_PROGRESS',
   ready: 'READY',
   backlog: 'BACKLOG',
   blocked: 'BLOCKED',
   done: 'DONE'
+};
+
+const WIP_LIMITS = {
+  in_progress: 6,
+  ready: 8,
+  backlog: 30,
+  blocked: 6,
+  done: 999
 };
 
 let boardState = null;
@@ -17,6 +25,17 @@ async function loadJson(path) {
   return await res.json();
 }
 
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function boardMeta() {
+  if (!boardState.__meta) boardState.__meta = {};
+  if (!boardState.__meta.taskMeta) boardState.__meta.taskMeta = {};
+  if (!boardState.__meta.effectChecks) boardState.__meta.effectChecks = {};
+  return boardState.__meta;
+}
+
 function saveBoardState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(boardState));
 }
@@ -24,13 +43,33 @@ function saveBoardState() {
 function loadPersistedBoard(defaultBoard) {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultBoard;
+    if (!raw) return structuredClone(defaultBoard);
     const parsed = JSON.parse(raw);
-    if (!parsed?.columns) return defaultBoard;
+    if (!parsed?.columns) return structuredClone(defaultBoard);
     return parsed;
   } catch {
-    return defaultBoard;
+    return structuredClone(defaultBoard);
   }
+}
+
+function ensureTaskMeta() {
+  const meta = boardMeta();
+  const seen = new Set();
+
+  Object.entries(boardState.columns).forEach(([col, tasks]) => {
+    (tasks || []).forEach(task => {
+      seen.add(task.id);
+      if (!meta.taskMeta[task.id]) {
+        meta.taskMeta[task.id] = { enteredAt: nowIso(), column: col };
+      } else {
+        meta.taskMeta[task.id].column = col;
+      }
+    });
+  });
+
+  Object.keys(meta.taskMeta).forEach(taskId => {
+    if (!seen.has(taskId)) delete meta.taskMeta[taskId];
+  });
 }
 
 function pctFromProgress(base, target) {
@@ -95,29 +134,50 @@ function renderKpiTrends(history) {
   document.getElementById('kpiTrends').innerHTML = cards.join('');
 }
 
-function taskCard(t, columnKey) {
+function getTaskAgeDays(taskId) {
+  const enteredAt = boardMeta().taskMeta?.[taskId]?.enteredAt;
+  if (!enteredAt) return null;
+  const ms = Date.now() - new Date(enteredAt).getTime();
+  return Math.max(0, ms / 86400000);
+}
+
+function getEffectCheck(taskId) {
+  return boardMeta().effectChecks?.[taskId] || null;
+}
+
+function taskCard(t, columnKey, opts = {}) {
+  const { showMove = true, draggable = true, showAge = true } = opts;
+  const ageDays = showAge ? getTaskAgeDays(t.id) : null;
+  const ageText = ageDays == null ? '' : `<span class="age">Age ${ageDays.toFixed(1)}d</span>`;
+  const effect = getEffectCheck(t.id);
+  const effectText = effect ? `<span class="effect-ok">Effect✓</span>` : '';
+
   const options = Object.entries(COLUMN_LABELS)
     .map(([k, label]) => `<option value="${k}" ${k === columnKey ? 'selected' : ''}>Move to ${label}</option>`)
     .join('');
 
   return `
-    <article class="task" draggable="true" data-task-id="${t.id}" data-column="${columnKey}">
+    <article class="task" ${draggable ? 'draggable="true"' : ''} data-task-id="${t.id}" data-column="${columnKey}">
       <div class="title">${t.id} — ${t.task}</div>
       <div class="intent">${t.intent || ''}</div>
       <div class="kpi">KPI: ${t.kpi || 'n/a'}${t.baseline !== undefined ? ` | ${t.baseline} -> ${t.target}` : ''}</div>
       <div class="meta">
-        <span class="${(t.priority||'').toLowerCase()==='p0'?'prio-p0':'prio-p1'}">${t.priority || ''}</span>
+        <span class="${(t.priority || '').toLowerCase() === 'p0' ? 'prio-p0' : 'prio-p1'}">${t.priority || ''}</span>
         <span>Impact ${t.impact ?? '-'}</span>
         <span>Urgency ${t.urgency ?? '-'}</span>
         <span>Risk ${t.risk_reduction ?? t.riskReduction ?? '-'}</span>
         <span>Effort ${t.effort ?? '-'}</span>
         <span class="score">Score ${t.priority_score ?? '-'}</span>
+        ${ageText}
+        ${effectText}
       </div>
+      ${showMove ? `
       <div class="move-row">
         <select class="move-select" data-task-id="${t.id}" data-column="${columnKey}">
           ${options}
         </select>
       </div>
+      ` : ''}
     </article>
   `;
 }
@@ -129,6 +189,10 @@ function renderAnalytics(board) {
     .reduce((a, b) => a + b.priority_score, 0) /
     Math.max(1, all.filter(x => typeof x.priority_score === 'number').length);
 
+  const wipAlerts = Object.entries(COLUMN_LABELS)
+    .filter(([k]) => (cols[k] || []).length > (WIP_LIMITS[k] || Infinity))
+    .map(([k, label]) => `${label} ${cols[k].length}/${WIP_LIMITS[k]}`);
+
   const cards = [
     ['Total Cards', all.length],
     ['In Progress', cols.in_progress.length],
@@ -136,12 +200,66 @@ function renderAnalytics(board) {
     ['Backlog', cols.backlog.length],
     ['Blocked', cols.blocked.length],
     ['Done', cols.done.length],
-    ['Avg Priority Score', avgScore.toFixed(2)]
+    ['Avg Priority Score', avgScore.toFixed(2)],
+    ['WIP Alerts', wipAlerts.length ? wipAlerts.join(' • ') : 'none']
   ];
 
-  document.getElementById('analyticsGrid').innerHTML = cards.map(([k, v]) =>
-    `<article class="analytics-card"><div class="kpi-key">${k}</div><div><b>${v}</b></div></article>`
-  ).join('');
+  document.getElementById('analyticsGrid').innerHTML = cards.map(([k, v]) => {
+    const warn = k === 'WIP Alerts' && v !== 'none';
+    return `<article class="analytics-card ${warn ? 'warn' : ''}"><div class="kpi-key">${k}</div><div><b>${v}</b></div></article>`;
+  }).join('');
+}
+
+function validateEffectForDone(task) {
+  const hasNumeric = typeof task.baseline === 'number' && typeof task.target === 'number';
+
+  if (hasNumeric) {
+    const msg = `${task.id}: enter current measured value for KPI '${task.kpi || 'metric'}'\nBaseline=${task.baseline}, Target=${task.target}`;
+    const input = prompt(msg);
+    if (input == null) return false;
+    const current = Number(input);
+    if (Number.isNaN(current)) {
+      alert('Invalid numeric value. Task remains in current column.');
+      return false;
+    }
+
+    const improvingDown = task.target < task.baseline;
+    const passed = improvingDown ? current <= task.target : current >= task.target;
+
+    if (!passed) {
+      alert(`Effect check failed: current=${current}, target=${task.target}. Keep task out of DONE until KPI effect is achieved.`);
+      boardMeta().effectChecks[task.id] = {
+        checkedAt: nowIso(),
+        mode: 'numeric-target',
+        passed: false,
+        kpi: task.kpi || null,
+        baseline: task.baseline,
+        target: task.target,
+        current
+      };
+      return false;
+    }
+
+    boardMeta().effectChecks[task.id] = {
+      checkedAt: nowIso(),
+      mode: 'numeric-target',
+      passed: true,
+      kpi: task.kpi || null,
+      baseline: task.baseline,
+      target: task.target,
+      current
+    };
+    return true;
+  }
+
+  const ok = confirm(`${task.id}: confirm effect achieved with evidence for DONE?`);
+  boardMeta().effectChecks[task.id] = {
+    checkedAt: nowIso(),
+    mode: 'manual',
+    passed: ok,
+    kpi: task.kpi || null
+  };
+  return ok;
 }
 
 function moveTask(taskId, fromCol, toCol) {
@@ -149,9 +267,35 @@ function moveTask(taskId, fromCol, toCol) {
   const source = boardState.columns[fromCol] || [];
   const idx = source.findIndex(t => t.id === taskId);
   if (idx < 0) return;
+
   const [task] = source.splice(idx, 1);
-  boardState.columns[toCol] = boardState.columns[toCol] || [];
-  boardState.columns[toCol].unshift(task);
+
+  const toArr = boardState.columns[toCol] || [];
+  const limit = WIP_LIMITS[toCol] ?? Infinity;
+  if (toArr.length >= limit) {
+    const proceed = confirm(`${COLUMN_LABELS[toCol]} is at WIP limit (${toArr.length}/${limit}). Move anyway?`);
+    if (!proceed) {
+      source.splice(idx, 0, task);
+      return;
+    }
+  }
+
+  if (toCol === 'done') {
+    const passed = validateEffectForDone(task);
+    if (!passed) {
+      source.splice(idx, 0, task);
+      return;
+    }
+  }
+
+  toArr.unshift(task);
+  boardState.columns[toCol] = toArr;
+
+  boardMeta().taskMeta[task.id] = {
+    enteredAt: nowIso(),
+    column: toCol
+  };
+
   saveBoardState();
   renderAll();
 }
@@ -159,7 +303,7 @@ function moveTask(taskId, fromCol, toCol) {
 function attachDnDHandlers() {
   let dragData = null;
 
-  document.querySelectorAll('.task').forEach(el => {
+  document.querySelectorAll('.task[draggable="true"]').forEach(el => {
     el.addEventListener('dragstart', (e) => {
       dragData = {
         taskId: el.dataset.taskId,
@@ -182,7 +326,9 @@ function attachDnDHandlers() {
       zone.classList.add('active');
       e.dataTransfer.dropEffect = 'move';
     });
+
     zone.addEventListener('dragleave', () => zone.classList.remove('active'));
+
     zone.addEventListener('drop', (e) => {
       e.preventDefault();
       zone.classList.remove('active');
@@ -210,21 +356,31 @@ function renderBoard(board) {
 
   document.getElementById('board').innerHTML = columns.map(([key, label]) => {
     const tasks = board.columns[key] || [];
+    const limit = WIP_LIMITS[key] ?? Infinity;
+    const overLimit = tasks.length > limit;
+
     return `
-      <section class="col">
-        <h3>${label} <span class="badge">${tasks.length}</span></h3>
+      <section class="col ${overLimit ? 'wip-over' : ''}">
+        <h3>${label} <span class="badge">${tasks.length}</span> <span class="muted">WIP ${limit === Infinity ? '∞' : limit}</span></h3>
         <div class="task-list drop-zone" data-column="${key}">
-          ${tasks.map(t => taskCard(t, key)).join('') || '<div class="muted">No tasks</div>'}
+          ${tasks.map(t => taskCard(t, key, { showMove: true, draggable: true, showAge: true })).join('') || '<div class="muted">No tasks</div>'}
         </div>
       </section>
     `;
   }).join('');
 
-  const top = Object.values(board.columns).flat()
+  const allWithColumn = Object.entries(board.columns).flatMap(([col, tasks]) =>
+    (tasks || []).map(t => ({ ...t, _col: col }))
+  );
+
+  const top = allWithColumn
     .filter(t => typeof t.priority_score === 'number')
     .sort((a, b) => b.priority_score - a.priority_score)
     .slice(0, 10);
-  document.getElementById('topTasks').innerHTML = top.map(t => taskCard(t, 'ready')).join('');
+
+  document.getElementById('topTasks').innerHTML = top
+    .map(t => taskCard(t, t._col, { showMove: false, draggable: false, showAge: true }))
+    .join('');
 
   attachDnDHandlers();
   attachMoveSelectHandlers();
@@ -234,7 +390,7 @@ function renderQuestions(q) {
   const all = q.tasks || [];
   document.getElementById('questionBacklog').innerHTML = all
     .sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0))
-    .map(t => taskCard(t, 'backlog'))
+    .map(t => taskCard(t, 'backlog', { showMove: false, draggable: false, showAge: false }))
     .join('');
 }
 
@@ -249,6 +405,7 @@ function exportBoardJson() {
 }
 
 function renderAll() {
+  ensureTaskMeta();
   document.getElementById('updatedAt').textContent = `Updated: ${boardState.updated_at} • local state: ${localStorage.getItem(STORAGE_KEY) ? 'persisted' : 'default'}`;
   document.getElementById('kpiGrid').innerHTML = (boardState.kpis || []).map(metricCard).join('');
   renderKpiTrends(historyState);
@@ -269,9 +426,12 @@ function renderAll() {
     questionsState = questions;
     historyState = history;
 
+    ensureTaskMeta();
+
     document.getElementById('resetBoardBtn').addEventListener('click', () => {
       localStorage.removeItem(STORAGE_KEY);
       boardState = structuredClone(defaultBoard);
+      ensureTaskMeta();
       renderAll();
     });
 

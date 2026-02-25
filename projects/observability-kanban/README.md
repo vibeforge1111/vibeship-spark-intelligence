@@ -15,6 +15,9 @@ Turn analysis/questions into measurable execution:
 - KPI trend mini-charts (from `data/kpi_history.json`)
 - Kanban columns with drag-and-drop movement
 - Mobile-friendly task moves using in-card column selector
+- WIP limits + over-limit alerts by column
+- Card aging (days in current column)
+- Effect-check workflow before moving KPI tasks to DONE
 - Local persistence (board state saved in browser)
 - Question-derived backlog (actionable tasks generated from interrogation questions)
 - Analytics summary (task counts, average priority, top next tasks)
