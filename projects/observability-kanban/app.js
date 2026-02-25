@@ -3,6 +3,7 @@ const COLUMN_LABELS = {
   in_progress: 'IN_PROGRESS',
   ready: 'READY',
   backlog: 'BACKLOG',
+  needs_review: 'NEEDS_REVIEW',
   blocked: 'BLOCKED',
   done: 'DONE'
 };
@@ -11,9 +12,12 @@ const WIP_LIMITS = {
   in_progress: 6,
   ready: 8,
   backlog: 30,
+  needs_review: 8,
   blocked: 6,
   done: 999
 };
+
+const EFFECT_FAIL_THRESHOLD_FOR_REVIEW = 2;
 
 let boardState = null;
 let questionsState = null;
@@ -43,10 +47,12 @@ function saveBoardState() {
 function loadPersistedBoard(defaultBoard) {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return structuredClone(defaultBoard);
-    const parsed = JSON.parse(raw);
-    if (!parsed?.columns) return structuredClone(defaultBoard);
-    return parsed;
+    const board = !raw ? structuredClone(defaultBoard) : JSON.parse(raw);
+    if (!board?.columns) return structuredClone(defaultBoard);
+    for (const key of Object.keys(COLUMN_LABELS)) {
+      if (!Array.isArray(board.columns[key])) board.columns[key] = [];
+    }
+    return board;
   } catch {
     return structuredClone(defaultBoard);
   }
@@ -150,7 +156,8 @@ function taskCard(t, columnKey, opts = {}) {
   const ageDays = showAge ? getTaskAgeDays(t.id) : null;
   const ageText = ageDays == null ? '' : `<span class="age">Age ${ageDays.toFixed(1)}d</span>`;
   const effect = getEffectCheck(t.id);
-  const effectText = effect ? `<span class="effect-ok">Effect✓</span>` : '';
+  const effectText = effect?.passed ? `<span class="effect-ok">Effect✓</span>` : '';
+  const failText = effect && !effect.passed && effect.failedCount ? `<span class="effect-fail">Fail x${effect.failedCount}</span>` : '';
 
   const options = Object.entries(COLUMN_LABELS)
     .map(([k, label]) => `<option value="${k}" ${k === columnKey ? 'selected' : ''}>Move to ${label}</option>`)
@@ -170,6 +177,7 @@ function taskCard(t, columnKey, opts = {}) {
         <span class="score">Score ${t.priority_score ?? '-'}</span>
         ${ageText}
         ${effectText}
+        ${failText}
       </div>
       ${showMove ? `
       <div class="move-row">
@@ -198,6 +206,7 @@ function renderAnalytics(board) {
     ['In Progress', cols.in_progress.length],
     ['Ready', cols.ready.length],
     ['Backlog', cols.backlog.length],
+    ['Needs Review', cols.needs_review.length],
     ['Blocked', cols.blocked.length],
     ['Done', cols.done.length],
     ['Avg Priority Score', avgScore.toFixed(2)],
@@ -212,54 +221,63 @@ function renderAnalytics(board) {
 
 function validateEffectForDone(task) {
   const hasNumeric = typeof task.baseline === 'number' && typeof task.target === 'number';
+  const prev = boardMeta().effectChecks[task.id] || {};
+  const failedCount = Number(prev.failedCount || 0);
 
   if (hasNumeric) {
     const msg = `${task.id}: enter current measured value for KPI '${task.kpi || 'metric'}'\nBaseline=${task.baseline}, Target=${task.target}`;
     const input = prompt(msg);
-    if (input == null) return false;
+    if (input == null) return { passed: false, autoReview: false };
     const current = Number(input);
     if (Number.isNaN(current)) {
       alert('Invalid numeric value. Task remains in current column.');
-      return false;
+      return { passed: false, autoReview: false };
     }
 
     const improvingDown = task.target < task.baseline;
     const passed = improvingDown ? current <= task.target : current >= task.target;
 
     if (!passed) {
-      alert(`Effect check failed: current=${current}, target=${task.target}. Keep task out of DONE until KPI effect is achieved.`);
+      const nextFailedCount = failedCount + 1;
+      const autoReview = nextFailedCount >= EFFECT_FAIL_THRESHOLD_FOR_REVIEW;
+      alert(`Effect check failed: current=${current}, target=${task.target}. Keep task out of DONE until KPI effect is achieved.${autoReview ? '\nTask will be moved to NEEDS_REVIEW.' : ''}`);
       boardMeta().effectChecks[task.id] = {
         checkedAt: nowIso(),
         mode: 'numeric-target',
         passed: false,
+        failedCount: nextFailedCount,
         kpi: task.kpi || null,
         baseline: task.baseline,
         target: task.target,
         current
       };
-      return false;
+      return { passed: false, autoReview };
     }
 
     boardMeta().effectChecks[task.id] = {
       checkedAt: nowIso(),
       mode: 'numeric-target',
       passed: true,
+      failedCount: 0,
       kpi: task.kpi || null,
       baseline: task.baseline,
       target: task.target,
       current
     };
-    return true;
+    return { passed: true, autoReview: false };
   }
 
   const ok = confirm(`${task.id}: confirm effect achieved with evidence for DONE?`);
+  const nextFailedCount = ok ? 0 : failedCount + 1;
+  const autoReview = !ok && nextFailedCount >= EFFECT_FAIL_THRESHOLD_FOR_REVIEW;
   boardMeta().effectChecks[task.id] = {
     checkedAt: nowIso(),
     mode: 'manual',
     passed: ok,
+    failedCount: nextFailedCount,
     kpi: task.kpi || null
   };
-  return ok;
+  return { passed: ok, autoReview };
 }
 
 function moveTask(taskId, fromCol, toCol) {
@@ -281,8 +299,16 @@ function moveTask(taskId, fromCol, toCol) {
   }
 
   if (toCol === 'done') {
-    const passed = validateEffectForDone(task);
-    if (!passed) {
+    const check = validateEffectForDone(task);
+    if (!check.passed) {
+      if (check.autoReview) {
+        boardState.columns.needs_review = boardState.columns.needs_review || [];
+        boardState.columns.needs_review.unshift(task);
+        boardMeta().taskMeta[task.id] = { enteredAt: nowIso(), column: 'needs_review' };
+        saveBoardState();
+        renderAll();
+        return;
+      }
       source.splice(idx, 0, task);
       return;
     }

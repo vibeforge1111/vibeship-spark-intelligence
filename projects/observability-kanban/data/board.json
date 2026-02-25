@@ -28,6 +28,7 @@
       {"id":"CB-022","priority":"P1","task":"Metric contract page","intent":"Unify metric definitions/formulas/sources","kpi":"drift_rate","impact":8,"urgency":7,"risk_reduction":9,"effort":5,"priority_score":4.8},
       {"id":"CB-033","priority":"P1","task":"Weekly SOTA delta review","intent":"Keep improvements benchmarked against frontier standards","kpi":"weekly_maturity_delta","impact":7,"urgency":6,"risk_reduction":8,"effort":3,"priority_score":7.0}
     ],
+    "needs_review": [],
     "blocked": [],
     "done": [
       {"id":"SETUP-001","priority":"P0","task":"Kanban schema + scoring model created","intent":"Make tasks analyzable by numbers","impact":7,"urgency":8,"risk_reduction":7,"effort":2,"priority_score":11.0}

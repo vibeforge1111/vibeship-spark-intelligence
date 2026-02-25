@@ -18,6 +18,7 @@ Turn analysis/questions into measurable execution:
 - WIP limits + over-limit alerts by column
 - Card aging (days in current column)
 - Effect-check workflow before moving KPI tasks to DONE
+- Auto-routing to `NEEDS_REVIEW` after repeated failed effect checks (default threshold: 2)
 - Local persistence (board state saved in browser)
 - Question-derived backlog (actionable tasks generated from interrogation questions)
 - Analytics summary (task counts, average priority, top next tasks)
