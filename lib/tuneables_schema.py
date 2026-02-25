@@ -307,18 +307,6 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "no_evidence_limit": TuneableSpec("int", 6, 1, 30, "Force DIAGNOSE after N steps without evidence"),
     },
 
-    # ---- scheduler ----
-    "scheduler": {
-        "enabled": TuneableSpec("bool", True, None, None, "Enable the scheduler"),
-    },
-
-    # ---- source_roles: role definitions (mostly documentation, typed as dict) ----
-    "source_roles": {
-        "distillers": TuneableSpec("dict", {}, None, None, "Sources that distill/learn (not advisory)"),
-        "direct_advisory": TuneableSpec("dict", {}, None, None, "Sources that advise directly"),
-        "disabled_from_advisory": TuneableSpec("dict", {}, None, None, "Sources removed from advisory"),
-    },
-
     # ---- auto_tuner: self-tuning engine ----
     "auto_tuner": {
         "enabled": TuneableSpec("bool", True, None, None, "Enable auto-tuner"),
@@ -485,7 +473,7 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
 }
 
 # Sections with internal _doc keys that should not trigger unknown-key warnings
-_DOC_KEY_SECTIONS = {"source_roles"}
+_DOC_KEY_SECTIONS: set = set()
 
 # Module consumer map (which module reads which section)
 SECTION_CONSUMERS: Dict[str, List[str]] = {
@@ -503,8 +491,6 @@ SECTION_CONSUMERS: Dict[str, List[str]] = {
     "retrieval": ["lib/advisor.py", "lib/semantic_retriever.py"],
     "meta_ralph": ["lib/meta_ralph.py"],
     "eidos": ["lib/eidos/models.py"],
-    "scheduler": ["lib/bridge_cycle.py"],
-    "source_roles": ["lib/advisory_engine.py", "lib/auto_tuner.py"],
     "auto_tuner": ["lib/auto_tuner.py"],
     "chip_merge": ["lib/chips/runtime.py", "lib/chip_merger.py"],
     "advisory_quality": ["lib/advisory_synthesizer.py"],

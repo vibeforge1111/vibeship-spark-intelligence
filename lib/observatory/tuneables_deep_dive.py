@@ -90,10 +90,10 @@ KNOWN_RELOAD_SECTIONS = {
 
 # Schema sections from tuneables_schema.py
 SCHEMA_SECTIONS = [
-    "values", "semantic", "triggers", "promotion", "synthesizer",
+    "values", "pipeline", "semantic", "triggers", "promotion", "synthesizer",
     "flow", "advisory_engine", "advisory_gate", "advisory_packet_store",
     "advisory_prefetch", "advisor", "retrieval", "meta_ralph", "eidos",
-    "scheduler", "source_roles", "auto_tuner", "chip_merge",
+    "auto_tuner", "chip_merge",
     "advisory_quality", "advisory_preferences", "memory_emotion",
     "memory_learning", "memory_retrieval_guard", "bridge_worker",
     "memory_capture", "observatory", "production_gates",
@@ -118,8 +118,7 @@ SECTION_IMPACT = {
     "synthesizer": "LOW",
     "triggers": "LOW",
     "advisory_prefetch": "LOW",
-    "scheduler": "LOW",
-    "source_roles": "LOW",
+    "pipeline": "MEDIUM",
     "chip_merge": "LOW",
     "advisory_quality": "LOW",
     "advisory_preferences": "LOW",
@@ -145,8 +144,7 @@ SECTION_CONSUMERS = {
     "retrieval": ["lib/advisor.py", "lib/semantic_retriever.py"],
     "meta_ralph": ["lib/meta_ralph.py"],
     "eidos": ["lib/eidos/models.py"],
-    "scheduler": ["lib/bridge_cycle.py"],
-    "source_roles": ["lib/advisory_engine.py", "lib/auto_tuner.py"],
+    "pipeline": ["lib/pipeline.py"],
     "auto_tuner": ["lib/auto_tuner.py"],
     "chip_merge": ["lib/chips/runtime.py"],
     "advisory_quality": ["lib/advisory_synthesizer.py"],

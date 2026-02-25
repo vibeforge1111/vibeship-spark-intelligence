@@ -92,35 +92,75 @@ QUEUE_HEALTHY = 200       # Below this, normal processing
 QUEUE_ELEVATED = 500      # Increase batch size
 QUEUE_CRITICAL = 2000     # Maximum batch size + drain mode
 
-# Importance sampling under backlog (reduce work on low-value events).
-# Enabled only when explicitly turned on.
-IMPORTANCE_SAMPLING_ENABLED = os.getenv("SPARK_PIPELINE_IMPORTANCE_SAMPLING", "0") == "1"
-try:
-    LOW_PRIORITY_KEEP_RATE = float(os.getenv("SPARK_PIPELINE_LOW_KEEP_RATE", "0.25"))
-except Exception:
-    LOW_PRIORITY_KEEP_RATE = 0.25
-LOW_PRIORITY_KEEP_RATE = max(0.0, min(1.0, LOW_PRIORITY_KEEP_RATE))
+# Pipeline section globals — loaded from tuneables.json → "pipeline" section
+# with env var overrides via config_authority.
+IMPORTANCE_SAMPLING_ENABLED = False
+LOW_PRIORITY_KEEP_RATE = 0.25
+MACROS_ENABLED = False
+MACRO_MIN_COUNT = 3
+MIN_INSIGHTS_FLOOR = 1
+FLOOR_EVENTS_THRESHOLD = 20
+FLOOR_SOFT_MIN_EVENTS = 2
 
-# Macro workflow mining (temporal abstractions over tool sequences)
-MACROS_ENABLED = os.getenv("SPARK_MACROS_ENABLED", "0") == "1"
 try:
-    MACRO_MIN_COUNT = max(2, min(20, int(os.getenv("SPARK_MACRO_MIN_COUNT", "3") or 3)))
-except Exception:
-    MACRO_MIN_COUNT = 3
+    from .config_authority import env_bool, env_int, env_float
 
-# Distillation floor: ensure high-volume cycles produce at least one durable insight.
+    _PIPELINE_ENV_OVERRIDES = {
+        "importance_sampling_enabled": env_bool("SPARK_PIPELINE_IMPORTANCE_SAMPLING"),
+        "low_priority_keep_rate": env_float("SPARK_PIPELINE_LOW_KEEP_RATE", lo=0.0, hi=1.0),
+        "macros_enabled": env_bool("SPARK_MACROS_ENABLED"),
+        "macro_min_count": env_int("SPARK_MACRO_MIN_COUNT", lo=2, hi=20),
+        "min_insights_floor": env_int("SPARK_PIPELINE_MIN_INSIGHTS_FLOOR", lo=0, hi=3),
+        "floor_events_threshold": env_int("SPARK_PIPELINE_MIN_INSIGHTS_EVENTS", lo=1, hi=200),
+        "floor_soft_min_events": env_int("SPARK_PIPELINE_SOFT_MIN_INSIGHTS_EVENTS", lo=1, hi=50),
+    }
+except ImportError:
+    _PIPELINE_ENV_OVERRIDES = {}
+
+
+def _apply_pipeline_section(cfg: Dict[str, Any]) -> None:
+    """Set pipeline-section globals from a resolved dict."""
+    global IMPORTANCE_SAMPLING_ENABLED, LOW_PRIORITY_KEEP_RATE
+    global MACROS_ENABLED, MACRO_MIN_COUNT
+    global MIN_INSIGHTS_FLOOR, FLOOR_EVENTS_THRESHOLD, FLOOR_SOFT_MIN_EVENTS
+    if not isinstance(cfg, dict):
+        return
+    if "importance_sampling_enabled" in cfg:
+        IMPORTANCE_SAMPLING_ENABLED = bool(cfg["importance_sampling_enabled"])
+    if "low_priority_keep_rate" in cfg:
+        LOW_PRIORITY_KEEP_RATE = max(0.0, min(1.0, float(cfg["low_priority_keep_rate"])))
+    if "macros_enabled" in cfg:
+        MACROS_ENABLED = bool(cfg["macros_enabled"])
+    if "macro_min_count" in cfg:
+        MACRO_MIN_COUNT = max(2, min(20, int(cfg["macro_min_count"])))
+    if "min_insights_floor" in cfg:
+        MIN_INSIGHTS_FLOOR = max(0, min(3, int(cfg["min_insights_floor"])))
+    if "floor_events_threshold" in cfg:
+        FLOOR_EVENTS_THRESHOLD = max(1, min(200, int(cfg["floor_events_threshold"])))
+    if "floor_soft_min_events" in cfg:
+        FLOOR_SOFT_MIN_EVENTS = max(1, min(50, int(cfg["floor_soft_min_events"])))
+
+
+def _load_pipeline_section_config() -> None:
+    """Load pipeline-section tuneables via config_authority resolve_section."""
+    try:
+        from .config_authority import resolve_section
+        tuneables = Path.home() / ".spark" / "tuneables.json"
+        cfg = resolve_section(
+            "pipeline", runtime_path=tuneables, env_overrides=_PIPELINE_ENV_OVERRIDES,
+        ).data
+        _apply_pipeline_section(cfg)
+    except Exception:
+        pass
+
+
+_load_pipeline_section_config()
+
 try:
-    MIN_INSIGHTS_FLOOR = max(0, min(3, int(os.getenv("SPARK_PIPELINE_MIN_INSIGHTS_FLOOR", "1") or 1)))
-except Exception:
-    MIN_INSIGHTS_FLOOR = 1
-try:
-    FLOOR_EVENTS_THRESHOLD = max(1, min(200, int(os.getenv("SPARK_PIPELINE_MIN_INSIGHTS_EVENTS", "20") or 20)))
-except Exception:
-    FLOOR_EVENTS_THRESHOLD = 20
-try:
-    FLOOR_SOFT_MIN_EVENTS = max(1, min(50, int(os.getenv("SPARK_PIPELINE_SOFT_MIN_INSIGHTS_EVENTS", "2") or 2)))
-except Exception:
-    FLOOR_SOFT_MIN_EVENTS = 2
+    from lib.tuneables_reload import register_reload as _pipeline_section_register
+    _pipeline_section_register("pipeline", _apply_pipeline_section, label="pipeline.reload_section")
+except ImportError:
+    pass
 
 # Processing health metrics file
 PIPELINE_STATE_FILE = Path.home() / ".spark" / "pipeline_state.json"

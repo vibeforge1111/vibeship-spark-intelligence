@@ -263,9 +263,6 @@
     "max_file_touches": 5,
     "no_evidence_limit": 6
   },
-  "scheduler": {
-    "enabled": true
-  },
   "sync": {
     "mode": "all",
     "adapters_enabled": [],
