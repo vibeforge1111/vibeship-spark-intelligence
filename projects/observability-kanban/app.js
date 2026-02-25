@@ -37,6 +37,7 @@ function boardMeta() {
   if (!boardState.__meta) boardState.__meta = {};
   if (!boardState.__meta.taskMeta) boardState.__meta.taskMeta = {};
   if (!boardState.__meta.effectChecks) boardState.__meta.effectChecks = {};
+  if (!boardState.__meta.reviewChecklists) boardState.__meta.reviewChecklists = {};
   return boardState.__meta;
 }
 
@@ -151,13 +152,68 @@ function getEffectCheck(taskId) {
   return boardMeta().effectChecks?.[taskId] || null;
 }
 
+function getReviewChecklist(taskId) {
+  return boardMeta().reviewChecklists?.[taskId] || null;
+}
+
+function openNeedsReviewModal(task) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('reviewModal');
+    const label = document.getElementById('reviewTaskLabel');
+    const root = document.getElementById('reviewRootCause');
+    const adj = document.getElementById('reviewAdjustment');
+    const retest = document.getElementById('reviewRetest');
+    const saveBtn = document.getElementById('reviewSaveBtn');
+    const cancelBtn = document.getElementById('reviewCancelBtn');
+
+    const prior = getReviewChecklist(task.id) || {};
+    label.textContent = `${task.id} — ${task.task}`;
+    root.value = prior.rootCause || '';
+    adj.value = prior.adjustment || '';
+    retest.value = prior.retestPlan || '';
+
+    const cleanup = () => {
+      saveBtn.removeEventListener('click', onSave);
+      cancelBtn.removeEventListener('click', onCancel);
+      modal.classList.add('hidden');
+      modal.setAttribute('aria-hidden', 'true');
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve({ ok: false });
+    };
+
+    const onSave = () => {
+      const payload = {
+        rootCause: root.value.trim(),
+        adjustment: adj.value.trim(),
+        retestPlan: retest.value.trim(),
+      };
+      if (!payload.rootCause || !payload.adjustment || !payload.retestPlan) {
+        alert('Please complete all three checklist fields before moving to READY.');
+        return;
+      }
+      cleanup();
+      resolve({ ok: true, payload });
+    };
+
+    saveBtn.addEventListener('click', onSave);
+    cancelBtn.addEventListener('click', onCancel);
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+  });
+}
+
 function taskCard(t, columnKey, opts = {}) {
   const { showMove = true, draggable = true, showAge = true } = opts;
   const ageDays = showAge ? getTaskAgeDays(t.id) : null;
   const ageText = ageDays == null ? '' : `<span class="age">Age ${ageDays.toFixed(1)}d</span>`;
   const effect = getEffectCheck(t.id);
+  const review = getReviewChecklist(t.id);
   const effectText = effect?.passed ? `<span class="effect-ok">Effect✓</span>` : '';
   const failText = effect && !effect.passed && effect.failedCount ? `<span class="effect-fail">Fail x${effect.failedCount}</span>` : '';
+  const reviewText = review ? `<span class="review-ok">Review✓</span>` : '';
 
   const options = Object.entries(COLUMN_LABELS)
     .map(([k, label]) => `<option value="${k}" ${k === columnKey ? 'selected' : ''}>Move to ${label}</option>`)
@@ -178,6 +234,7 @@ function taskCard(t, columnKey, opts = {}) {
         ${ageText}
         ${effectText}
         ${failText}
+        ${reviewText}
       </div>
       ${showMove ? `
       <div class="move-row">
@@ -280,7 +337,7 @@ function validateEffectForDone(task) {
   return { passed: ok, autoReview };
 }
 
-function moveTask(taskId, fromCol, toCol) {
+async function moveTask(taskId, fromCol, toCol) {
   if (!taskId || !fromCol || !toCol || fromCol === toCol) return;
   const source = boardState.columns[fromCol] || [];
   const idx = source.findIndex(t => t.id === taskId);
@@ -296,6 +353,18 @@ function moveTask(taskId, fromCol, toCol) {
       source.splice(idx, 0, task);
       return;
     }
+  }
+
+  if (fromCol === 'needs_review' && toCol === 'ready') {
+    const checklist = await openNeedsReviewModal(task);
+    if (!checklist.ok) {
+      source.splice(idx, 0, task);
+      return;
+    }
+    boardMeta().reviewChecklists[task.id] = {
+      completedAt: nowIso(),
+      ...checklist.payload
+    };
   }
 
   if (toCol === 'done') {
@@ -363,7 +432,9 @@ function attachDnDHandlers() {
       try {
         payload = payload || JSON.parse(e.dataTransfer.getData('text/plain'));
       } catch {}
-      if (payload) moveTask(payload.taskId, payload.fromCol, toCol);
+      if (payload) {
+        void moveTask(payload.taskId, payload.fromCol, toCol);
+      }
       dragData = null;
     });
   });
@@ -372,7 +443,7 @@ function attachDnDHandlers() {
 function attachMoveSelectHandlers() {
   document.querySelectorAll('.move-select').forEach(sel => {
     sel.addEventListener('change', () => {
-      moveTask(sel.dataset.taskId, sel.dataset.column, sel.value);
+      void moveTask(sel.dataset.taskId, sel.dataset.column, sel.value);
     });
   });
 }
@@ -462,6 +533,18 @@ function renderAll() {
     });
 
     document.getElementById('exportBoardBtn').addEventListener('click', exportBoardJson);
+
+    const modal = document.getElementById('reviewModal');
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        document.getElementById('reviewCancelBtn').click();
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+        document.getElementById('reviewCancelBtn').click();
+      }
+    });
 
     renderAll();
   } catch (err) {

@@ -30,6 +30,7 @@ Turn analysis/questions into measurable execution:
 - `app.js` - rendering + analytics logic
 - `data/board.json` - core board data (KPI-linked tasks)
 - `data/questions_backlog.json` - question-derived actionable tasks
+- `data/kpi_history.json` - KPI trend series for mini charts
 
 ## Run locally
 From repo root:
@@ -46,7 +47,8 @@ Open:
 1. Add/update tasks in `data/board.json`
 2. Add question-derived tasks in `data/questions_backlog.json`
 3. Move tasks through columns based on evidence
-4. Mark complete only when KPI effect is visible
+4. For cards in `NEEDS_REVIEW` moving back to `READY`, complete the checklist modal (root cause, adjustment, retest plan)
+5. Mark complete only when KPI effect is visible
 
 ## Definition of Done rule
 A task can be moved to DONE only if:

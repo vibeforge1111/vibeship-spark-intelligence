@@ -39,6 +39,23 @@
     <div id="questionBacklog" class="task-list"></div>
   </section>
 
+  <div id="reviewModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Needs Review Checklist</h3>
+      <p class="muted" id="reviewTaskLabel"></p>
+      <label>Root cause</label>
+      <textarea id="reviewRootCause" rows="3" placeholder="What actually caused the miss/failure?"></textarea>
+      <label>Adjustment</label>
+      <textarea id="reviewAdjustment" rows="3" placeholder="What did we change to fix it?"></textarea>
+      <label>Retest plan</label>
+      <textarea id="reviewRetest" rows="3" placeholder="How will we validate it next run?"></textarea>
+      <div class="modal-actions">
+        <button id="reviewCancelBtn" class="btn btn-secondary">Cancel</button>
+        <button id="reviewSaveBtn" class="btn">Save & Move to READY</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>
