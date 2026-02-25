@@ -64,7 +64,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-MEM-01: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -132,7 +132,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-ADV-01: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -201,7 +201,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-PULSE-01: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -269,7 +269,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-PULSE-03: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -337,7 +337,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-OBS-01: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -405,7 +405,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-COH-02: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -473,7 +473,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-MEM-02: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -542,7 +542,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-PULSE-02: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -610,7 +610,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-ADV-02: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -678,7 +678,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-WEB-01: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -746,7 +746,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-ADV-04: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -814,7 +814,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-COH-01: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -880,7 +880,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task CB-020: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -948,7 +948,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-MEM-04: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1016,7 +1016,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-OBS-03: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1082,7 +1082,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task CB-033: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1150,7 +1150,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-OBS-04: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1218,7 +1218,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-MEM-03: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1287,7 +1287,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-PULSE-04: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1355,7 +1355,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-OBS-02: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1423,7 +1423,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-WEB-02: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1491,7 +1491,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-ADV-03: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1557,7 +1557,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task CB-022: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1623,7 +1623,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task CB-016: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1691,7 +1691,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-WEB-03: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1759,7 +1759,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-ADV-05: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1827,7 +1827,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-MEM-05: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1895,7 +1895,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task Q-WEB-04: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
@@ -1961,7 +1961,7 @@
           "python -m ruff check scripts lib tests",
           "pytest -q"
         ],
-        "codex_prompt_prefix": "Task CB-014: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+        "agent_instruction_prefix": "Implement this task in execution_context.target_repo_path only. Assert repo path before coding, keep scope tight, and report changed files + validation."
       },
       "terminal_instruction": {
         "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
