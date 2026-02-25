@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Observability Kanban Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Observability Kanban Dashboard</h1>
+    <p id="updatedAt" class="muted"></p>
+  </header>
+
+  <section class="kpi-grid" id="kpiGrid"></section>
+
+  <section class="analytics-grid" id="analyticsGrid"></section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Top Next Tasks (Score-ranked)</h2>
+    </div>
+    <div id="topTasks" class="task-list"></div>
+  </section>
+
+  <section class="board" id="board"></section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Question-Derived Backlog</h2>
+      <span class="muted">Actionables from Memory / Advisory / Web / Observatory / Pulse interrogation</span>
+    </div>
+    <div id="questionBacklog" class="task-list"></div>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>
