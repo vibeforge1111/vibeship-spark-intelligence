@@ -26,7 +26,6 @@ let suppressionAuditState = null;
 let buildQueueState = null;
 let pulseWidgetsState = null;
 let pulseEndpointsState = null;
-let memoryNoiseState = null;
 
 async function loadJson(path) {
   const res = await fetch(path);
@@ -273,69 +272,6 @@ function renderSuppressionAudit(audit) {
           </tr>
         </thead>
         <tbody>${rows}</tbody>
-      </table>
-    </div>
-  `;
-}
-
-function renderMemoryNoiseSignatures(noiseData) {
-  const host = document.getElementById('memoryNoiseSignatures');
-  const rows = noiseData?.signatures || [];
-  if (!rows.length) {
-    host.innerHTML = '<div class="empty-state">No recurring memory-noise signatures found.</div>';
-    return;
-  }
-
-  const sorted = [...rows].sort((a, b) => Number(b.frequency || 0) - Number(a.frequency || 0));
-  const top = sorted[0];
-  const totalHits = sorted.reduce((sum, row) => sum + Number(row.frequency || 0), 0);
-  const actionable = sorted.filter((row) => String(row.next_action || '').trim().length > 0).length;
-
-  const summary = `
-    <div class="memory-noise-summary">
-      <article class="analytics-card">
-        <p class="kpi-key">Window</p>
-        <div class="analytics-value">${escapeHtml(noiseData?.window_days ?? 'n/a')}d</div>
-      </article>
-      <article class="analytics-card">
-        <p class="kpi-key">Signature Hits</p>
-        <div class="analytics-value">${totalHits}</div>
-      </article>
-      <article class="analytics-card">
-        <p class="kpi-key">Top Signature</p>
-        <div class="analytics-value">${escapeHtml(top.signature || 'n/a')}</div>
-      </article>
-      <article class="analytics-card">
-        <p class="kpi-key">Actionable Now</p>
-        <div class="analytics-value">${actionable}/${rows.length}</div>
-      </article>
-    </div>
-  `;
-
-  const tableRows = sorted.map((row) => `
-    <tr>
-      <td>${escapeHtml(row.signature)}</td>
-      <td>${escapeHtml(row.frequency)}</td>
-      <td>${escapeHtml(row.noise_share)}</td>
-      <td>${escapeHtml(row.impact_score)}</td>
-      <td>${escapeHtml(row.next_action || 'n/a')}</td>
-    </tr>
-  `).join('');
-
-  host.innerHTML = `
-    ${summary}
-    <div class="audit-table-wrap">
-      <table class="audit-table">
-        <thead>
-          <tr>
-            <th>Signature</th>
-            <th>Hits</th>
-            <th>Noise Share</th>
-            <th>Impact</th>
-            <th>Next Action</th>
-          </tr>
-        </thead>
-        <tbody>${tableRows}</tbody>
       </table>
     </div>
   `;
@@ -1007,7 +943,6 @@ function renderAll() {
   renderAnalytics(boardState);
   renderOperatorNow(buildQueueState, boardState);
   renderSuppressionAudit(suppressionAuditState);
-  renderMemoryNoiseSignatures(memoryNoiseState);
   renderPulseCleanup(pulseWidgetsState);
   renderPulseEndpointRewire(pulseWidgetsState, pulseEndpointsState, historyState, suppressionAuditState, buildQueueState);
   renderBoard(boardState);
@@ -1016,15 +951,14 @@ function renderAll() {
 
 (async function init() {
   try {
-    const [defaultBoard, questions, history, suppressionAudit, buildQueue, pulseWidgets, pulseEndpoints, memoryNoise] = await Promise.all([
+    const [defaultBoard, questions, history, suppressionAudit, buildQueue, pulseWidgets, pulseEndpoints] = await Promise.all([
       loadJson('data/board.json'),
       loadJson('data/questions_backlog.json'),
       loadJson('data/kpi_history.json'),
       loadJson('data/suppression_audit.json'),
       loadJson('data/terminal_build_queue.json'),
       loadJson('data/pulse_widgets.json'),
-      loadJson('data/pulse_endpoints.json'),
-      loadJson('data/memory_noise_signatures.json')
+      loadJson('data/pulse_endpoints.json')
     ]);
 
     boardState = loadPersistedBoard(defaultBoard);
@@ -1034,7 +968,6 @@ function renderAll() {
     buildQueueState = buildQueue;
     pulseWidgetsState = pulseWidgets;
     pulseEndpointsState = pulseEndpoints;
-    memoryNoiseState = memoryNoise;
 
     ensureTaskMeta();
 

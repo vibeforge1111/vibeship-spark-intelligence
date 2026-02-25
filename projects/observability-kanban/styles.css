@@ -216,13 +216,6 @@ body::before {
   margin-bottom: 10px;
 }
 
-.memory-noise-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
 .operator-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
