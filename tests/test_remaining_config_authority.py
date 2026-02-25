@@ -20,6 +20,7 @@ def test_memory_capture_load_config_reads_runtime(monkeypatch, tmp_path):
                     "auto_save_threshold": 0.72,
                     "suggest_threshold": 0.61,
                     "max_capture_chars": 4096,
+                    "context_capture_chars": 360,
                 }
             }
         ),
@@ -32,6 +33,7 @@ def test_memory_capture_load_config_reads_runtime(monkeypatch, tmp_path):
     assert cfg["auto_save_threshold"] == 0.72
     assert cfg["suggest_threshold"] == 0.61
     assert cfg["max_capture_chars"] == 4096
+    assert cfg["context_capture_chars"] == 360
 
 
 def test_request_tracker_load_config_reads_runtime(monkeypatch, tmp_path):

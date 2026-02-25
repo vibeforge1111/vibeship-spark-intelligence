@@ -31,21 +31,25 @@ def test_memory_capture_apply_clamps_and_orders_thresholds(monkeypatch):
     monkeypatch.setattr(memory_capture, "AUTO_SAVE_THRESHOLD", 0.82)
     monkeypatch.setattr(memory_capture, "SUGGEST_THRESHOLD", 0.55)
     monkeypatch.setattr(memory_capture, "MAX_CAPTURE_CHARS", 2000)
+    monkeypatch.setattr(memory_capture, "CONTEXT_CAPTURE_CHARS", 320)
 
     result = memory_capture.apply_memory_capture_config(
         {
             "auto_save_threshold": 0.7,
             "suggest_threshold": 0.9,
             "max_capture_chars": 4096,
+            "context_capture_chars": 360,
         }
     )
 
     assert "auto_save_threshold" in result.get("applied", [])
     assert "suggest_threshold" in result.get("applied", [])
     assert "max_capture_chars" in result.get("applied", [])
+    assert "context_capture_chars" in result.get("applied", [])
     assert memory_capture.AUTO_SAVE_THRESHOLD == 0.7
     assert memory_capture.SUGGEST_THRESHOLD <= memory_capture.AUTO_SAVE_THRESHOLD
     assert memory_capture.MAX_CAPTURE_CHARS == 4096
+    assert memory_capture.CONTEXT_CAPTURE_CHARS == 360
 
 
 def test_queue_apply_updates_limits(monkeypatch):

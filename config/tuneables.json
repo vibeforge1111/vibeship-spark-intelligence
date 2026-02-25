@@ -557,7 +557,8 @@
     "enabled": true,
     "auto_save_threshold": 0.72,
     "suggest_threshold": 0.6,
-    "max_capture_chars": 2000
+    "max_capture_chars": 2000,
+    "context_capture_chars": 320
   },
   "request_tracker": {
     "max_pending": 50,

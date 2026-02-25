@@ -485,6 +485,9 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "max_capture_chars": TuneableSpec(
             "int", 2000, 200, 20000, "Max characters captured from source text",
         ),
+        "context_capture_chars": TuneableSpec(
+            "int", 320, 80, 2000, "Max characters retained for capture context snippets",
+        ),
     },
 
     # ---- request_tracker ----

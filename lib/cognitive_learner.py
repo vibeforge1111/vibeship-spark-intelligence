@@ -28,6 +28,9 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 from enum import Enum
 
+INSIGHT_CONTEXT_CHARS = 320
+INSIGHT_EVIDENCE_CHARS = 280
+
 
 def _normalize_signal(signal: str) -> str:
     """Normalize signal string for deduplication.
@@ -169,6 +172,20 @@ def _compute_advisory_readiness(
     if isinstance(text, str) and len(text.strip()) < 40:
         readiness -= 0.08
     return max(0.0, min(1.0, readiness))
+
+
+def _clip_context(text: str) -> str:
+    t = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(t) > INSIGHT_CONTEXT_CHARS:
+        t = t[:INSIGHT_CONTEXT_CHARS].rstrip()
+    return t
+
+
+def _clip_evidence(text: str) -> str:
+    t = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(t) > INSIGHT_EVIDENCE_CHARS:
+        t = t[:INSIGHT_EVIDENCE_CHARS].rstrip()
+    return t
 
 
 def _coerce_int(value: Any, default: int = 0) -> int:
@@ -1514,14 +1531,16 @@ class CognitiveLearner:
         key_part = insight[:40].replace(" ", "_").lower()
         key = self._generate_key(category, key_part)
         emotion_state = _capture_emotion_state_snapshot()
+        normalized_context = _clip_context(context)
+        context_evidence = _clip_evidence(normalized_context or context)
 
         if key in self.insights:
             # Update existing - boost confidence!
             existing = self.insights[key]
             self._touch_validation(existing, validated_delta=1)
             existing.confidence = _boost_confidence(confidence, existing.times_validated)
-            if context and context not in existing.evidence:
-                existing.evidence.append(context[:200])
+            if context_evidence and context_evidence not in existing.evidence:
+                existing.evidence.append(context_evidence)
                 existing.evidence = existing.evidence[-10:]
             if emotion_state:
                 existing.emotion_state = emotion_state
@@ -1546,9 +1565,9 @@ class CognitiveLearner:
             self.insights[key] = CognitiveInsight(
                 category=category,
                 insight=insight,
-                evidence=[context[:200]] if context else [],
+                evidence=[context_evidence] if context_evidence else [],
                 confidence=confidence,
-                context=context[:100] if context else "",
+                context=normalized_context,
                 source=source,
                 action_domain=domain,
                 emotion_state=emotion_state,
@@ -1580,7 +1599,7 @@ class CognitiveLearner:
         # Index for semantic retrieval (best-effort)
         try:
             from lib.semantic_retriever import index_insight
-            index_insight(key, insight, context)
+            index_insight(key, insight, normalized_context)
         except Exception as e:
             logging.getLogger(__name__).debug("Semantic indexing unavailable: %s", e)
             pass  # Don't block writes if semantic indexing fails
