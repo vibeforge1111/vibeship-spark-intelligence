@@ -38,11 +38,40 @@ function boardMeta() {
   if (!boardState.__meta.taskMeta) boardState.__meta.taskMeta = {};
   if (!boardState.__meta.effectChecks) boardState.__meta.effectChecks = {};
   if (!boardState.__meta.reviewChecklists) boardState.__meta.reviewChecklists = {};
+  if (!boardState.__meta.taskHistory) boardState.__meta.taskHistory = {};
   return boardState.__meta;
 }
 
 function saveBoardState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(boardState));
+}
+
+function appendHistory(taskId, type, data = {}) {
+  if (!taskId) return;
+  const meta = boardMeta();
+  if (!Array.isArray(meta.taskHistory[taskId])) meta.taskHistory[taskId] = [];
+  meta.taskHistory[taskId].push({
+    ts: nowIso(),
+    type,
+    ...data
+  });
+}
+
+function formatTs(iso) {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return String(iso || '');
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 function loadPersistedBoard(defaultBoard) {
@@ -70,6 +99,9 @@ function ensureTaskMeta() {
         meta.taskMeta[task.id] = { enteredAt: nowIso(), column: col };
       } else {
         meta.taskMeta[task.id].column = col;
+      }
+      if (!Array.isArray(meta.taskHistory[task.id])) {
+        meta.taskHistory[task.id] = [{ ts: nowIso(), type: 'tracked', column: col }];
       }
     });
   });
@@ -154,6 +186,33 @@ function getEffectCheck(taskId) {
 
 function getReviewChecklist(taskId) {
   return boardMeta().reviewChecklists?.[taskId] || null;
+}
+
+function renderTaskHistory(taskId) {
+  const rows = boardMeta().taskHistory?.[taskId] || [];
+  if (!rows.length) return '';
+
+  const textFor = (row) => {
+    switch (row.type) {
+      case 'move':
+        return `Moved ${row.from || '?'} → ${row.to || '?'}${row.reason ? ` (${row.reason})` : ''}`;
+      case 'effect_check':
+        return `Effect check ${row.passed ? 'PASS' : 'FAIL'}${row.current !== undefined ? ` (current=${row.current}, target=${row.target})` : ''}`;
+      case 'review_checklist':
+        return 'Review checklist completed';
+      case 'tracked':
+        return `Tracking started (${row.column || 'unknown'})`;
+      default:
+        return row.type || 'event';
+    }
+  };
+
+  const items = rows.slice(-6).reverse().map(row => {
+    const line = `${formatTs(row.ts)} — ${textFor(row)}`;
+    return `<li>${escapeHtml(line)}</li>`;
+  }).join('');
+
+  return `<details class="history"><summary>History (${rows.length})</summary><ul>${items}</ul></details>`;
 }
 
 function openNeedsReviewModal(task) {
@@ -243,6 +302,7 @@ function taskCard(t, columnKey, opts = {}) {
         </select>
       </div>
       ` : ''}
+      ${renderTaskHistory(t.id)}
     </article>
   `;
 }
@@ -308,6 +368,7 @@ function validateEffectForDone(task) {
         target: task.target,
         current
       };
+      appendHistory(task.id, 'effect_check', { passed: false, current, target: task.target });
       return { passed: false, autoReview };
     }
 
@@ -321,6 +382,7 @@ function validateEffectForDone(task) {
       target: task.target,
       current
     };
+    appendHistory(task.id, 'effect_check', { passed: true, current, target: task.target });
     return { passed: true, autoReview: false };
   }
 
@@ -334,6 +396,7 @@ function validateEffectForDone(task) {
     failedCount: nextFailedCount,
     kpi: task.kpi || null
   };
+  appendHistory(task.id, 'effect_check', { passed: ok });
   return { passed: ok, autoReview };
 }
 
@@ -365,6 +428,7 @@ async function moveTask(taskId, fromCol, toCol) {
       completedAt: nowIso(),
       ...checklist.payload
     };
+    appendHistory(task.id, 'review_checklist', {});
   }
 
   if (toCol === 'done') {
@@ -374,6 +438,7 @@ async function moveTask(taskId, fromCol, toCol) {
         boardState.columns.needs_review = boardState.columns.needs_review || [];
         boardState.columns.needs_review.unshift(task);
         boardMeta().taskMeta[task.id] = { enteredAt: nowIso(), column: 'needs_review' };
+        appendHistory(task.id, 'move', { from: fromCol, to: 'needs_review', reason: 'effect-check-failed' });
         saveBoardState();
         renderAll();
         return;
@@ -390,6 +455,7 @@ async function moveTask(taskId, fromCol, toCol) {
     enteredAt: nowIso(),
     column: toCol
   };
+  appendHistory(task.id, 'move', { from: fromCol, to: toCol });
 
   saveBoardState();
   renderAll();

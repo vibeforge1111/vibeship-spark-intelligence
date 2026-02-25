@@ -144,6 +144,27 @@ body {
   font-weight: 700;
 }
 
+.history {
+  margin-top: 8px;
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+}
+.history summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: .78rem;
+}
+.history ul {
+  margin: 6px 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.history li {
+  font-size: .75rem;
+  color: #b8c8e4;
+}
+
 .review-ok {
   color: #9fe6b8;
   font-weight: 700;

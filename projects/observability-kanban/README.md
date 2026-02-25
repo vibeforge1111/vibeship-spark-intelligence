@@ -19,6 +19,7 @@ Turn analysis/questions into measurable execution:
 - Card aging (days in current column)
 - Effect-check workflow before moving KPI tasks to DONE
 - Auto-routing to `NEEDS_REVIEW` after repeated failed effect checks (default threshold: 2)
+- Per-card compact history timeline (moves + effect checks + review checklist events)
 - Local persistence (board state saved in browser)
 - Question-derived backlog (actionable tasks generated from interrogation questions)
 - Analytics summary (task counts, average priority, top next tasks)
