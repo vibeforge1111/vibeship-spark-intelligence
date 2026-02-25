@@ -5,7 +5,6 @@
       "id": "pulse-memory-noise",
       "title": "Memory Noise Ratio",
       "description": "Tracks daily noise ingress pressure against target.",
-      "endpoint": "pulse.memory_noise_ratio",
       "source": "kpi_history.memory_noise_ratio",
       "refresh": "daily",
       "status": "live"
@@ -14,7 +13,6 @@
       "id": "pulse-advisory-emit",
       "title": "Advisory Emit Rate",
       "description": "Monitors advisory emission recovery after suppression changes.",
-      "endpoint": "pulse.advisory_emit_rate",
       "source": "kpi_history.advisory_emit_rate",
       "refresh": "daily",
       "status": "live"
@@ -23,7 +21,6 @@
       "id": "pulse-context-health",
       "title": "Context Window Health",
       "description": "Shows p50 memory context character depth trend.",
-      "endpoint": "pulse.context_p50_chars",
       "source": "kpi_history.context_p50_chars",
       "refresh": "daily",
       "status": "live"
