@@ -395,8 +395,8 @@ def _make_id(session_id: str, text: str) -> str:
 # Core processing
 # -----------------------------
 
-AUTO_SAVE_THRESHOLD = 0.65
-SUGGEST_THRESHOLD = 0.55
+AUTO_SAVE_THRESHOLD = 0.72
+SUGGEST_THRESHOLD = 0.60
 
 
 _REMEMBER_PREFIX_RE = re.compile(r"^\s*(remember this|note this|save this)\s*:\s*", re.IGNORECASE)

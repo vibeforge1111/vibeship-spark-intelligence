@@ -268,7 +268,11 @@
     "min_needs_work_samples": 5,
     "min_source_samples": 15,
     "attribution_window_s": 1800,
-    "strict_attribution_require_trace": true
+    "strict_attribution_require_trace": true,
+    "runtime_refiner_llm_enabled": false,
+    "runtime_refiner_llm_timeout_s": 6.0,
+    "runtime_refiner_llm_max_chars": 260,
+    "runtime_refiner_llm_provider": "auto"
   },
   "eidos": {
     "max_time_seconds": 1200,
@@ -279,7 +283,12 @@
     "safety_allow_secrets": false,
     "trace_strict": false,
     "tool_distillation_enabled": true,
-    "llm_provider": "minimax"
+    "llm_provider": "minimax",
+    "runtime_refiner_llm_enabled": false,
+    "runtime_refiner_llm_min_unified_score": 0.45,
+    "runtime_refiner_llm_timeout_s": 6.0,
+    "runtime_refiner_llm_max_chars": 280,
+    "runtime_refiner_llm_provider": "auto"
   },
   "observe_hook": {
     "eidos_enabled": true,
@@ -546,8 +555,8 @@
   },
   "memory_capture": {
     "enabled": true,
-    "auto_save_threshold": 0.65,
-    "suggest_threshold": 0.55,
+    "auto_save_threshold": 0.72,
+    "suggest_threshold": 0.6,
     "max_capture_chars": 2000
   },
   "request_tracker": {
@@ -571,7 +580,12 @@
     "explore_routing_max": 100,
     "explore_tuning_max": 200,
     "explore_decisions_max": 200,
-    "explore_feedback_max": 200
+    "explore_feedback_max": 200,
+    "eidos_curriculum_enabled": true,
+    "eidos_curriculum_interval_s": 86400,
+    "eidos_curriculum_max_rows": 300,
+    "eidos_curriculum_max_cards": 120,
+    "eidos_curriculum_include_archive": true
   },
   "feature_flags": {
     "premium_tools": false,
