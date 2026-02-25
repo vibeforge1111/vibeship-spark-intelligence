@@ -23,6 +23,7 @@ let boardState = null;
 let questionsState = null;
 let historyState = null;
 let suppressionAuditState = null;
+let buildQueueState = null;
 
 async function loadJson(path) {
   const res = await fetch(path);
@@ -263,6 +264,87 @@ function renderSuppressionAudit(audit) {
         </thead>
         <tbody>${rows}</tbody>
       </table>
+    </div>
+  `;
+}
+
+function renderOperatorNow(queue, board) {
+  const host = document.getElementById('operatorNow');
+  const boardTasks = Object.entries(board?.columns || {}).flatMap(([status, tasks]) =>
+    (tasks || []).map((t) => ({ ...t, status }))
+  );
+  const queueTasks = queue?.tasks?.length ? queue.tasks : boardTasks;
+
+  const readyNow = queueTasks
+    .filter((t) => t.build_ready || t.status === 'in_progress' || t.status === 'ready')
+    .sort((a, b) => {
+      const aOrder = Number(a.execution_order ?? Number.MAX_SAFE_INTEGER);
+      const bOrder = Number(b.execution_order ?? Number.MAX_SAFE_INTEGER);
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return Number(b.importance_score || b.priority_score || 0) - Number(a.importance_score || a.priority_score || 0);
+    });
+
+  const topActions = readyNow.slice(0, 3);
+  const blockers = queueTasks
+    .filter((t) => t.priority === 'P0' && !t.build_ready)
+    .sort((a, b) => Number(b.importance_score || 0) - Number(a.importance_score || 0))
+    .slice(0, 3);
+
+  const inProgress = queueTasks.filter((t) => t.status === 'in_progress').length;
+  const ready = queueTasks.filter((t) => t.status === 'ready').length;
+  const triageSeconds = Math.min(90, 30 + (topActions.length * 20));
+
+  const stats = `
+    <div class="operator-stats">
+      <article class="analytics-card">
+        <p class="kpi-key">Triage ETA</p>
+        <div class="analytics-value">${triageSeconds}s</div>
+      </article>
+      <article class="analytics-card">
+        <p class="kpi-key">In Progress</p>
+        <div class="analytics-value">${inProgress}</div>
+      </article>
+      <article class="analytics-card">
+        <p class="kpi-key">Ready</p>
+        <div class="analytics-value">${ready}</div>
+      </article>
+      <article class="analytics-card ${blockers.length ? 'warn' : ''}">
+        <p class="kpi-key">P0 Not Build-Ready</p>
+        <div class="analytics-value">${blockers.length}</div>
+      </article>
+    </div>
+  `;
+
+  const topActionRows = topActions.length
+    ? topActions.map((task) => `
+      <li>
+        <span class="mono">${escapeHtml(task.id || 'n/a')}</span>
+        <b>${escapeHtml(task.task || 'Untitled task')}</b>
+        <span class="muted">(${escapeHtml(task.status || 'unknown')})</span>
+      </li>
+    `).join('')
+    : '<li class="muted">No build-ready actions available.</li>';
+
+  const blockerRows = blockers.length
+    ? blockers.map((task) => `
+      <li>
+        <span class="mono">${escapeHtml(task.id || 'n/a')}</span>
+        <b>${escapeHtml(task.task || 'Untitled task')}</b>
+      </li>
+    `).join('')
+    : '<li class="muted">No P0 blockers.</li>';
+
+  host.innerHTML = `
+    ${stats}
+    <div class="operator-grid">
+      <article class="operator-list-card">
+        <h3>Do Next</h3>
+        <ol>${topActionRows}</ol>
+      </article>
+      <article class="operator-list-card">
+        <h3>Unblock Next</h3>
+        <ul>${blockerRows}</ul>
+      </article>
     </div>
   `;
 }
@@ -708,6 +790,7 @@ function renderAll() {
   document.getElementById('kpiGrid').innerHTML = (boardState.kpis || []).map(metricCard).join('');
   renderKpiTrends(historyState);
   renderAnalytics(boardState);
+  renderOperatorNow(buildQueueState, boardState);
   renderSuppressionAudit(suppressionAuditState);
   renderBoard(boardState);
   renderQuestions(questionsState);
@@ -715,17 +798,19 @@ function renderAll() {
 
 (async function init() {
   try {
-    const [defaultBoard, questions, history, suppressionAudit] = await Promise.all([
+    const [defaultBoard, questions, history, suppressionAudit, buildQueue] = await Promise.all([
       loadJson('data/board.json'),
       loadJson('data/questions_backlog.json'),
       loadJson('data/kpi_history.json'),
-      loadJson('data/suppression_audit.json')
+      loadJson('data/suppression_audit.json'),
+      loadJson('data/terminal_build_queue.json')
     ]);
 
     boardState = loadPersistedBoard(defaultBoard);
     questionsState = questions;
     historyState = history;
     suppressionAuditState = suppressionAudit;
+    buildQueueState = buildQueue;
 
     ensureTaskMeta();
 
