@@ -762,8 +762,9 @@ def run_bridge_cycle(
         # Only run when we have meaningful data to analyze
         patterns_found = stats.get("pattern_processed", 0)
         insights_merged = (stats.get("chip_merge") or {}).get("merged", 0)
+        content_learned = int(stats.get("content_learned", 0) or 0)
 
-        if patterns_found >= 5 or insights_merged >= 2:
+        if patterns_found >= 5 or insights_merged >= 2 or content_learned >= 2:
             try:
                 from lib.llm import synthesize_advisory
 
@@ -819,11 +820,13 @@ def run_bridge_cycle(
 
             opp_stats = stats.get("opportunity_scanner") or {}
             opp_promotions = (opp_stats.get("promoted_candidates") or []) if isinstance(opp_stats, dict) else []
-            if counter % 5 == 0 and (patterns_found > 0 or opp_promotions):
+            if counter % 5 == 0 and (patterns_found > 0 or opp_promotions or content_learned > 0):
                 # Gather behavioral observations
                 observations = []
                 if stats.get("llm_advisory"):
                     observations.append(f"Advisory: {stats['llm_advisory'][:200]}")
+                if content_learned > 0:
+                    observations.append(f"Content learning captured {content_learned} item(s) this cycle")
                 chip_stats = stats.get("chips", {})
                 if chip_stats.get("insights_captured"):
                     observations.append(f"Captured {chip_stats['insights_captured']} chip insights")
