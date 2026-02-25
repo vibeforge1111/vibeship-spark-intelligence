@@ -42,6 +42,7 @@ PENDING_FILE = PENDING_DIR / "pending_memory.json"
 STATE_FILE = PENDING_DIR / "memory_capture_state.json"
 TUNEABLES_FILE = Path.home() / ".spark" / "tuneables.json"
 MAX_CAPTURE_CHARS = 2000
+CONTEXT_CAPTURE_CHARS = 320
 
 
 # -----------------------------
@@ -95,6 +96,14 @@ _DECISION_EXTRA = {
     "move forward",
 }
 
+_CAPTURE_NOISE_PATTERNS = (
+    re.compile(r"you are spark intelligence, observing a live coding session", re.I),
+    re.compile(r"system inventory \(what actually exists", re.I),
+    re.compile(r"<task-notification>|<task-id>|<output-file>|<status>|<summary>", re.I),
+    re.compile(r"\n\s*- services:\s", re.I),
+    re.compile(r"\bevent_type:\b|\btool_name:\b|\bfile_path:\b|\bcwd:\b", re.I),
+)
+
 
 def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().lower())
@@ -109,6 +118,31 @@ def _is_decision_text(text: str) -> bool:
         if k in t:
             return True
     return False
+
+
+def _is_capture_noise(text: str) -> bool:
+    sample = str(text or "").strip()
+    if not sample:
+        return True
+    return any(rx.search(sample) for rx in _CAPTURE_NOISE_PATTERNS)
+
+
+def _compact_context_snippet(text: str, *, max_chars: int) -> str:
+    """Keep semantically useful context while dropping noisy scaffolding."""
+    sample = str(text or "")
+    lines: List[str] = []
+    for raw in sample.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if any(rx.search(line) for rx in _CAPTURE_NOISE_PATTERNS):
+            continue
+        lines.append(line)
+    compact = " ".join(lines)
+    compact = re.sub(r"\s+", " ", compact).strip()
+    if len(compact) > max_chars:
+        compact = compact[:max_chars].rstrip()
+    return compact
 
 
 def infer_category(text: str) -> CognitiveCategory:
@@ -331,6 +365,7 @@ def _apply_memory_capture_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     global AUTO_SAVE_THRESHOLD
     global SUGGEST_THRESHOLD
     global MAX_CAPTURE_CHARS
+    global CONTEXT_CAPTURE_CHARS
 
     applied: List[str] = []
     warnings: List[str] = []
@@ -358,6 +393,13 @@ def _apply_memory_capture_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
         except Exception:
             warnings.append("invalid_max_capture_chars")
 
+    if "context_capture_chars" in cfg:
+        try:
+            CONTEXT_CAPTURE_CHARS = max(80, min(2000, int(cfg.get("context_capture_chars") or 80)))
+            applied.append("context_capture_chars")
+        except Exception:
+            warnings.append("invalid_context_capture_chars")
+
     if SUGGEST_THRESHOLD > AUTO_SAVE_THRESHOLD:
         SUGGEST_THRESHOLD = max(0.05, AUTO_SAVE_THRESHOLD - 0.05)
         warnings.append("suggest_threshold_auto_adjusted")
@@ -374,6 +416,7 @@ def get_memory_capture_config() -> Dict[str, Any]:
         "auto_save_threshold": float(AUTO_SAVE_THRESHOLD),
         "suggest_threshold": float(SUGGEST_THRESHOLD),
         "max_capture_chars": int(MAX_CAPTURE_CHARS),
+        "context_capture_chars": int(CONTEXT_CAPTURE_CHARS),
     }
 
 
@@ -417,8 +460,12 @@ def commit_learning(
             return False
         if len(clean) > MAX_CAPTURE_CHARS:
             clean = clean[:MAX_CAPTURE_CHARS].rstrip()
-        # Use a short context snippet so retrieval has something relevant.
-        ctx = (context or clean)[:100]
+        if _is_capture_noise(clean):
+            return False
+        # Use a compact context snippet so retrieval has useful grounding.
+        ctx = _compact_context_snippet((context or clean), max_chars=CONTEXT_CAPTURE_CHARS)
+        if not ctx:
+            ctx = clean[:CONTEXT_CAPTURE_CHARS]
         # Route through unified validation (Meta-Ralph + noise filter).
         from lib.validate_and_store import validate_and_store_insight
         validate_and_store_insight(
@@ -526,6 +573,8 @@ def process_recent_memory_events(limit: int = 50) -> Dict[str, Any]:
 
         txt = str(payload.get("text") or "").strip()
         if not txt:
+            continue
+        if _is_capture_noise(txt):
             continue
         if len(txt) > MAX_CAPTURE_CHARS:
             txt = txt[:MAX_CAPTURE_CHARS].rstrip()
