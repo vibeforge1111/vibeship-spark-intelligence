@@ -161,6 +161,8 @@ C?UsersUSER*
 
 # Kanban/task-system workspace (not production-ready yet)
 projects/observability-kanban/
+projects/task-system/
+projects/*task-system*/
 docs/KANBAN_DASHBOARD.md
 docs/kanban_board.json
 
