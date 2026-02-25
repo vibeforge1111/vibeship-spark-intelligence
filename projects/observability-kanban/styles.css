@@ -223,6 +223,35 @@ body::before {
   margin-bottom: 10px;
 }
 
+.suppression-priority {
+  border: 1px solid #2a3f5a;
+  border-radius: 12px;
+  background: rgba(86, 212, 255, 0.04);
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.suppression-priority h3 {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  font-family: var(--font-mono);
+  color: #cde4ff;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.suppression-priority ol {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.suppression-priority li {
+  color: #d7e8ff;
+  font-size: 0.78rem;
+}
+
 .operator-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));

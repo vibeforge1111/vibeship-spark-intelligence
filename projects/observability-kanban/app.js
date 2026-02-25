@@ -222,9 +222,26 @@ function renderSuppressionAudit(audit) {
     return;
   }
 
-  const sorted = [...causes].sort((a, b) => (b.impact_score || 0) - (a.impact_score || 0));
+  const scored = causes.map((row) => {
+    const impact = Number(row.impact_score || 0);
+    const fnRisk = Number(row.false_negative_risk || 0);
+    const composite = (impact * 0.65) + ((fnRisk * 10) * 0.35);
+    return {
+      ...row,
+      impact,
+      fnRisk,
+      composite
+    };
+  });
+  const sorted = scored.sort((a, b) => b.composite - a.composite);
   const top = sorted[0];
   const totalEvents = sorted.reduce((sum, row) => sum + Number(row.events || 0), 0);
+  const topRiskRows = sorted.slice(0, 3).map((row) => `
+    <li>
+      <span class="mono">${escapeHtml(row.reason)}</span>
+      <b>score ${row.composite.toFixed(2)}</b>
+    </li>
+  `).join('');
 
   const summary = `
     <div class="audit-summary">
@@ -241,34 +258,46 @@ function renderSuppressionAudit(audit) {
         <div class="analytics-value">${escapeHtml(top.reason || 'n/a')}</div>
       </article>
       <article class="analytics-card">
+        <p class="kpi-key">Top Composite Score</p>
+        <div class="analytics-value">${top.composite.toFixed(2)}</div>
+      </article>
+      <article class="analytics-card">
         <p class="kpi-key">Target Emit Rate</p>
         <div class="analytics-value">${escapeHtml(audit?.target_emit_rate ?? 'n/a')}</div>
       </article>
     </div>
   `;
 
-  const rows = sorted.map((row) => `
+  const rows = sorted.map((row, idx) => `
     <tr>
+      <td>${idx + 1}</td>
       <td>${escapeHtml(row.reason)}</td>
       <td>${escapeHtml(row.events)}</td>
       <td>${escapeHtml(row.suppression_rate)}</td>
-      <td>${escapeHtml(row.false_negative_risk)}</td>
-      <td>${escapeHtml(row.impact_score)}</td>
+      <td>${row.fnRisk.toFixed(2)}</td>
+      <td>${row.impact.toFixed(2)}</td>
+      <td>${row.composite.toFixed(2)}</td>
       <td>${escapeHtml(row.recommended_action || 'n/a')}</td>
     </tr>
   `).join('');
 
   host.innerHTML = `
     ${summary}
+    <article class="suppression-priority">
+      <h3>Highest False-Negative Exposure</h3>
+      <ol>${topRiskRows}</ol>
+    </article>
     <div class="audit-table-wrap">
       <table class="audit-table">
         <thead>
           <tr>
+            <th>Rank</th>
             <th>Cause</th>
             <th>Events</th>
             <th>Suppression Rate</th>
             <th>False-Negative Risk</th>
             <th>Impact Score</th>
+            <th>Composite</th>
             <th>Next Action</th>
           </tr>
         </thead>
