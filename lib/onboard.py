@@ -80,6 +80,24 @@ def _print_step(step: OnboardStep, index: int):
         print(f"      {step.detail}")
 
 
+def _confirm(prompt: str, default: bool = True, auto_yes: bool = False, use_json: bool = False) -> bool:
+    """Simple Y/N prompt with safe defaults."""
+    if auto_yes or use_json:
+        return True
+    suffix = "[Y/n]" if default else "[y/N]"
+    try:
+        answer = input(f"{prompt} {suffix} ").strip().lower()
+    except Exception:
+        return default
+    if not answer:
+        return default
+    return answer in ("y", "yes")
+
+
+def _is_claude_agent(agent: str) -> bool:
+    return str(agent or "").strip().lower() in ("claude", "claude_code", "claudecode")
+
+
 def _step_preflight() -> OnboardStep:
     """Step 1: Environment preflight checks."""
     step = OnboardStep(id="preflight", label="Environment check")
@@ -130,11 +148,11 @@ def _step_services(quick: bool = False) -> OnboardStep:
             step.message = "Services already running"
             return step
 
-        # Start services (lite mode for quick)
+        # Quick mode skips only Pulse. Mind + Watchdog stay enabled.
         results = start_services(
-            include_mind=not quick,
+            include_mind=True,
             include_pulse=not quick,
-            include_watchdog=not quick,
+            include_watchdog=True,
         )
 
         # Give services a moment to start
@@ -205,12 +223,23 @@ def _step_health() -> OnboardStep:
     return step
 
 
-def _step_hooks(agent: str = "") -> OnboardStep:
+def _step_hooks(agent: str = "", strict: bool = False) -> OnboardStep:
     """Step 4: Agent connection check."""
     step = OnboardStep(id="hooks", label="Agent hook configuration")
     step.status = "running"
 
-    if agent and agent.lower() not in ("claude", "claude_code", "claudecode"):
+    def _set_failure(message: str, detail: str = "") -> OnboardStep:
+        if strict:
+            step.status = "fail"
+            step.message = message
+            step.detail = detail
+        else:
+            step.status = "skip"
+            step.message = message
+            step.detail = detail
+        return step
+
+    if agent and not _is_claude_agent(agent):
         step.status = "skip"
         step.message = f"Hook check not applicable for agent: {agent}"
         step.detail = "See docs/cursor.md or docs/openclaw/ for your agent."
@@ -218,10 +247,10 @@ def _step_hooks(agent: str = "") -> OnboardStep:
 
     claude_settings = Path.home() / ".claude" / "settings.json"
     if not claude_settings.exists():
-        step.status = "fail"
-        step.message = "~/.claude/settings.json not found"
-        step.detail = "Run: scripts/install_claude_hooks.ps1 (Windows) or scripts/install_claude_hooks.sh (Mac/Linux)"
-        return step
+        return _set_failure(
+            "~/.claude/settings.json not found",
+            "Run: scripts/install_claude_hooks.ps1 (Windows) or scripts/install_claude_hooks.sh (Mac/Linux)",
+        )
 
     try:
         settings = json.loads(claude_settings.read_text(encoding="utf-8"))
@@ -243,17 +272,18 @@ def _step_hooks(agent: str = "") -> OnboardStep:
                 step.status = "pass"
                 step.message = f"Claude Code hooks configured ({len(found)}/{len(required)} events, observe.py linked)"
             else:
-                step.status = "fail"
-                step.message = "Hooks exist but observe.py not referenced"
-                step.detail = "Re-run hook installer and merge spark-hooks.json into settings.json"
+                return _set_failure(
+                    "Hooks exist but observe.py not referenced",
+                    "Re-run hook installer and merge spark-hooks.json into settings.json",
+                )
         else:
             missing = set(required) - set(found)
-            step.status = "fail"
-            step.message = f"Missing hook events: {', '.join(missing)}"
-            step.detail = "Run hook installer, then merge into settings.json"
+            return _set_failure(
+                f"Missing hook events: {', '.join(missing)}",
+                "Run hook installer, then merge into settings.json",
+            )
     except Exception as e:
-        step.status = "fail"
-        step.message = f"Cannot parse settings.json: {e}"
+        return _set_failure(f"Cannot parse settings.json: {e}")
 
     return step
 
@@ -341,21 +371,48 @@ def run_onboard(
         return _build_result(steps, state)
 
     # Step 2: Services
-    s2 = _step_services(quick=quick)
+    run_services = True
+    if not quick:
+        run_services = _confirm(
+            "  Start Spark services now?",
+            default=True,
+            auto_yes=auto_yes,
+            use_json=use_json,
+        )
+
+    if run_services:
+        s2 = _step_services(quick=quick)
+    else:
+        s2 = OnboardStep(
+            id="services",
+            label="Start Spark services",
+            status="skip",
+            message="Skipped by user",
+            detail="Run `spark up` when ready.",
+        )
     steps.append(s2)
     state.steps[s2.id] = s2.status
     if not use_json:
         _print_step(s2, 2)
 
     # Step 3: Health
-    s3 = _step_health()
+    if run_services:
+        s3 = _step_health()
+    else:
+        s3 = OnboardStep(
+            id="health",
+            label="Health verification",
+            status="skip",
+            message="Skipped because services were not started",
+            detail="Run `spark health` after starting services.",
+        )
     steps.append(s3)
     state.steps[s3.id] = s3.status
     if not use_json:
         _print_step(s3, 3)
 
     # Step 4: Hooks
-    s4 = _step_hooks(agent=state.agent)
+    s4 = _step_hooks(agent=state.agent, strict=_is_claude_agent(state.agent))
     steps.append(s4)
     state.steps[s4.id] = s4.status
     if not use_json:
