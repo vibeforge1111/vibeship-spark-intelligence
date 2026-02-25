@@ -9,6 +9,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -112,28 +113,30 @@ REJECTION_TELEMETRY_FILE = Path.home() / ".spark" / "advisory_rejection_telemetr
 _rejection_counts: Dict[str, int] = {}
 _rejection_flush_interval = 50
 _rejection_flush_counter = 0
+_rejection_lock = threading.Lock()
 
 
 def _record_rejection(reason: str) -> None:
     """Increment a rejection reason counter. Flushes to disk periodically."""
     global _rejection_flush_counter
-    _rejection_counts[reason] = _rejection_counts.get(reason, 0) + 1
-    _rejection_flush_counter += 1
-    if _rejection_flush_counter >= _rejection_flush_interval:
-        _rejection_flush_counter = 0
-        try:
-            existing: Dict[str, int] = {}
-            if REJECTION_TELEMETRY_FILE.exists():
-                existing = json.loads(REJECTION_TELEMETRY_FILE.read_text(encoding="utf-8"))
-            for k, v in _rejection_counts.items():
-                existing[k] = existing.get(k, 0) + v
-            existing["_last_flush"] = time.time()
-            REJECTION_TELEMETRY_FILE.write_text(
-                json.dumps(existing, indent=2), encoding="utf-8"
-            )
-            _rejection_counts.clear()
-        except Exception as exc:
-            log_debug("advisory_engine", f"rejection telemetry flush failed: {exc}", None)
+    with _rejection_lock:
+        _rejection_counts[reason] = _rejection_counts.get(reason, 0) + 1
+        _rejection_flush_counter += 1
+        if _rejection_flush_counter >= _rejection_flush_interval:
+            _rejection_flush_counter = 0
+            try:
+                existing: Dict[str, int] = {}
+                if REJECTION_TELEMETRY_FILE.exists():
+                    existing = json.loads(REJECTION_TELEMETRY_FILE.read_text(encoding="utf-8"))
+                for k, v in _rejection_counts.items():
+                    existing[k] = existing.get(k, 0) + v
+                existing["_last_flush"] = time.time()
+                REJECTION_TELEMETRY_FILE.write_text(
+                    json.dumps(existing, indent=2), encoding="utf-8"
+                )
+                _rejection_counts.clear()
+            except Exception as exc:
+                log_debug("advisory_engine", f"rejection telemetry flush failed: {exc}", None)
 
 
 try:
