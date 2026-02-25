@@ -36,6 +36,15 @@ ADVISORY_ENGINE_LOG = SPARK_DIR / "advisory_engine.jsonl"
 MIND_OFFLINE_QUEUE = SPARK_DIR / "mind_offline_queue.jsonl"
 OBSERVATORY_DIR = Path("_observatory")
 REPORTS_DIR = Path("docs") / "reports"
+RETRIEVAL_GUARDRAIL_THRESHOLDS = {
+    "semantic_sim_avg_min": 0.22,
+    "semantic_sim_low_ratio_max": 0.20,
+    "semantic_dominant_key_ratio_max": 0.35,
+    "advisory_emit_rate_min": 0.15,
+    "advisory_global_dedupe_ratio_max": 0.55,
+    "capture_noise_ratio_max": 0.15,
+    "context_p50_min": 120,
+}
 
 NOISE_MARKERS = (
     "you are spark intelligence, observing a live coding session",
@@ -155,12 +164,18 @@ def _semantic_stats(window_s: float) -> Dict[str, Any]:
             except Exception:
                 pass
             keys[str(res.get("key") or "")] += 1
+    total_hits = int(sum(keys.values()))
+    dominant_key_ratio = 0.0
+    if total_hits > 0:
+        top_count = keys.most_common(1)[0][1] if keys else 0
+        dominant_key_ratio = round(top_count / total_hits, 3)
     if not rows:
         return {"queries": 0}
     return {
         "queries": len(rows),
         "sim_avg": round(sum(sims) / len(sims), 3) if sims else 0.0,
         "sim_lt_0_1_ratio": round((sum(1 for s in sims if s < 0.1) / len(sims)), 3) if sims else 0.0,
+        "dominant_key_ratio": dominant_key_ratio,
         "top_keys": keys.most_common(6),
     }
 
@@ -309,18 +324,103 @@ def _snapshot_grade(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _guardrail_check(
+    *,
+    name: str,
+    actual: float,
+    min_value: float | None = None,
+    max_value: float | None = None,
+    unit: str = "",
+) -> Dict[str, Any]:
+    passed = True
+    if min_value is not None:
+        passed = passed and actual >= min_value
+    if max_value is not None:
+        passed = passed and actual <= max_value
+    expectation = ""
+    if min_value is not None and max_value is not None:
+        expectation = f"{min_value} <= x <= {max_value}{unit}"
+    elif min_value is not None:
+        expectation = f"x >= {min_value}{unit}"
+    elif max_value is not None:
+        expectation = f"x <= {max_value}{unit}"
+    return {
+        "name": name,
+        "actual": round(float(actual), 3),
+        "expectation": expectation,
+        "pass": bool(passed),
+    }
+
+
+def _retrieval_guardrails(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    semantic = snapshot.get("semantic_retrieval") if isinstance(snapshot.get("semantic_retrieval"), dict) else {}
+    advisory = snapshot.get("advisory_engine") if isinstance(snapshot.get("advisory_engine"), dict) else {}
+    capture = snapshot.get("capture") if isinstance(snapshot.get("capture"), dict) else {}
+    context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
+
+    checks = [
+        _guardrail_check(
+            name="semantic.sim_avg",
+            actual=float(semantic.get("sim_avg") or 0.0),
+            min_value=float(RETRIEVAL_GUARDRAIL_THRESHOLDS["semantic_sim_avg_min"]),
+        ),
+        _guardrail_check(
+            name="semantic.sim_lt_0_1_ratio",
+            actual=float(semantic.get("sim_lt_0_1_ratio") or 0.0),
+            max_value=float(RETRIEVAL_GUARDRAIL_THRESHOLDS["semantic_sim_low_ratio_max"]),
+        ),
+        _guardrail_check(
+            name="semantic.dominant_key_ratio",
+            actual=float(semantic.get("dominant_key_ratio") or 0.0),
+            max_value=float(RETRIEVAL_GUARDRAIL_THRESHOLDS["semantic_dominant_key_ratio_max"]),
+        ),
+        _guardrail_check(
+            name="advisory.emit_rate",
+            actual=float(advisory.get("emit_rate") or 0.0),
+            min_value=float(RETRIEVAL_GUARDRAIL_THRESHOLDS["advisory_emit_rate_min"]),
+        ),
+        _guardrail_check(
+            name="advisory.global_dedupe_ratio",
+            actual=float(advisory.get("global_dedupe_ratio") or 0.0),
+            max_value=float(RETRIEVAL_GUARDRAIL_THRESHOLDS["advisory_global_dedupe_ratio_max"]),
+        ),
+        _guardrail_check(
+            name="capture.noise_like_ratio",
+            actual=float(capture.get("noise_like_ratio") or 0.0),
+            max_value=float(RETRIEVAL_GUARDRAIL_THRESHOLDS["capture_noise_ratio_max"]),
+        ),
+        _guardrail_check(
+            name="context.p50",
+            actual=float(context.get("p50") or 0.0),
+            min_value=float(RETRIEVAL_GUARDRAIL_THRESHOLDS["context_p50_min"]),
+        ),
+    ]
+    failed = [c for c in checks if not c.get("pass")]
+    return {
+        "passing": len(failed) == 0,
+        "checks": checks,
+        "failed_count": len(failed),
+        "failed_names": [str(c.get("name")) for c in failed],
+        "thresholds": dict(RETRIEVAL_GUARDRAIL_THRESHOLDS),
+    }
+
+
 def write_outputs(snapshot: Dict[str, Any]) -> None:
     OBSERVATORY_DIR.mkdir(parents=True, exist_ok=True)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     grade = _snapshot_grade(snapshot)
+    guardrails = _retrieval_guardrails(snapshot)
     payload = dict(snapshot)
     payload["grade"] = grade
+    payload["retrieval_guardrails"] = guardrails
 
     snapshot_path = OBSERVATORY_DIR / "memory_quality_snapshot.json"
     snapshot_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     day = datetime.now().strftime("%Y-%m-%d")
+    guardrail_path = REPORTS_DIR / f"{day}_retrieval_guardrails.json"
+    guardrail_path.write_text(json.dumps(guardrails, indent=2), encoding="utf-8")
     report_path = REPORTS_DIR / f"{day}_memory_quality_observatory.md"
     lines = [
         "# Memory Quality Observatory",
@@ -344,6 +444,7 @@ def write_outputs(snapshot: Dict[str, Any]) -> None:
         f"- semantic sim <0.1 ratio: {payload['semantic_retrieval'].get('sim_lt_0_1_ratio', 0.0)}",
         f"- advisory emit rate: {payload['advisory_engine'].get('emit_rate', 0.0)}",
         f"- global dedupe suppression ratio: {payload['advisory_engine'].get('global_dedupe_ratio', 0.0)}",
+        f"- dominant key ratio: {payload['semantic_retrieval'].get('dominant_key_ratio', 0.0)}",
         "",
         "## 4) Missed Capture Opportunities",
         f"- high-signal candidates: {payload['missed_capture'].get('candidate_high_signal', 0)}",
@@ -357,7 +458,25 @@ def write_outputs(snapshot: Dict[str, Any]) -> None:
     lines.extend(
         [
             "",
-            "## 5) Next 24h Actions",
+            "",
+            "## 5) Retrieval Guardrails",
+            f"- overall: {'PASS' if guardrails.get('passing') else 'FAIL'}",
+            f"- failed checks: {guardrails.get('failed_count', 0)}",
+            "",
+            "| Check | Actual | Expectation | Status |",
+            "| --- | ---: | --- | --- |",
+        ]
+    )
+    for check in guardrails.get("checks", []):
+        status = "PASS" if check.get("pass") else "FAIL"
+        lines.append(
+            f"| {check.get('name')} | {check.get('actual')} | {check.get('expectation')} | {status} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## 6) Next 24h Actions",
             "1. Remove top repeated noise marker from capture path.",
             "2. Promote one missed high-signal pattern into explicit trigger phrase.",
             "3. Review dedupe suppressions and lower generic memory replay where safe.",
@@ -370,7 +489,11 @@ def write_outputs(snapshot: Dict[str, Any]) -> None:
 def main() -> int:
     snapshot = build_snapshot(window_hours=24)
     write_outputs(snapshot)
-    print(json.dumps(_snapshot_grade(snapshot), indent=2))
+    out = {
+        "grade": _snapshot_grade(snapshot),
+        "retrieval_guardrails": _retrieval_guardrails(snapshot),
+    }
+    print(json.dumps(out, indent=2))
     return 0
 
 
