@@ -12,9 +12,13 @@ Turn analysis/questions into measurable execution:
 ## Features
 - Responsive UI (mobile + desktop)
 - KPI cards with baseline vs target
-- Kanban columns with score-based sorting
+- KPI trend mini-charts (from `data/kpi_history.json`)
+- Kanban columns with drag-and-drop movement
+- Mobile-friendly task moves using in-card column selector
+- Local persistence (board state saved in browser)
 - Question-derived backlog (actionable tasks generated from interrogation questions)
 - Analytics summary (task counts, average priority, top next tasks)
+- Export current board state to JSON
 
 ## Files
 - `index.html` - dashboard UI

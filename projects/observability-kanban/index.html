@@ -8,12 +8,18 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Observability Kanban Dashboard</h1>
-    <p id="updatedAt" class="muted"></p>
+    <div>
+      <h1>Observability Kanban Dashboard</h1>
+      <p id="updatedAt" class="muted"></p>
+    </div>
+    <div class="toolbar">
+      <button id="resetBoardBtn" class="btn btn-secondary">Reset Board</button>
+      <button id="exportBoardBtn" class="btn">Export JSON</button>
+    </div>
   </header>
 
   <section class="kpi-grid" id="kpiGrid"></section>
-
+  <section class="trends-grid" id="kpiTrends"></section>
   <section class="analytics-grid" id="analyticsGrid"></section>
 
   <section class="panel">
