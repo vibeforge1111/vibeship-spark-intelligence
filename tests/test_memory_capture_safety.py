@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lib.memory_capture import importance_score
+from lib.memory_capture import importance_score, _compact_context_snippet
 
 
 # ── Hard trigger detection ────────────────────────────────────────────
@@ -182,3 +182,34 @@ def test_length_bonus():
     long_text = "This is a very long statement about architecture decisions " * 5
     score, breakdown = importance_score(long_text)
     assert "length" in breakdown
+
+
+def test_compact_context_drops_inventory_lines_and_keeps_semantics():
+    raw = """
+    SYSTEM INVENTORY (what actually exists)
+    event_type: user_prompt
+    tool_name: Bash
+    We should raise retrieval thresholds because low similarity hits are dominating advisory output.
+    This reduces stale-memory misreads and improves trust.
+    """
+    compact = _compact_context_snippet(raw, max_chars=220)
+    lowered = compact.lower()
+    assert "system inventory" not in lowered
+    assert "event_type" not in lowered
+    assert "tool_name" not in lowered
+    assert "because low similarity hits are dominating advisory output" in lowered
+    assert len(compact) <= 220
+
+
+def test_compact_context_prioritizes_high_signal_sentences():
+    raw = (
+        "Status: idle. "
+        "Raise the auto-save threshold to 0.72 because capture is too noisy and stale results are being reused. "
+        "This should improve retrieval trust and reduce repeated generic keys. "
+        "file_path: C:/tmp/trace.log."
+    )
+    compact = _compact_context_snippet(raw, max_chars=180)
+    lowered = compact.lower()
+    assert "raise the auto-save threshold to 0.72 because capture is too noisy" in lowered
+    assert "file_path" not in lowered
+    assert len(compact) <= 180

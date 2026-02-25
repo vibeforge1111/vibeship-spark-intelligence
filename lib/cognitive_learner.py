@@ -30,6 +30,16 @@ from enum import Enum
 
 INSIGHT_CONTEXT_CHARS = 320
 INSIGHT_EVIDENCE_CHARS = 280
+_EVIDENCE_DROP_LINE_RE = re.compile(
+    r"^\s*(evidence|event_type|tool_name|file_path|cwd|mission|mission id|provider|model|role|"
+    r"task id|task name|source|progress|verification)\s*[:=]",
+    re.I,
+)
+_EVIDENCE_SIGNAL_RE = re.compile(
+    r"\b(because|so that|therefore|hence|decision|prefer|must|should|avoid|fix|"
+    r"quality|confidence|threshold|risk|trade-?off|impact)\b",
+    re.I,
+)
 
 
 def _normalize_signal(signal: str) -> str:
@@ -182,7 +192,34 @@ def _clip_context(text: str) -> str:
 
 
 def _clip_evidence(text: str) -> str:
-    t = re.sub(r"\s+", " ", str(text or "")).strip()
+    raw = str(text or "")
+    lines = []
+    for part in raw.splitlines():
+        line = part.strip()
+        if not line:
+            continue
+        if _EVIDENCE_DROP_LINE_RE.search(line):
+            continue
+        if line.startswith("<") and line.endswith(">"):
+            continue
+        lines.append(line)
+    t = re.sub(r"\s+", " ", " ".join(lines)).strip()
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+|\s*[;|]\s+", t) if p.strip()]
+    if parts:
+        scored = []
+        for idx, part in enumerate(parts):
+            score = 0.0
+            if _EVIDENCE_SIGNAL_RE.search(part):
+                score += 1.2
+            if re.search(r"\b\d+(\.\d+)?%?\b", part):
+                score += 0.4
+            if 24 <= len(part) <= 200:
+                score += 0.2
+            scored.append((score, idx, part))
+        top = sorted(scored, key=lambda item: (item[0], -item[1]), reverse=True)[: min(3, len(scored))]
+        top_idx = {idx for _, idx, _ in top}
+        t = " ".join(part for idx, part in enumerate(parts) if idx in top_idx)
+        t = re.sub(r"\s+", " ", t).strip()
     if len(t) > INSIGHT_EVIDENCE_CHARS:
         t = t[:INSIGHT_EVIDENCE_CHARS].rstrip()
     return t
@@ -697,16 +734,18 @@ class CognitiveLearner:
         """Learn when I'm overconfident."""
         if predicted_success and not actual_success:
             key = self._generate_key(CognitiveCategory.SELF_AWARENESS, f"overconfident:{task_type}")
+            evidence_item = _clip_evidence(context)
             if key in self.insights:
                 self._touch_validation(self.insights[key], contradicted_delta=1)
-                self.insights[key].evidence.append(context[:200])
+                if evidence_item:
+                    self.insights[key].evidence.append(evidence_item)
                 # Keep only last 10 evidence items
                 self.insights[key].evidence = self.insights[key].evidence[-10:]
             else:
                 self.insights[key] = CognitiveInsight(
                     category=CognitiveCategory.SELF_AWARENESS,
                     insight=f"I tend to be overconfident about {task_type} tasks",
-                    evidence=[context[:200]],
+                    evidence=[evidence_item] if evidence_item else [],
                     confidence=0.6,
                     context=f"When attempting {task_type}"
                 )
@@ -723,17 +762,18 @@ class CognitiveLearner:
             f"struggle:{_normalize_struggle_key(task_type)}",
         )
         low_signal = _is_low_signal_struggle_task(normalized_task)
+        failure_evidence = _clip_evidence(failure_reason)
         if key in self.insights:
             if not low_signal:
                 self._touch_validation(self.insights[key], validated_delta=1)
-            if failure_reason not in self.insights[key].evidence:
-                self.insights[key].evidence.append(failure_reason[:200])
+            if failure_evidence and failure_evidence not in self.insights[key].evidence:
+                self.insights[key].evidence.append(failure_evidence)
                 self.insights[key].evidence = self.insights[key].evidence[-10:]
         else:
             self.insights[key] = CognitiveInsight(
                 category=CognitiveCategory.SELF_AWARENESS,
                 insight=f"I struggle with {normalized_task} tasks",
-                evidence=[failure_reason[:200]],
+                evidence=[failure_evidence] if failure_evidence else [],
                 confidence=0.35 if low_signal else 0.5,
                 context=f"Tasks involving {normalized_task}"
             )
@@ -746,14 +786,17 @@ class CognitiveLearner:
         if key in self.insights:
             # Merge: accumulate evidence and validate instead of overwriting
             existing = self.insights[key]
-            existing.evidence.append(how_i_discovered)
+            evidence_item = _clip_evidence(how_i_discovered)
+            if evidence_item:
+                existing.evidence.append(evidence_item)
             existing.times_validated += 1
             existing.confidence = min(1.0, existing.confidence + 0.05)
         else:
+            evidence_item = _clip_evidence(how_i_discovered)
             self.insights[key] = CognitiveInsight(
                 category=CognitiveCategory.SELF_AWARENESS,
                 insight=f"Blind spot: I tend to miss {what_i_missed}",
-                evidence=[how_i_discovered],
+                evidence=[evidence_item] if evidence_item else [],
                 confidence=0.7,
                 context="During analysis and planning"
             )
@@ -770,15 +813,17 @@ class CognitiveLearner:
         if _is_injection_or_garbage(preference_value):
             return None
         key = self._generate_key(CognitiveCategory.USER_UNDERSTANDING, f"pref:{preference_type}")
+        evidence_item = _clip_evidence(evidence)
         if key in self.insights:
             self._touch_validation(self.insights[key], validated_delta=1)
-            self.insights[key].evidence.append(evidence[:200])
+            if evidence_item:
+                self.insights[key].evidence.append(evidence_item)
             self.insights[key].evidence = self.insights[key].evidence[-10:]
         else:
             self.insights[key] = CognitiveInsight(
                 category=CognitiveCategory.USER_UNDERSTANDING,
                 insight=f"User prefers {preference_value} for {preference_type}",
-                evidence=[evidence[:200]],
+                evidence=[evidence_item] if evidence_item else [],
                 confidence=0.7,
                 context=f"When {preference_type} is relevant"
             )
@@ -788,18 +833,20 @@ class CognitiveLearner:
     def learn_user_expertise(self, domain: str, level: str, evidence: str):
         """Learn about user's expertise level in a domain."""
         key = self._generate_key(CognitiveCategory.USER_UNDERSTANDING, f"expertise:{domain}")
+        evidence_item = _clip_evidence(evidence)
         if key in self.insights:
             # Merge: update level, accumulate evidence, validate
             existing = self.insights[key]
             existing.insight = f"User has {level} expertise in {domain}"
-            existing.evidence.append(evidence[:200])
+            if evidence_item:
+                existing.evidence.append(evidence_item)
             existing.times_validated += 1
             existing.confidence = min(1.0, existing.confidence + 0.05)
         else:
             self.insights[key] = CognitiveInsight(
                 category=CognitiveCategory.USER_UNDERSTANDING,
                 insight=f"User has {level} expertise in {domain}",
-                evidence=[evidence[:200]],
+                evidence=[evidence_item] if evidence_item else [],
                 confidence=0.6,
                 context=f"When discussing {domain}"
             )
@@ -826,12 +873,13 @@ class CognitiveLearner:
     def learn_why(self, what_worked: str, why_it_worked: str, context: str):
         """Learn WHY something worked, not just that it worked."""
         key = self._generate_key(CognitiveCategory.REASONING, f"why:{what_worked}")
+        evidence_item = _clip_evidence(context)
         self.insights[key] = CognitiveInsight(
             category=CognitiveCategory.REASONING,
             insight=f"{what_worked} works because {why_it_worked}",
-            evidence=[context[:200]],
+            evidence=[evidence_item] if evidence_item else [],
             confidence=0.7,
-            context=context
+            context=_clip_context(context)
         )
         self._save_insights()
         return self.insights[key]
@@ -856,10 +904,11 @@ class CognitiveLearner:
         if _is_injection_or_garbage(assumption) or _is_injection_or_garbage(reality):
             return None
         key = self._generate_key(CognitiveCategory.REASONING, f"bad_assumption:{assumption}")
+        evidence_item = _clip_evidence(context)
         self.insights[key] = CognitiveInsight(
             category=CognitiveCategory.REASONING,
             insight=f"Assumption '{assumption}' often wrong. Reality: {reality}",
-            evidence=[context[:200]],
+            evidence=[evidence_item] if evidence_item else [],
             confidence=0.8,
             context=f"When making assumptions about {assumption[:30]}"
         )
@@ -874,13 +923,15 @@ class CognitiveLearner:
                                does_not_apply_when: str):
         """Learn when a pattern applies vs doesn't apply."""
         key = self._generate_key(CognitiveCategory.CONTEXT, f"boundary:{pattern}")
+        applies_evidence = _clip_evidence(applies_when)
+        does_not_apply_evidence = _clip_evidence(does_not_apply_when)
         self.insights[key] = CognitiveInsight(
             category=CognitiveCategory.CONTEXT,
             insight=f"'{pattern}' applies when {applies_when}",
-            evidence=[applies_when],
+            evidence=[applies_evidence] if applies_evidence else [],
             confidence=0.7,
-            context=applies_when,
-            counter_examples=[does_not_apply_when]
+            context=_clip_context(applies_when),
+            counter_examples=[does_not_apply_evidence] if does_not_apply_evidence else []
         )
         self._save_insights()
         return self.insights[key]
@@ -901,18 +952,19 @@ class CognitiveLearner:
             self._touch_validation(existing, validated_delta=1)
             existing.confidence = _boost_confidence(0.6, existing.times_validated)
             # Add the specific observation as evidence
-            evidence_entry = f"{signal}: {what_it_indicates}"[:200]
-            if evidence_entry not in existing.evidence:
+            evidence_entry = _clip_evidence(f"{signal}: {what_it_indicates}")
+            if evidence_entry and evidence_entry not in existing.evidence:
                 existing.evidence.append(evidence_entry)
                 existing.evidence = existing.evidence[-10:]  # Keep last 10
             self._save_insights()
             return existing
 
         # New signal
+        evidence_entry = _clip_evidence(f"{signal}: {what_it_indicates}")
         self.insights[key] = CognitiveInsight(
             category=CognitiveCategory.CONTEXT,
             insight=f"When I see '{normalized}', it usually means {what_it_indicates}",
-            evidence=[f"{signal}: {what_it_indicates}"[:200]],
+            evidence=[evidence_entry] if evidence_entry else [],
             confidence=0.6,
             context=f"Recognizing {normalized}"
         )
@@ -926,10 +978,11 @@ class CognitiveLearner:
     def learn_learning_preference(self, what_helps_me_learn: str, evidence: str):
         """Learn about how I learn best."""
         key = self._generate_key(CognitiveCategory.META_LEARNING, f"learning:{what_helps_me_learn}")
+        evidence_item = _clip_evidence(evidence)
         self.insights[key] = CognitiveInsight(
             category=CognitiveCategory.META_LEARNING,
             insight=f"I learn better when {what_helps_me_learn}",
-            evidence=[evidence],
+            evidence=[evidence_item] if evidence_item else [],
             confidence=0.7,
             context="Learning and improvement"
         )
@@ -940,12 +993,13 @@ class CognitiveLearner:
         """Learn when to ask the user vs just act."""
         action = "ask first" if should_ask else "act directly"
         key = self._generate_key(CognitiveCategory.META_LEARNING, f"ask_act:{situation}")
+        reasoning_evidence = _clip_evidence(reasoning)
         self.insights[key] = CognitiveInsight(
             category=CognitiveCategory.META_LEARNING,
             insight=f"In '{situation}' situations, I should {action}",
-            evidence=[reasoning],
+            evidence=[reasoning_evidence] if reasoning_evidence else [],
             confidence=0.7,
-            context=situation
+            context=_clip_context(situation)
         )
         self._save_insights()
         return self.insights[key]
@@ -1644,16 +1698,17 @@ class CognitiveLearner:
 
         ins = self.insights[insight_key]
         outcome = (outcome or "").strip().lower()
+        evidence_item = _clip_evidence(evidence)
         if outcome == "good":
             self._touch_validation(ins, validated_delta=1)
-            if evidence:
-                ins.evidence.append(evidence[:200])
+            if evidence_item:
+                ins.evidence.append(evidence_item)
                 ins.evidence = ins.evidence[-10:]
             ins.confidence = _boost_confidence(ins.confidence, 1)
         elif outcome == "bad":
             self._touch_validation(ins, contradicted_delta=1)
-            if evidence:
-                ins.counter_examples.append(evidence[:200])
+            if evidence_item:
+                ins.counter_examples.append(evidence_item)
                 ins.counter_examples = ins.counter_examples[-10:]
             ins.confidence = max(0.1, ins.confidence * 0.85)
         else:

@@ -101,13 +101,13 @@ _CAPTURE_NOISE_PATTERNS = (
     re.compile(r"system inventory \(what actually exists", re.I),
     re.compile(r"<task-notification>|<task-id>|<output-file>|<status>|<summary>", re.I),
     re.compile(r"\n\s*- services:\s", re.I),
-    re.compile(r"\bevent_type:\b|\btool_name:\b|\bfile_path:\b|\bcwd:\b", re.I),
     re.compile(r"^#\s*provider prompt", re.I),
     re.compile(r"\bmission id:\b|\bassigned tasks:\b|\bexecution expectations:\b", re.I),
     re.compile(r"\bh70 skill loading\b|\bmission completion gate\b", re.I),
     re.compile(r"\bcurl\s+-x\s+post\s+http://127\.0\.0\.1:\d+/api/events\b", re.I),
     re.compile(r"^\s*evidence\s*:", re.I),
 )
+_INLINE_NOISE_FIELD_RE = re.compile(r"\b(event_type|tool_name|file_path|cwd)\s*:\s*\S+", re.I)
 
 _CAPTURE_META_LINE_RE = re.compile(
     r"^\s*(mission|mission id|provider|model|role|strategy|priority|importance|task id|task name|"
@@ -119,15 +119,33 @@ _SIGNAL_HINT_RE = re.compile(
     r"\b(should|must|because|prefer|decision|fix|ship|regression|bug|test|quality|confidence)\b",
     re.I,
 )
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\s*[;|]\s+")
+_SEMANTIC_SUMMARY_RE = re.compile(
+    r"\b(because|so that|therefore|hence|prefer|must|should|avoid|trade-?off|"
+    r"threshold|confidence|quality|latency|impact|decision)\b",
+    re.I,
+)
 
 
 def _is_noise_line(text: str) -> bool:
     line = str(text or "").strip()
     if not line:
         return True
+    if _INLINE_NOISE_FIELD_RE.search(line):
+        residual = _INLINE_NOISE_FIELD_RE.sub(" ", line)
+        residual = re.sub(r"\s+", " ", residual).strip(" -:;|")
+        if len(residual) < 20:
+            return True
     if _CAPTURE_META_LINE_RE.search(line):
         return True
     return any(rx.search(line) for rx in _CAPTURE_NOISE_PATTERNS)
+
+
+def _strip_inline_noise_tokens(text: str) -> str:
+    cleaned = _INLINE_NOISE_FIELD_RE.sub(" ", str(text or ""))
+    cleaned = re.sub(r"<task-notification>|<task-id>|<output-file>|<status>|<summary>", " ", cleaned, flags=re.I)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -:;|")
+    return cleaned
 
 
 def _noise_line_stats(text: str) -> Tuple[int, int, int]:
@@ -135,7 +153,7 @@ def _noise_line_stats(text: str) -> Tuple[int, int, int]:
     noise = 0
     signal = 0
     for raw in str(text or "").splitlines():
-        line = raw.strip()
+        line = _strip_inline_noise_tokens(raw.strip())
         if not line:
             continue
         total += 1
@@ -166,9 +184,12 @@ def _is_capture_noise(text: str) -> bool:
     sample = str(text or "").strip()
     if not sample:
         return True
-    if any(rx.search(sample) for rx in _CAPTURE_NOISE_PATTERNS):
+    sample_clean = _strip_inline_noise_tokens(sample)
+    if not sample_clean:
         return True
-    noise_lines, total_lines, signal_lines = _noise_line_stats(sample)
+    if any(rx.search(sample_clean) for rx in _CAPTURE_NOISE_PATTERNS):
+        return True
+    noise_lines, total_lines, signal_lines = _noise_line_stats(sample_clean)
     if total_lines >= 4 and noise_lines / max(1, total_lines) >= 0.55 and signal_lines <= 1:
         return True
     if total_lines >= 8 and noise_lines >= 6:
@@ -181,13 +202,38 @@ def _compact_context_snippet(text: str, *, max_chars: int) -> str:
     sample = str(text or "")
     lines: List[str] = []
     for raw in sample.splitlines():
-        line = raw.strip()
+        line = _strip_inline_noise_tokens(raw.strip())
         if not line:
             continue
         if _is_noise_line(line):
             continue
         lines.append(line)
+    if not lines:
+        return ""
     compact = " ".join(lines)
+    compact = re.sub(r"\s+", " ", compact).strip()
+    if not compact:
+        return ""
+    parts = [p.strip() for p in _SENTENCE_SPLIT_RE.split(compact) if p.strip()]
+    if parts:
+        scored: List[Tuple[float, int, str]] = []
+        for idx, part in enumerate(parts):
+            score = 0.0
+            if _SEMANTIC_SUMMARY_RE.search(part):
+                score += 1.2
+            if _SIGNAL_HINT_RE.search(part):
+                score += 0.8
+            if re.search(r"\b\d+(\.\d+)?%?\b", part):
+                score += 0.4
+            if 24 <= len(part) <= 220:
+                score += 0.2
+            scored.append((score, idx, part))
+        keep_n = min(4, len(scored))
+        top = sorted(scored, key=lambda item: (item[0], -item[1]), reverse=True)[:keep_n]
+        top_idx = {idx for _, idx, _ in top}
+        summary_parts = [part for idx, part in enumerate(parts) if idx in top_idx]
+        if summary_parts:
+            compact = " ".join(summary_parts)
     compact = re.sub(r"\s+", " ", compact).strip()
     if len(compact) > max_chars:
         compact = compact[:max_chars].rstrip()
