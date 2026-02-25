@@ -38,6 +38,23 @@ LOG_MAX_BYTES = int(os.environ.get("SPARK_LOG_MAX_BYTES", "10485760"))
 LOG_BACKUPS = int(os.environ.get("SPARK_LOG_BACKUPS", "5"))
 
 
+def _is_watchdog_process_command(cmd: str) -> bool:
+    """Best-effort watchdog process matcher that avoids shell wrapper false positives."""
+    cmd_l = (cmd or "").lower()
+    if not cmd_l:
+        return False
+    # Ignore shell wrappers that *mention* watchdog in an inline command string.
+    if "powershell" in cmd_l and "-command" in cmd_l:
+        return False
+    if "cmd.exe" in cmd_l and "/c" in cmd_l and "spark_watchdog.py" in cmd_l:
+        return False
+    return (
+        "-m spark_watchdog" in cmd_l
+        or "spark_watchdog.py" in cmd_l
+        or "scripts/watchdog.py" in cmd_l
+    )
+
+
 def _check_single_instance() -> bool:
     """Ensure only one watchdog runs. Returns True if we can proceed, False if another is running."""
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -49,11 +66,7 @@ def _check_single_instance() -> bool:
         for pid, cmd in snapshot:
             if pid == os.getpid():
                 continue
-            if (
-                "-m spark_watchdog" in cmd
-                or "spark_watchdog.py" in cmd
-                or "scripts/watchdog.py" in cmd
-            ):
+            if _is_watchdog_process_command(cmd):
                 return False
     except Exception:
         # Fall back to PID file heuristics below.
@@ -64,11 +77,7 @@ def _check_single_instance() -> bool:
         for spid, cmd in snapshot:
             if spid != pid:
                 continue
-            if (
-                "-m spark_watchdog" in cmd
-                or "spark_watchdog.py" in cmd
-                or "scripts/watchdog.py" in cmd
-            ):
+            if _is_watchdog_process_command(cmd):
                 return True
         return False
 
