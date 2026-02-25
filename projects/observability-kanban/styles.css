@@ -119,6 +119,28 @@ body::before {
   font-size: 0.73rem;
 }
 
+.surface-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.surface-links a {
+  color: #c7e6ff;
+  text-decoration: none;
+  font-size: 0.69rem;
+  text-transform: uppercase;
+  border: 1px solid #2b4663;
+  border-radius: 999px;
+  padding: 0.18rem 0.5rem;
+  background: rgba(86, 212, 255, 0.08);
+}
+
+.surface-links a:hover {
+  border-color: #4bcdf8;
+  color: #eff8ff;
+}
+
 .topbar h1 {
   margin: 0;
   font-size: clamp(1.16rem, 1.6vw, 1.44rem);
@@ -446,8 +468,13 @@ body::before {
   grid-template-columns: repeat(6, minmax(17.2rem, 1fr));
   gap: 12px;
   overflow-x: auto;
-  padding-bottom: 4px;
+  padding: 8px;
+  border: 1px solid rgba(86, 212, 255, 0.15);
+  border-radius: 14px;
   align-items: start;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(159, 195, 243, 0.18) 1px, transparent 0) 0 0/18px 18px,
+    linear-gradient(180deg, rgba(86, 212, 255, 0.03), rgba(86, 212, 255, 0.01));
 }
 
 .col {
@@ -465,6 +492,11 @@ body::before {
   gap: 8px;
   border-bottom: 1px solid rgba(143, 162, 191, 0.22);
   padding-bottom: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: linear-gradient(180deg, rgba(10,16,25,0.96), rgba(10,16,25,0.8));
+  backdrop-filter: blur(4px);
 }
 
 .col-title {
@@ -519,7 +551,39 @@ body::before {
   display: grid;
   gap: 8px;
   transition: border-color 140ms ease, transform 120ms ease;
+  position: relative;
+  overflow: hidden;
 }
+
+.task::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #4ccfff;
+  opacity: 0.8;
+}
+
+.task::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(196, 229, 255, 0.65);
+  background: rgba(86,212,255,0.2);
+}
+
+.task.status-in_progress::before { background: #56d4ff; }
+.task.status-ready::before { background: #8bde76; }
+.task.status-backlog::before { background: #9aaecf; }
+.task.status-needs_review::before { background: #ffb24d; }
+.task.status-blocked::before { background: #ff6b7d; }
+.task.status-done::before { background: #37d08f; }
 
 .task:hover {
   border-color: #3c5574;
@@ -616,6 +680,18 @@ body::before {
 .metric-chip b {
   color: #f1f7ff;
   font-family: var(--font-mono);
+}
+
+.chip-status {
+  color: #9de8ff;
+  border-color: rgba(86,212,255,0.6);
+  background: rgba(86,212,255,0.12);
+}
+
+.chip-source {
+  color: #cedeff;
+  border-color: rgba(168, 194, 234, 0.45);
+  background: rgba(168, 194, 234, 0.08);
 }
 
 .prio-p0 {

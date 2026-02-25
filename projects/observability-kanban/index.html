@@ -9,9 +9,13 @@
 <body>
   <header class="topbar shell">
     <div class="brand-block">
-      <p class="brand-kicker mono">vibeship.co / observability</p>
+      <p class="brand-kicker mono">vibeship.co / spark.vibeship.co / spawner</p>
       <h1>Execution Kanban</h1>
       <p id="updatedAt" class="muted"></p>
+      <div class="surface-links mono">
+        <a href="http://127.0.0.1:5173/canvas" target="_blank" rel="noreferrer">spawner canvas</a>
+        <a href="http://127.0.0.1:8789" target="_blank" rel="noreferrer">kanban local</a>
+      </div>
     </div>
     <div class="toolbar" role="group" aria-label="Board actions">
       <button id="resetBoardBtn" class="btn btn-secondary">Reset Board</button>
@@ -46,6 +50,14 @@
         <span class="muted mono">CB-023 / remove dead panes</span>
       </div>
       <div id="pulseCleanup"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Pulse Endpoint Rewiring</h2>
+        <span class="muted mono">CB-024 / live endpoint bindings</span>
+      </div>
+      <div id="pulseEndpointRewire"></div>
     </section>
 
     <section class="panel">

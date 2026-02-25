@@ -25,6 +25,7 @@ let historyState = null;
 let suppressionAuditState = null;
 let buildQueueState = null;
 let pulseWidgetsState = null;
+let pulseEndpointsState = null;
 
 async function loadJson(path) {
   const res = await fetch(path);
@@ -75,6 +76,13 @@ function escapeHtml(s) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function deepGet(obj, path) {
+  if (!obj || !path) return undefined;
+  return String(path)
+    .split('.')
+    .reduce((curr, key) => (curr == null ? undefined : curr[key]), obj);
 }
 
 function loadPersistedBoard(defaultBoard) {
@@ -405,6 +413,89 @@ function renderPulseCleanup(pulseData) {
   `;
 }
 
+function renderPulseEndpointRewire(pulseData, endpointData, history, audit, queue) {
+  const host = document.getElementById('pulseEndpointRewire');
+  const widgets = (pulseData?.widgets || []).filter((w) => w.status !== 'dead');
+  const endpointRows = endpointData?.endpoints || [];
+  if (!widgets.length || !endpointRows.length) {
+    host.innerHTML = '<div class="empty-state">No endpoint mappings configured for Pulse widgets.</div>';
+    return;
+  }
+
+  const endpointMap = Object.fromEntries(endpointRows.map((row) => [row.id, row]));
+  const latestHistory = history?.history?.length ? history.history[history.history.length - 1] : null;
+  const context = {
+    kpi_history: {
+      latest: latestHistory
+    },
+    suppression_audit: audit,
+    build_queue: queue
+  };
+
+  const resolved = widgets.map((widget) => {
+    const endpoint = endpointMap[widget.endpoint];
+    const value = endpoint ? deepGet(context, endpoint.path) : undefined;
+    const ok = value !== undefined && value !== null && value !== '';
+    return {
+      widget,
+      endpoint,
+      value,
+      ok
+    };
+  });
+
+  const liveBound = resolved.filter((row) => row.ok).length;
+  const coverage = liveBound / Math.max(1, widgets.length);
+  const stale = resolved.length - liveBound;
+
+  const summary = `
+    <div class="endpoint-summary">
+      <article class="analytics-card">
+        <p class="kpi-key">Live Endpoint Coverage</p>
+        <div class="analytics-value">${(coverage * 100).toFixed(0)}%</div>
+      </article>
+      <article class="analytics-card">
+        <p class="kpi-key">Bound Widgets</p>
+        <div class="analytics-value">${liveBound}/${widgets.length}</div>
+      </article>
+      <article class="analytics-card ${stale ? 'warn' : ''}">
+        <p class="kpi-key">Stale/Unbound</p>
+        <div class="analytics-value">${stale}</div>
+      </article>
+      <article class="analytics-card">
+        <p class="kpi-key">Target Coverage</p>
+        <div class="analytics-value">90%</div>
+      </article>
+    </div>
+  `;
+
+  const rows = resolved.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.widget.id || 'n/a')}</td>
+      <td>${escapeHtml(row.endpoint?.path || 'missing endpoint')}</td>
+      <td>${escapeHtml(row.value ?? 'n/a')}</td>
+      <td><span class="status-pill ${row.ok ? '' : 'delta-down'}">${row.ok ? 'live' : 'stale'}</span></td>
+    </tr>
+  `).join('');
+
+  host.innerHTML = `
+    ${summary}
+    <div class="audit-table-wrap">
+      <table class="audit-table">
+        <thead>
+          <tr>
+            <th>Widget</th>
+            <th>Endpoint Path</th>
+            <th>Current Value</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
 function getTaskAgeDays(taskId) {
   const enteredAt = boardMeta().taskMeta?.[taskId]?.enteredAt;
   if (!enteredAt) return null;
@@ -523,9 +614,11 @@ function taskCard(t, columnKey, opts = {}) {
   const score = typeof t.priority_score === 'number' ? t.priority_score.toFixed(2) : t.priority_score ?? '-';
   const rangeText = t.baseline !== undefined ? `${t.baseline} -> ${t.target}` : 'no numeric target';
   const selectId = moveSelectId(t.id, columnKey);
+  const statusClass = `status-${columnKey}`;
+  const source = t.source || (columnKey === 'backlog' ? 'questions' : 'board');
 
   return `
-    <article class="task" ${draggable ? 'draggable="true"' : ''} data-task-id="${escapeHtml(t.id)}" data-column="${columnKey}">
+    <article class="task ${statusClass}" ${draggable ? 'draggable="true"' : ''} data-task-id="${escapeHtml(t.id)}" data-column="${columnKey}">
       <div class="task-head">
         <div class="title-row">
           <span class="task-id mono">${escapeHtml(t.id)}</span>
@@ -539,6 +632,8 @@ function taskCard(t, columnKey, opts = {}) {
         <span class="kpi-target mono">${escapeHtml(rangeText)}</span>
       </div>
       <div class="meta">
+        <span class="metric-chip chip-status mono">${escapeHtml(COLUMN_LABELS[columnKey] || columnKey)}</span>
+        <span class="metric-chip chip-source mono">${escapeHtml(String(source))}</span>
         <span class="metric-chip ${priorityClass}">${escapeHtml(priority || 'P?')}</span>
         <span class="metric-chip">Impact <b>${escapeHtml(t.impact ?? '-')}</b></span>
         <span class="metric-chip">Urgency <b>${escapeHtml(t.urgency ?? '-')}</b></span>
@@ -849,19 +944,21 @@ function renderAll() {
   renderOperatorNow(buildQueueState, boardState);
   renderSuppressionAudit(suppressionAuditState);
   renderPulseCleanup(pulseWidgetsState);
+  renderPulseEndpointRewire(pulseWidgetsState, pulseEndpointsState, historyState, suppressionAuditState, buildQueueState);
   renderBoard(boardState);
   renderQuestions(questionsState);
 }
 
 (async function init() {
   try {
-    const [defaultBoard, questions, history, suppressionAudit, buildQueue, pulseWidgets] = await Promise.all([
+    const [defaultBoard, questions, history, suppressionAudit, buildQueue, pulseWidgets, pulseEndpoints] = await Promise.all([
       loadJson('data/board.json'),
       loadJson('data/questions_backlog.json'),
       loadJson('data/kpi_history.json'),
       loadJson('data/suppression_audit.json'),
       loadJson('data/terminal_build_queue.json'),
-      loadJson('data/pulse_widgets.json')
+      loadJson('data/pulse_widgets.json'),
+      loadJson('data/pulse_endpoints.json')
     ]);
 
     boardState = loadPersistedBoard(defaultBoard);
@@ -870,6 +967,7 @@ function renderAll() {
     suppressionAuditState = suppressionAudit;
     buildQueueState = buildQueue;
     pulseWidgetsState = pulseWidgets;
+    pulseEndpointsState = pulseEndpoints;
 
     ensureTaskMeta();
 
