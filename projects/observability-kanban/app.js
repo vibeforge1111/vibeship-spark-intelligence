@@ -22,6 +22,7 @@ const EFFECT_FAIL_THRESHOLD_FOR_REVIEW = 2;
 let boardState = null;
 let questionsState = null;
 let historyState = null;
+let suppressionAuditState = null;
 
 async function loadJson(path) {
   const res = await fetch(path);
@@ -200,6 +201,70 @@ function renderKpiTrends(history) {
   document.getElementById('kpiTrends').innerHTML = cards.length
     ? cards.join('')
     : '<article class="trend-card"><p class="muted">No KPI history rows found.</p></article>';
+}
+
+function renderSuppressionAudit(audit) {
+  const host = document.getElementById('suppressionAudit');
+  const causes = audit?.causes || [];
+  if (!causes.length) {
+    host.innerHTML = '<div class="empty-state">No suppression cause data found.</div>';
+    return;
+  }
+
+  const sorted = [...causes].sort((a, b) => (b.impact_score || 0) - (a.impact_score || 0));
+  const top = sorted[0];
+  const totalEvents = sorted.reduce((sum, row) => sum + Number(row.events || 0), 0);
+
+  const summary = `
+    <div class="audit-summary">
+      <article class="analytics-card">
+        <p class="kpi-key">Window</p>
+        <div class="analytics-value">${escapeHtml(audit?.window_days ?? 'n/a')}d</div>
+      </article>
+      <article class="analytics-card">
+        <p class="kpi-key">Suppression Events</p>
+        <div class="analytics-value">${escapeHtml(totalEvents)}</div>
+      </article>
+      <article class="analytics-card">
+        <p class="kpi-key">Top Risk Driver</p>
+        <div class="analytics-value">${escapeHtml(top.reason || 'n/a')}</div>
+      </article>
+      <article class="analytics-card">
+        <p class="kpi-key">Target Emit Rate</p>
+        <div class="analytics-value">${escapeHtml(audit?.target_emit_rate ?? 'n/a')}</div>
+      </article>
+    </div>
+  `;
+
+  const rows = sorted.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.reason)}</td>
+      <td>${escapeHtml(row.events)}</td>
+      <td>${escapeHtml(row.suppression_rate)}</td>
+      <td>${escapeHtml(row.false_negative_risk)}</td>
+      <td>${escapeHtml(row.impact_score)}</td>
+      <td>${escapeHtml(row.recommended_action || 'n/a')}</td>
+    </tr>
+  `).join('');
+
+  host.innerHTML = `
+    ${summary}
+    <div class="audit-table-wrap">
+      <table class="audit-table">
+        <thead>
+          <tr>
+            <th>Cause</th>
+            <th>Events</th>
+            <th>Suppression Rate</th>
+            <th>False-Negative Risk</th>
+            <th>Impact Score</th>
+            <th>Next Action</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 function getTaskAgeDays(taskId) {
@@ -643,21 +708,24 @@ function renderAll() {
   document.getElementById('kpiGrid').innerHTML = (boardState.kpis || []).map(metricCard).join('');
   renderKpiTrends(historyState);
   renderAnalytics(boardState);
+  renderSuppressionAudit(suppressionAuditState);
   renderBoard(boardState);
   renderQuestions(questionsState);
 }
 
 (async function init() {
   try {
-    const [defaultBoard, questions, history] = await Promise.all([
+    const [defaultBoard, questions, history, suppressionAudit] = await Promise.all([
       loadJson('data/board.json'),
       loadJson('data/questions_backlog.json'),
-      loadJson('data/kpi_history.json')
+      loadJson('data/kpi_history.json'),
+      loadJson('data/suppression_audit.json')
     ]);
 
     boardState = loadPersistedBoard(defaultBoard);
     questionsState = questions;
     historyState = history;
+    suppressionAuditState = suppressionAudit;
 
     ensureTaskMeta();
 

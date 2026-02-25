@@ -187,6 +187,46 @@ body::before {
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 
+.audit-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.audit-table-wrap {
+  border: 1px solid #2a3f5a;
+  border-radius: 12px;
+  overflow-x: auto;
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 680px;
+  font-size: 0.78rem;
+}
+
+.audit-table th,
+.audit-table td {
+  padding: 0.56rem 0.62rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(143, 162, 191, 0.22);
+}
+
+.audit-table th {
+  color: #c6dcff;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(86, 212, 255, 0.06);
+}
+
+.audit-table tbody tr:hover {
+  background: rgba(86, 212, 255, 0.06);
+}
+
 .kpi-card,
 .analytics-card,
 .panel,

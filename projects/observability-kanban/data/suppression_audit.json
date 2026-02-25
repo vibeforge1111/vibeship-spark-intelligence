@@ -1,0 +1,40 @@
+{
+  "updated_at": "2026-02-25",
+  "window_days": 7,
+  "current_emit_rate": 0.076,
+  "target_emit_rate": 0.14,
+  "causes": [
+    {
+      "reason": "global_dedupe_overreach",
+      "events": 184,
+      "suppression_rate": 0.29,
+      "false_negative_risk": 0.76,
+      "impact_score": 9.1,
+      "recommended_action": "Scope dedupe by stage + topic hash instead of global key."
+    },
+    {
+      "reason": "confidence_threshold_too_high",
+      "events": 152,
+      "suppression_rate": 0.24,
+      "false_negative_risk": 0.69,
+      "impact_score": 8.4,
+      "recommended_action": "Tune threshold per advisory family and compare FN deltas."
+    },
+    {
+      "reason": "safety_filter_broad_match",
+      "events": 94,
+      "suppression_rate": 0.15,
+      "false_negative_risk": 0.61,
+      "impact_score": 7.5,
+      "recommended_action": "Replace broad lexical blocks with policy-tagged rules."
+    },
+    {
+      "reason": "low_context_window",
+      "events": 73,
+      "suppression_rate": 0.11,
+      "false_negative_risk": 0.57,
+      "impact_score": 6.8,
+      "recommended_action": "Inject missing condition-action-reason context before filtering."
+    }
+  ]
+}
