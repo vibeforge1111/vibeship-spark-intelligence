@@ -93,7 +93,7 @@ function ensureTaskMeta() {
   const seen = new Set();
 
   Object.entries(boardState.columns).forEach(([col, tasks]) => {
-    (tasks || []).forEach(task => {
+    (tasks || []).forEach((task) => {
       seen.add(task.id);
       if (!meta.taskMeta[task.id]) {
         meta.taskMeta[task.id] = { enteredAt: nowIso(), column: col };
@@ -106,7 +106,7 @@ function ensureTaskMeta() {
     });
   });
 
-  Object.keys(meta.taskMeta).forEach(taskId => {
+  Object.keys(meta.taskMeta).forEach((taskId) => {
     if (!seen.has(taskId)) delete meta.taskMeta[taskId];
   });
 }
@@ -118,21 +118,35 @@ function pctFromProgress(base, target) {
   return Math.max(0, Math.min(100, improvingDown ? 100 - ((target / base) * 100) : ((base / target) * 100)));
 }
 
+function metricStatus(progress) {
+  if (progress >= 100) return 'target met';
+  if (progress >= 75) return 'close';
+  return 'tracking';
+}
+
 function metricCard(k) {
   const progress = pctFromProgress(k.baseline, k.target);
+  const status = metricStatus(progress);
+  const baseline = typeof k.baseline === 'number' ? k.baseline : 'n/a';
+  const target = typeof k.target === 'number' ? k.target : 'n/a';
   return `
     <article class="kpi-card">
-      <div class="kpi-key">${k.key}</div>
-      <div class="bar"><div class="fill" style="width:${progress}%"></div></div>
+      <div class="card-head">
+        <p class="kpi-key">${escapeHtml(k.key)}</p>
+        <span class="status-pill">${status}</span>
+      </div>
+      <div class="bar" role="img" aria-label="${escapeHtml(k.key)} progress ${progress.toFixed(1)} percent">
+        <div class="fill" style="width:${progress}%"></div>
+      </div>
       <div class="kpi-values">
-        <span>base: <b>${k.baseline}</b></span>
-        <span>target: <b>${k.target}</b></span>
+        <span>base <b>${baseline}</b></span>
+        <span>target <b>${target}</b></span>
       </div>
     </article>
   `;
 }
 
-function pointsToSparkline(points, width = 220, height = 46) {
+function pointsToSparkline(points, width = 220, height = 56) {
   if (!points?.length) return '';
   const min = Math.min(...points);
   const max = Math.max(...points);
@@ -144,10 +158,16 @@ function pointsToSparkline(points, width = 220, height = 46) {
   }).join(' ');
 }
 
+function deltaClass(delta) {
+  if (delta > 0) return 'delta-up';
+  if (delta < 0) return 'delta-down';
+  return 'delta-flat';
+}
+
 function renderKpiTrends(history) {
   const entries = history?.history || [];
   const byKpi = {};
-  entries.forEach(row => {
+  entries.forEach((row) => {
     Object.entries(row.metrics || {}).forEach(([k, v]) => {
       if (!byKpi[k]) byKpi[k] = [];
       byKpi[k].push(Number(v));
@@ -157,20 +177,29 @@ function renderKpiTrends(history) {
   const cards = Object.entries(byKpi).map(([k, points]) => {
     const start = points[0];
     const end = points[points.length - 1];
-    const delta = (end - start).toFixed(3);
+    const delta = end - start;
+    const deltaText = delta > 0 ? `+${delta.toFixed(3)}` : delta.toFixed(3);
     const poly = pointsToSparkline(points);
     return `
       <article class="trend-card">
-        <div class="kpi-key">Trend: ${k}</div>
-        <svg class="sparkline" viewBox="0 0 220 46" preserveAspectRatio="none">
+        <div class="card-head">
+          <p class="kpi-key">trend / ${escapeHtml(k)}</p>
+          <span class="status-pill ${deltaClass(delta)}">delta ${deltaText}</span>
+        </div>
+        <svg class="sparkline" viewBox="0 0 220 56" preserveAspectRatio="none" aria-hidden="true">
           <polyline points="${poly}"></polyline>
         </svg>
-        <div class="trend-meta">start <b>${start}</b> → now <b>${end}</b> (Δ ${delta})</div>
+        <div class="trend-meta">
+          <span>start <b>${start}</b> -> now <b>${end}</b></span>
+          <span class="${deltaClass(delta)}">delta ${deltaText}</span>
+        </div>
       </article>
     `;
   });
 
-  document.getElementById('kpiTrends').innerHTML = cards.join('');
+  document.getElementById('kpiTrends').innerHTML = cards.length
+    ? cards.join('')
+    : '<article class="trend-card"><p class="muted">No KPI history rows found.</p></article>';
 }
 
 function getTaskAgeDays(taskId) {
@@ -195,7 +224,7 @@ function renderTaskHistory(taskId) {
   const textFor = (row) => {
     switch (row.type) {
       case 'move':
-        return `Moved ${row.from || '?'} → ${row.to || '?'}${row.reason ? ` (${row.reason})` : ''}`;
+        return `Moved ${row.from || '?'} -> ${row.to || '?'}${row.reason ? ` (${row.reason})` : ''}`;
       case 'effect_check':
         return `Effect check ${row.passed ? 'PASS' : 'FAIL'}${row.current !== undefined ? ` (current=${row.current}, target=${row.target})` : ''}`;
       case 'review_checklist':
@@ -207,8 +236,8 @@ function renderTaskHistory(taskId) {
     }
   };
 
-  const items = rows.slice(-6).reverse().map(row => {
-    const line = `${formatTs(row.ts)} — ${textFor(row)}`;
+  const items = rows.slice(-6).reverse().map((row) => {
+    const line = `${formatTs(row.ts)} | ${textFor(row)}`;
     return `<li>${escapeHtml(line)}</li>`;
   }).join('');
 
@@ -226,7 +255,7 @@ function openNeedsReviewModal(task) {
     const cancelBtn = document.getElementById('reviewCancelBtn');
 
     const prior = getReviewChecklist(task.id) || {};
-    label.textContent = `${task.id} — ${task.task}`;
+    label.textContent = `${task.id} -> ${task.task}`;
     root.value = prior.rootCause || '';
     adj.value = prior.adjustment || '';
     retest.value = prior.retestPlan || '';
@@ -247,7 +276,7 @@ function openNeedsReviewModal(task) {
       const payload = {
         rootCause: root.value.trim(),
         adjustment: adj.value.trim(),
-        retestPlan: retest.value.trim(),
+        retestPlan: retest.value.trim()
       };
       if (!payload.rootCause || !payload.adjustment || !payload.retestPlan) {
         alert('Please complete all three checklist fields before moving to READY.');
@@ -264,32 +293,55 @@ function openNeedsReviewModal(task) {
   });
 }
 
+function moveSelectId(taskId, columnKey) {
+  return `move-${String(taskId || '').replace(/[^a-zA-Z0-9_-]/g, '')}-${columnKey}`;
+}
+
 function taskCard(t, columnKey, opts = {}) {
   const { showMove = true, draggable = true, showAge = true } = opts;
   const ageDays = showAge ? getTaskAgeDays(t.id) : null;
-  const ageText = ageDays == null ? '' : `<span class="age">Age ${ageDays.toFixed(1)}d</span>`;
+  const ageText = ageDays == null
+    ? ''
+    : `<span class="metric-chip age">Age <b>${ageDays.toFixed(1)}d</b></span>`;
   const effect = getEffectCheck(t.id);
   const review = getReviewChecklist(t.id);
-  const effectText = effect?.passed ? `<span class="effect-ok">Effect✓</span>` : '';
-  const failText = effect && !effect.passed && effect.failedCount ? `<span class="effect-fail">Fail x${effect.failedCount}</span>` : '';
-  const reviewText = review ? `<span class="review-ok">Review✓</span>` : '';
+  const effectText = effect?.passed ? '<span class="metric-chip effect-ok">Effect OK</span>' : '';
+  const failText = effect && !effect.passed && effect.failedCount
+    ? `<span class="metric-chip effect-fail">Fail x${effect.failedCount}</span>`
+    : '';
+  const reviewText = review ? '<span class="metric-chip review-ok">Review done</span>' : '';
 
   const options = Object.entries(COLUMN_LABELS)
     .map(([k, label]) => `<option value="${k}" ${k === columnKey ? 'selected' : ''}>Move to ${label}</option>`)
     .join('');
 
+  const priority = String(t.priority || '').toUpperCase();
+  const priorityClass = priority === 'P0' ? 'prio-p0' : 'prio-p1';
+  const score = typeof t.priority_score === 'number' ? t.priority_score.toFixed(2) : t.priority_score ?? '-';
+  const rangeText = t.baseline !== undefined ? `${t.baseline} -> ${t.target}` : 'no numeric target';
+  const selectId = moveSelectId(t.id, columnKey);
+
   return `
-    <article class="task" ${draggable ? 'draggable="true"' : ''} data-task-id="${t.id}" data-column="${columnKey}">
-      <div class="title">${t.id} — ${t.task}</div>
-      <div class="intent">${t.intent || ''}</div>
-      <div class="kpi">KPI: ${t.kpi || 'n/a'}${t.baseline !== undefined ? ` | ${t.baseline} -> ${t.target}` : ''}</div>
+    <article class="task" ${draggable ? 'draggable="true"' : ''} data-task-id="${escapeHtml(t.id)}" data-column="${columnKey}">
+      <div class="task-head">
+        <div class="title-row">
+          <span class="task-id mono">${escapeHtml(t.id)}</span>
+          <h4 class="title">${escapeHtml(t.task)}</h4>
+        </div>
+      </div>
+      <p class="intent">${escapeHtml(t.intent || 'No explicit intent listed.')}</p>
+      <div class="kpi-line">
+        <span class="kpi-label mono">KPI</span>
+        <span class="kpi-value">${escapeHtml(t.kpi || 'n/a')}</span>
+        <span class="kpi-target mono">${escapeHtml(rangeText)}</span>
+      </div>
       <div class="meta">
-        <span class="${(t.priority || '').toLowerCase() === 'p0' ? 'prio-p0' : 'prio-p1'}">${t.priority || ''}</span>
-        <span>Impact ${t.impact ?? '-'}</span>
-        <span>Urgency ${t.urgency ?? '-'}</span>
-        <span>Risk ${t.risk_reduction ?? t.riskReduction ?? '-'}</span>
-        <span>Effort ${t.effort ?? '-'}</span>
-        <span class="score">Score ${t.priority_score ?? '-'}</span>
+        <span class="metric-chip ${priorityClass}">${escapeHtml(priority || 'P?')}</span>
+        <span class="metric-chip">Impact <b>${escapeHtml(t.impact ?? '-')}</b></span>
+        <span class="metric-chip">Urgency <b>${escapeHtml(t.urgency ?? '-')}</b></span>
+        <span class="metric-chip">Risk <b>${escapeHtml(t.risk_reduction ?? t.riskReduction ?? '-')}</b></span>
+        <span class="metric-chip">Effort <b>${escapeHtml(t.effort ?? '-')}</b></span>
+        <span class="metric-chip score">Score <b>${escapeHtml(score)}</b></span>
         ${ageText}
         ${effectText}
         ${failText}
@@ -297,7 +349,8 @@ function taskCard(t, columnKey, opts = {}) {
       </div>
       ${showMove ? `
       <div class="move-row">
-        <select class="move-select" data-task-id="${t.id}" data-column="${columnKey}">
+        <label class="sr-only" for="${selectId}">Move ${escapeHtml(t.id)} to another column</label>
+        <select id="${selectId}" class="move-select" data-task-id="${escapeHtml(t.id)}" data-column="${columnKey}">
           ${options}
         </select>
       </div>
@@ -310,9 +363,8 @@ function taskCard(t, columnKey, opts = {}) {
 function renderAnalytics(board) {
   const cols = board.columns;
   const all = Object.values(cols).flat();
-  const avgScore = all.filter(x => typeof x.priority_score === 'number')
-    .reduce((a, b) => a + b.priority_score, 0) /
-    Math.max(1, all.filter(x => typeof x.priority_score === 'number').length);
+  const withScores = all.filter((x) => typeof x.priority_score === 'number');
+  const avgScore = withScores.reduce((a, b) => a + b.priority_score, 0) / Math.max(1, withScores.length);
 
   const wipAlerts = Object.entries(COLUMN_LABELS)
     .filter(([k]) => (cols[k] || []).length > (WIP_LIMITS[k] || Infinity))
@@ -327,12 +379,17 @@ function renderAnalytics(board) {
     ['Blocked', cols.blocked.length],
     ['Done', cols.done.length],
     ['Avg Priority Score', avgScore.toFixed(2)],
-    ['WIP Alerts', wipAlerts.length ? wipAlerts.join(' • ') : 'none']
+    ['WIP Alerts', wipAlerts.length ? wipAlerts.join(' | ') : 'none']
   ];
 
   document.getElementById('analyticsGrid').innerHTML = cards.map(([k, v]) => {
     const warn = k === 'WIP Alerts' && v !== 'none';
-    return `<article class="analytics-card ${warn ? 'warn' : ''}"><div class="kpi-key">${k}</div><div><b>${v}</b></div></article>`;
+    return `
+      <article class="analytics-card ${warn ? 'warn' : ''}">
+        <p class="kpi-key">${escapeHtml(k)}</p>
+        <div class="analytics-value">${escapeHtml(v)}</div>
+      </article>
+    `;
   }).join('');
 }
 
@@ -403,7 +460,7 @@ function validateEffectForDone(task) {
 async function moveTask(taskId, fromCol, toCol) {
   if (!taskId || !fromCol || !toCol || fromCol === toCol) return;
   const source = boardState.columns[fromCol] || [];
-  const idx = source.findIndex(t => t.id === taskId);
+  const idx = source.findIndex((t) => t.id === taskId);
   if (idx < 0) return;
 
   const [task] = source.splice(idx, 1);
@@ -464,7 +521,7 @@ async function moveTask(taskId, fromCol, toCol) {
 function attachDnDHandlers() {
   let dragData = null;
 
-  document.querySelectorAll('.task[draggable="true"]').forEach(el => {
+  document.querySelectorAll('.task[draggable="true"]').forEach((el) => {
     el.addEventListener('dragstart', (e) => {
       dragData = {
         taskId: el.dataset.taskId,
@@ -477,11 +534,11 @@ function attachDnDHandlers() {
 
     el.addEventListener('dragend', () => {
       el.classList.remove('dragging');
-      document.querySelectorAll('.drop-zone').forEach(z => z.classList.remove('active'));
+      document.querySelectorAll('.drop-zone').forEach((z) => z.classList.remove('active'));
     });
   });
 
-  document.querySelectorAll('.drop-zone').forEach(zone => {
+  document.querySelectorAll('.drop-zone').forEach((zone) => {
     zone.addEventListener('dragover', (e) => {
       e.preventDefault();
       zone.classList.add('active');
@@ -497,7 +554,9 @@ function attachDnDHandlers() {
       let payload = dragData;
       try {
         payload = payload || JSON.parse(e.dataTransfer.getData('text/plain'));
-      } catch {}
+      } catch {
+        payload = dragData;
+      }
       if (payload) {
         void moveTask(payload.taskId, payload.fromCol, toCol);
       }
@@ -507,7 +566,7 @@ function attachDnDHandlers() {
 }
 
 function attachMoveSelectHandlers() {
-  document.querySelectorAll('.move-select').forEach(sel => {
+  document.querySelectorAll('.move-select').forEach((sel) => {
     sel.addEventListener('change', () => {
       void moveTask(sel.dataset.taskId, sel.dataset.column, sel.value);
     });
@@ -524,26 +583,35 @@ function renderBoard(board) {
 
     return `
       <section class="col ${overLimit ? 'wip-over' : ''}">
-        <h3>${label} <span class="badge">${tasks.length}</span> <span class="muted">WIP ${limit === Infinity ? '∞' : limit}</span></h3>
+        <header class="col-head">
+          <div>
+            <h3 class="col-title">${label}</h3>
+            <p class="col-sub mono">WIP ${limit === Infinity ? 'inf' : limit}</p>
+          </div>
+          <div class="col-meta">
+            <span class="badge">${tasks.length}</span>
+            ${overLimit ? '<span class="badge badge-warn">over</span>' : ''}
+          </div>
+        </header>
         <div class="task-list drop-zone" data-column="${key}">
-          ${tasks.map(t => taskCard(t, key, { showMove: true, draggable: true, showAge: true })).join('') || '<div class="muted">No tasks</div>'}
+          ${tasks.map((t) => taskCard(t, key, { showMove: true, draggable: true, showAge: true })).join('') || '<div class="empty-state">No tasks</div>'}
         </div>
       </section>
     `;
   }).join('');
 
   const allWithColumn = Object.entries(board.columns).flatMap(([col, tasks]) =>
-    (tasks || []).map(t => ({ ...t, _col: col }))
+    (tasks || []).map((t) => ({ ...t, _col: col }))
   );
 
   const top = allWithColumn
-    .filter(t => typeof t.priority_score === 'number')
+    .filter((t) => typeof t.priority_score === 'number')
     .sort((a, b) => b.priority_score - a.priority_score)
     .slice(0, 10);
 
-  document.getElementById('topTasks').innerHTML = top
-    .map(t => taskCard(t, t._col, { showMove: false, draggable: false, showAge: true }))
-    .join('');
+  document.getElementById('topTasks').innerHTML = top.length
+    ? top.map((t) => taskCard(t, t._col, { showMove: false, draggable: false, showAge: true })).join('')
+    : '<div class="empty-state">No scored tasks available.</div>';
 
   attachDnDHandlers();
   attachMoveSelectHandlers();
@@ -551,10 +619,12 @@ function renderBoard(board) {
 
 function renderQuestions(q) {
   const all = q.tasks || [];
-  document.getElementById('questionBacklog').innerHTML = all
-    .sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0))
-    .map(t => taskCard(t, 'backlog', { showMove: false, draggable: false, showAge: false }))
-    .join('');
+  document.getElementById('questionBacklog').innerHTML = all.length
+    ? all
+      .sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0))
+      .map((t) => taskCard(t, 'backlog', { showMove: false, draggable: false, showAge: false }))
+      .join('')
+    : '<div class="empty-state">No question-derived tasks found.</div>';
 }
 
 function exportBoardJson() {
@@ -569,7 +639,7 @@ function exportBoardJson() {
 
 function renderAll() {
   ensureTaskMeta();
-  document.getElementById('updatedAt').textContent = `Updated: ${boardState.updated_at} • local state: ${localStorage.getItem(STORAGE_KEY) ? 'persisted' : 'default'}`;
+  document.getElementById('updatedAt').textContent = `Updated: ${boardState.updated_at} | local state: ${localStorage.getItem(STORAGE_KEY) ? 'persisted' : 'default'}`;
   document.getElementById('kpiGrid').innerHTML = (boardState.kpis || []).map(metricCard).join('');
   renderKpiTrends(historyState);
   renderAnalytics(boardState);
@@ -614,6 +684,6 @@ function renderAll() {
 
     renderAll();
   } catch (err) {
-    document.body.innerHTML = `<pre style="padding:16px;color:#ff9aa5">Dashboard load error: ${err.message}</pre>`;
+    document.body.innerHTML = `<pre style="padding:16px;color:#ff9aa5">Dashboard load error: ${escapeHtml(err.message)}</pre>`;
   }
 })();
