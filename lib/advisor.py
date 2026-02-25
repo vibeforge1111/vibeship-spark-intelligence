@@ -679,17 +679,14 @@ def _load_advisor_config() -> None:
                     return
             except Exception:
                 return
+        from .config_authority import resolve_section
         tuneables = Path.home() / ".spark" / "tuneables.json"
         if not tuneables.exists():
             return
-        try:
-            data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-        except Exception:
-            data = json.loads(tuneables.read_text(encoding="utf-8"))
-        cfg = data.get("advisor") or {}
+        cfg = resolve_section("advisor", runtime_path=tuneables).data
         if not isinstance(cfg, dict):
             cfg = {}
-        auto_cfg = data.get("auto_tuner") or {}
+        auto_cfg = resolve_section("auto_tuner", runtime_path=tuneables).data
         if isinstance(auto_cfg, dict):
             raw_boosts = auto_cfg.get("source_boosts")
             if isinstance(raw_boosts, dict):
@@ -707,9 +704,9 @@ def _load_advisor_config() -> None:
                     parsed[source] = max(0.0, min(2.0, boost))
                 AUTO_TUNER_SOURCE_BOOSTS = parsed
         # Fall back to top-level "values" for advice_cache_ttl (backward compat)
-        values = data.get("values") or {}
-        if isinstance(values, dict) and "advice_cache_ttl" in values and "cache_ttl" not in cfg:
-            cfg["cache_ttl"] = values["advice_cache_ttl"]
+        values_cfg = resolve_section("values", runtime_path=tuneables).data
+        if isinstance(values_cfg, dict) and "advice_cache_ttl" in values_cfg and "cache_ttl" not in cfg:
+            cfg["cache_ttl"] = values_cfg["advice_cache_ttl"]
         if "min_reliability" in cfg:
             MIN_RELIABILITY_FOR_ADVICE = float(cfg["min_reliability"])
         if "min_validations_strong" in cfg:

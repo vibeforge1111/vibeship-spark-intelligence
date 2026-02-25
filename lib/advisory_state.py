@@ -348,17 +348,9 @@ def get_shown_advice_ttl_s() -> int:
 
 
 def _load_state_gate_config(path: Optional[Path] = None) -> Dict[str, Any]:
+    from .config_authority import resolve_section
     tuneables = path or (Path.home() / ".spark" / "tuneables.json")
-    if not tuneables.exists():
-        return {}
-    try:
-        data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-    except Exception:
-        try:
-            data = json.loads(tuneables.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    cfg = data.get("advisory_gate") or {}
+    cfg = resolve_section("advisory_gate", runtime_path=tuneables).data
     return cfg if isinstance(cfg, dict) else {}
 
 

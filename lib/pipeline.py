@@ -52,18 +52,14 @@ DEFAULT_BATCH_SIZE = 200
 
 
 def _load_pipeline_config() -> None:
-    """Load pipeline tuneables from ~/.spark/tuneables.json → "values" section."""
+    """Load pipeline tuneables via config_authority resolve_section."""
     global DEFAULT_BATCH_SIZE
     try:
-        from pathlib import Path
+        from .config_authority import resolve_section
         tuneables = Path.home() / ".spark" / "tuneables.json"
-        if not tuneables.exists():
-            return
-        # Accept UTF-8 with BOM (common on Windows).
-        data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-        values = data.get("values") or {}
-        if isinstance(values, dict) and "queue_batch_size" in values:
-            batch = int(values["queue_batch_size"])
+        cfg = resolve_section("values", runtime_path=tuneables).data
+        if isinstance(cfg, dict) and "queue_batch_size" in cfg:
+            batch = int(cfg["queue_batch_size"])
             DEFAULT_BATCH_SIZE = max(MIN_BATCH_SIZE, min(MAX_BATCH_SIZE, batch))
     except Exception:
         pass

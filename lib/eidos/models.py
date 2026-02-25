@@ -133,33 +133,31 @@ class Budget:
         )
 
 
-def _load_eidos_config() -> Dict[str, Any]:
-    """Load EIDOS budget tuneables from ~/.spark/tuneables.json.
+def _merge_eidos_with_values(eidos_cfg: Dict[str, Any], values_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge eidos config with shared keys from values section."""
+    cfg = dict(eidos_cfg) if isinstance(eidos_cfg, dict) else {}
+    if isinstance(values_cfg, dict):
+        for key in ("max_steps", "max_retries_per_error", "max_file_touches"):
+            if key not in cfg and key in values_cfg:
+                cfg[key] = values_cfg[key]
+        if "no_evidence_limit" not in cfg and "no_evidence_steps" in values_cfg:
+            cfg["no_evidence_limit"] = values_cfg["no_evidence_steps"]
+    return cfg
 
-    Checks the "eidos" section first, then falls back to top-level "values"
-    for keys like max_steps, max_retries_per_error, max_file_touches,
-    no_evidence_steps (mapped to no_evidence_limit).
+
+def _load_eidos_config() -> Dict[str, Any]:
+    """Load EIDOS budget tuneables via config_authority resolve_section.
+
+    Checks the "eidos" section first, then falls back to "values" section
+    for shared keys (max_steps, max_retries_per_error, max_file_touches,
+    no_evidence_steps → no_evidence_limit).
     """
     try:
+        from ..config_authority import resolve_section
         tuneables = Path.home() / ".spark" / "tuneables.json"
-        if not tuneables.exists():
-            return {}
-        # Accept UTF-8 with BOM (common on Windows).
-        data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-        # Prefer dedicated "eidos" section
-        cfg = data.get("eidos") or {}
-        if not isinstance(cfg, dict):
-            cfg = {}
-        # Fall back to top-level "values" for shared keys
-        values = data.get("values") or {}
-        if isinstance(values, dict):
-            for key in ("max_steps", "max_retries_per_error", "max_file_touches"):
-                if key not in cfg and key in values:
-                    cfg[key] = values[key]
-            # Map no_evidence_steps → no_evidence_limit
-            if "no_evidence_limit" not in cfg and "no_evidence_steps" in values:
-                cfg["no_evidence_limit"] = values["no_evidence_steps"]
-        return cfg
+        eidos_cfg = resolve_section("eidos", runtime_path=tuneables).data
+        values_cfg = resolve_section("values", runtime_path=tuneables).data
+        return _merge_eidos_with_values(eidos_cfg, values_cfg)
     except Exception:
         return {}
 
@@ -170,28 +168,19 @@ _EIDOS_CFG = _load_eidos_config()
 def reload_eidos_from(cfg: Dict[str, Any]) -> None:
     """Hot-reload EIDOS budget tuneables from coordinator-supplied dict.
 
-    Merges with values section (same logic as _load_eidos_config) so that
-    keys like max_steps inherited from values are not lost after reload.
+    Merges with values section via resolve_section so that shared keys
+    like max_steps inherited from values are not lost after reload.
     """
     global _EIDOS_CFG
     if not isinstance(cfg, dict):
         return
-    merged = dict(cfg)
-    # Merge with values section for shared keys (same as _load_eidos_config)
     try:
+        from ..config_authority import resolve_section
         tuneables = Path.home() / ".spark" / "tuneables.json"
-        if tuneables.exists():
-            data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-            values = data.get("values") or {}
-            if isinstance(values, dict):
-                for key in ("max_steps", "max_retries_per_error", "max_file_touches"):
-                    if key not in merged and key in values:
-                        merged[key] = values[key]
-                if "no_evidence_limit" not in merged and "no_evidence_steps" in values:
-                    merged["no_evidence_limit"] = values["no_evidence_steps"]
+        values_cfg = resolve_section("values", runtime_path=tuneables).data
     except Exception:
-        pass
-    _EIDOS_CFG = merged
+        values_cfg = {}
+    _EIDOS_CFG = _merge_eidos_with_values(cfg, values_cfg)
 
 
 try:

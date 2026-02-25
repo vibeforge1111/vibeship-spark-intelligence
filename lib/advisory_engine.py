@@ -318,7 +318,7 @@ def _global_recently_emitted_text_sig(
 
 
 def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
-    """Load advisory engine tuneables from ~/.spark/tuneables.json."""
+    """Load advisory engine tuneables via config_authority resolve_section."""
     tuneables = path or (Path.home() / ".spark" / "tuneables.json")
     if (
         path is None
@@ -333,14 +333,8 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
             return {}
     if not tuneables.exists():
         return {}
-    try:
-        data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-    except Exception:
-        try:
-            data = json.loads(tuneables.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    cfg = data.get("advisory_engine") or {}
+    from .config_authority import resolve_section
+    cfg = resolve_section("advisory_engine", runtime_path=tuneables).data
     return cfg if isinstance(cfg, dict) else {}
 
 
