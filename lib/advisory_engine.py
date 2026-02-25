@@ -335,7 +335,7 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
         # Fall through to resolver so schema defaults still apply.
         pass
     from .config_authority import resolve_section
-    from .config_authority import env_bool, env_float, env_int
+    from .config_authority import env_bool, env_float, env_int, env_str
     cfg = resolve_section(
         "advisory_engine",
         runtime_path=tuneables,
@@ -356,6 +356,7 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
             "delivery_stale_s": env_float("SPARK_ADVISORY_STALE_S"),
             "advisory_text_repeat_cooldown_s": env_float("SPARK_ADVISORY_TEXT_REPEAT_COOLDOWN_S"),
             "global_dedupe_cooldown_s": env_float("SPARK_ADVISORY_GLOBAL_DEDUPE_COOLDOWN_S"),
+            "global_dedupe_scope": env_str("SPARK_ADVISORY_GLOBAL_DEDUPE_SCOPE", lower=True),
         },
     ).data
     return cfg if isinstance(cfg, dict) else {}
@@ -392,6 +393,7 @@ def apply_engine_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     global DELIVERY_STALE_SECONDS
     global ADVISORY_TEXT_REPEAT_COOLDOWN_S
     global GLOBAL_DEDUPE_COOLDOWN_S
+    global GLOBAL_DEDUPE_SCOPE
     global FORCE_PROGRAMMATIC_SYNTH
     global SELECTIVE_AI_SYNTH_ENABLED
     global SELECTIVE_AI_MIN_REMAINING_MS
@@ -576,6 +578,14 @@ def apply_engine_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
             applied.append("global_dedupe_cooldown_s")
         except Exception:
             warnings.append("invalid_global_dedupe_cooldown_s")
+
+    if "global_dedupe_scope" in cfg:
+        scope = str(cfg.get("global_dedupe_scope") or "").strip().lower()
+        if scope in {"global", "tree"}:
+            GLOBAL_DEDUPE_SCOPE = scope
+            applied.append("global_dedupe_scope")
+        else:
+            warnings.append("invalid_global_dedupe_scope")
     return {"applied": applied, "warnings": warnings}
 
 
@@ -602,6 +612,7 @@ def get_engine_config() -> Dict[str, Any]:
         "delivery_stale_s": float(DELIVERY_STALE_SECONDS),
         "advisory_text_repeat_cooldown_s": float(ADVISORY_TEXT_REPEAT_COOLDOWN_S),
         "global_dedupe_cooldown_s": float(GLOBAL_DEDUPE_COOLDOWN_S),
+        "global_dedupe_scope": str(GLOBAL_DEDUPE_SCOPE),
     }
 
 

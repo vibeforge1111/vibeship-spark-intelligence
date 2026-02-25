@@ -176,6 +176,18 @@ class TestSemanticIntentDetector:
         assert patterns[0].confidence >= 0.7
         assert patterns[0].suggested_insight is not None
 
+    def test_constraint_signal_maps_to_context_category(self):
+        """Constraint-like intent should route to context category."""
+        event = {
+            "session_id": "test3",
+            "hook_event": "UserPromptSubmit",
+            "payload": {"text": "This is non-negotiable: keep scope fixed and avoid migration risk."},
+        }
+        patterns = self.detector.process_event(event)
+        assert len(patterns) == 1
+        assert patterns[0].suggested_category == "context"
+        assert patterns[0].suggested_insight is not None
+
 
 class TestPatternAggregator:
     """Test pattern aggregator."""

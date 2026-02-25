@@ -31,6 +31,7 @@ from .models import (
 from ..elevation import elevate
 from ..distillation_transformer import transform_for_advisory
 from ..distillation_refiner import refine_distillation
+from ..noise_patterns import is_session_boilerplate
 
 
 @dataclass
@@ -240,6 +241,8 @@ class DistillationEngine:
         """Reject tautological, generic, or low-quality distillation statements."""
         s = statement.strip()
         if len(s) < 20:
+            return False
+        if is_session_boilerplate(s):
             return False
 
         low = s.lower()

@@ -163,6 +163,14 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "global_dedupe_cooldown_s": TuneableSpec("float", 600, 0, 86400,
             "Cross-session global dedupe cooldown (s). Prevents same insight across sessions. "
             "Distinct from text_repeat (exact text) and advice_repeat (same ID)"),
+        "global_dedupe_scope": TuneableSpec(
+            "str",
+            "global",
+            None,
+            None,
+            "Scope for global dedupe: 'global' across all sessions or 'tree' within an agent tree",
+            ["global", "tree"],
+        ),
         "actionability_enforce": TuneableSpec("bool", True, None, None, "Enforce actionability scoring"),
         "force_programmatic_synth": TuneableSpec("bool", False, None, None, "Force programmatic synthesis"),
         "selective_ai_synth_enabled": TuneableSpec("bool", True, None, None, "Enable selective AI synthesis"),
@@ -311,6 +319,19 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "min_source_samples": TuneableSpec("int", 15, 1, 200, "Min samples per source"),
         "attribution_window_s": TuneableSpec("int", 1800, 60, 86400, "Time window for attribution (s)"),
         "strict_attribution_require_trace": TuneableSpec("bool", True, None, None, "Require trace for strict attribution"),
+        "runtime_refiner_llm_enabled": TuneableSpec(
+            "bool", False, None, None, "Enable runtime LLM assist for Meta-Ralph NEEDS_WORK refinement",
+        ),
+        "runtime_refiner_llm_timeout_s": TuneableSpec(
+            "float", 6.0, 0.5, 60.0, "Runtime LLM timeout for Meta-Ralph refinement",
+        ),
+        "runtime_refiner_llm_max_chars": TuneableSpec(
+            "int", 260, 80, 2000, "Max chars for runtime LLM-refined Meta-Ralph learning text",
+        ),
+        "runtime_refiner_llm_provider": TuneableSpec(
+            "str", "auto", None, None, "Runtime LLM provider for Meta-Ralph refinement",
+            ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"],
+        ),
     },
 
     # ---- eidos: episode/distillation budget ----
@@ -326,6 +347,22 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "tool_distillation_enabled": TuneableSpec("bool", True, None, None, "Enable tool-pattern distillation"),
         "llm_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for distillation",
                                       ["minimax", "ollama", "gemini", "openai", "anthropic"]),
+        "runtime_refiner_llm_enabled": TuneableSpec(
+            "bool", False, None, None, "Enable runtime LLM assist in distillation_refiner for low-quality statements",
+        ),
+        "runtime_refiner_llm_min_unified_score": TuneableSpec(
+            "float", 0.45, 0.0, 1.0, "Invoke runtime LLM refiner when unified score is below this threshold",
+        ),
+        "runtime_refiner_llm_timeout_s": TuneableSpec(
+            "float", 6.0, 0.5, 60.0, "Runtime LLM timeout for distillation refinement",
+        ),
+        "runtime_refiner_llm_max_chars": TuneableSpec(
+            "int", 280, 80, 2000, "Max chars for runtime LLM-refined distillation text",
+        ),
+        "runtime_refiner_llm_provider": TuneableSpec(
+            "str", "auto", None, None, "Runtime LLM provider for distillation refinement",
+            ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"],
+        ),
     },
 
     # ---- auto_tuner: self-tuning engine ----
@@ -448,16 +485,16 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
     "memory_capture": {
         "enabled": TuneableSpec("bool", True, None, None, "Enable memory capture"),
         "auto_save_threshold": TuneableSpec(
-            "float", 0.72, 0.1, 1.0, "Importance threshold for auto-save",
+            "float", 0.78, 0.1, 1.0, "Importance threshold for auto-save",
         ),
         "suggest_threshold": TuneableSpec(
-            "float", 0.6, 0.05, 0.99, "Importance threshold for suggestion queue",
+            "float", 0.68, 0.05, 0.99, "Importance threshold for suggestion queue",
         ),
         "max_capture_chars": TuneableSpec(
-            "int", 2000, 200, 20000, "Max characters captured from source text",
+            "int", 1200, 200, 20000, "Max characters captured from source text",
         ),
         "context_capture_chars": TuneableSpec(
-            "int", 320, 80, 2000, "Max characters retained for capture context snippets",
+            "int", 520, 80, 2000, "Max characters retained for capture context snippets",
         ),
     },
 
@@ -486,6 +523,11 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "explore_tuning_max": TuneableSpec("int", 200, 1, 5000, "Max tuneable evolution entries to export"),
         "explore_decisions_max": TuneableSpec("int", 200, 1, 5000, "Max advisory decision ledger entries to export"),
         "explore_feedback_max": TuneableSpec("int", 200, 1, 5000, "Max implicit feedback entries to export"),
+        "eidos_curriculum_enabled": TuneableSpec("bool", True, None, None, "Enable EIDOS curriculum export into observatory"),
+        "eidos_curriculum_interval_s": TuneableSpec("int", 86400, 600, 604800, "Min seconds between curriculum rebuilds"),
+        "eidos_curriculum_max_rows": TuneableSpec("int", 300, 20, 5000, "Max EIDOS rows scanned per curriculum run"),
+        "eidos_curriculum_max_cards": TuneableSpec("int", 120, 10, 1000, "Max curriculum cards retained in latest report"),
+        "eidos_curriculum_include_archive": TuneableSpec("bool", True, None, None, "Include archived distillations in curriculum"),
     },
 
     # ---- feature_flags: cross-module boolean toggles ----
