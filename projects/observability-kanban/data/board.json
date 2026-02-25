@@ -1,37 +1,237 @@
 {
-  "updated_at": "2026-02-25",
+  "updated_at": "2026-02-26",
   "kpis": [
-    {"key": "memory_noise_ratio", "baseline": 0.356, "target": 0.20},
-    {"key": "context_p50_chars", "baseline": 53, "target": 120},
-    {"key": "advisory_emit_rate", "baseline": 0.076, "target": 0.20},
-    {"key": "semantic_low_sim_ratio", "baseline": 0.235, "target": 0.15},
-    {"key": "metric_drift_incidents_per_day", "baseline": 2, "target": 1}
+    {
+      "key": "memory_noise_ratio",
+      "baseline": 0.356,
+      "target": 0.2
+    },
+    {
+      "key": "context_p50_chars",
+      "baseline": 53,
+      "target": 120
+    },
+    {
+      "key": "advisory_emit_rate",
+      "baseline": 0.076,
+      "target": 0.2
+    },
+    {
+      "key": "semantic_low_sim_ratio",
+      "baseline": 0.235,
+      "target": 0.15
+    },
+    {
+      "key": "metric_drift_incidents_per_day",
+      "baseline": 2,
+      "target": 1
+    }
   ],
   "columns": {
-    "in_progress": [
-      {"id":"CB-004","priority":"P0","task":"Capture noise filtering","intent":"Stop low-value memory ingress","kpi":"memory_noise_ratio","baseline":0.356,"target":0.20,"impact":10,"urgency":9,"risk_reduction":10,"effort":5,"priority_score":5.8},
-      {"id":"CB-005","priority":"P0","task":"Context window uplift","intent":"Preserve condition-action-reason in memory","kpi":"context_p50_chars","baseline":53,"target":120,"impact":9,"urgency":8,"risk_reduction":8,"effort":5,"priority_score":5.0},
-      {"id":"CB-007","priority":"P0","task":"Daily memory observatory","intent":"Measure memory quality movement every day","kpi":"memory_quality_grade","baseline":"RED","target":"GREEN","impact":9,"urgency":9,"risk_reduction":9,"effort":3,"priority_score":9.0},
-      {"id":"CB-030","priority":"P0","task":"Nightly 5-section self-interrogation","intent":"Create continuous optimization and discovery loop","kpi":"daily_action_quality","baseline":"ad_hoc","target":"systematic","impact":8,"urgency":8,"risk_reduction":8,"effort":2,"priority_score":12.0}
-    ],
-    "ready": [
-      {"id":"CB-009","priority":"P0","task":"Suppression cause audit","intent":"Identify over-suppression drivers","kpi":"advisory_emit_rate","baseline":0.076,"target":0.14,"impact":10,"urgency":9,"risk_reduction":9,"effort":3,"priority_score":9.3},
-      {"id":"CB-019","priority":"P0","task":"Observatory Operator-Now block","intent":"Get top actions visible in <90s","kpi":"triage_time_seconds","baseline":300,"target":90,"impact":8,"urgency":8,"risk_reduction":8,"effort":3,"priority_score":8.0},
-      {"id":"CB-023","priority":"P0","task":"Pulse dead-widget cleanup","intent":"Increase operator trust by removing misleading panes","kpi":"dashboard_trust","baseline":"low","target":"high","impact":8,"urgency":8,"risk_reduction":8,"effort":3,"priority_score":8.0},
-      {"id":"CB-024","priority":"P0","task":"Pulse endpoint rewiring","intent":"Populate dashboard from existing live endpoints","kpi":"dashboard_utility","baseline":"partial","target":"core_full","impact":9,"urgency":9,"risk_reduction":8,"effort":5,"priority_score":5.2},
-      {"id":"CB-027","priority":"P0","task":"Cross-surface drift checker","intent":"Detect metric contradictions daily","kpi":"metric_drift_incidents_per_day","baseline":2,"target":1,"impact":9,"urgency":8,"risk_reduction":10,"effort":5,"priority_score":5.4}
-    ],
+    "in_progress": [],
+    "ready": [],
     "backlog": [
-      {"id":"CB-014","priority":"P1","task":"Onboarding telemetry instrumentation","intent":"Make dropoff/TTFV measurable","kpi":"onboarding_success_rate","impact":9,"urgency":8,"risk_reduction":8,"effort":8,"priority_score":3.1},
-      {"id":"CB-016","priority":"P1","task":"Error->remediation mapping","intent":"Make onboarding errors actionable","kpi":"recovery_rate","impact":8,"urgency":7,"risk_reduction":8,"effort":5,"priority_score":4.6},
-      {"id":"CB-020","priority":"P1","task":"Memory quality card in flow health","intent":"Expose memory risk in front page","kpi":"memory_visibility","impact":7,"urgency":7,"risk_reduction":7,"effort":2,"priority_score":10.5},
-      {"id":"CB-022","priority":"P1","task":"Metric contract page","intent":"Unify metric definitions/formulas/sources","kpi":"drift_rate","impact":8,"urgency":7,"risk_reduction":9,"effort":5,"priority_score":4.8},
-      {"id":"CB-033","priority":"P1","task":"Weekly SOTA delta review","intent":"Keep improvements benchmarked against frontier standards","kpi":"weekly_maturity_delta","impact":7,"urgency":6,"risk_reduction":8,"effort":3,"priority_score":7.0}
+      {
+        "id": "CB-014",
+        "priority": "P1",
+        "task": "Onboarding telemetry instrumentation",
+        "intent": "Make dropoff/TTFV measurable",
+        "kpi": "onboarding_success_rate",
+        "impact": 9,
+        "urgency": 8,
+        "risk_reduction": 8,
+        "effort": 8,
+        "priority_score": 3.1
+      },
+      {
+        "id": "CB-016",
+        "priority": "P1",
+        "task": "Error->remediation mapping",
+        "intent": "Make onboarding errors actionable",
+        "kpi": "recovery_rate",
+        "impact": 8,
+        "urgency": 7,
+        "risk_reduction": 8,
+        "effort": 5,
+        "priority_score": 4.6
+      },
+      {
+        "id": "CB-020",
+        "priority": "P1",
+        "task": "Memory quality card in flow health",
+        "intent": "Expose memory risk in front page",
+        "kpi": "memory_visibility",
+        "impact": 7,
+        "urgency": 7,
+        "risk_reduction": 7,
+        "effort": 2,
+        "priority_score": 10.5
+      },
+      {
+        "id": "CB-022",
+        "priority": "P1",
+        "task": "Metric contract page",
+        "intent": "Unify metric definitions/formulas/sources",
+        "kpi": "drift_rate",
+        "impact": 8,
+        "urgency": 7,
+        "risk_reduction": 9,
+        "effort": 5,
+        "priority_score": 4.8
+      },
+      {
+        "id": "CB-033",
+        "priority": "P1",
+        "task": "Weekly SOTA delta review",
+        "intent": "Keep improvements benchmarked against frontier standards",
+        "kpi": "weekly_maturity_delta",
+        "impact": 7,
+        "urgency": 6,
+        "risk_reduction": 8,
+        "effort": 3,
+        "priority_score": 7.0
+      }
     ],
     "needs_review": [],
     "blocked": [],
     "done": [
-      {"id":"SETUP-001","priority":"P0","task":"Kanban schema + scoring model created","intent":"Make tasks analyzable by numbers","impact":7,"urgency":8,"risk_reduction":7,"effort":2,"priority_score":11.0}
+      {
+        "id": "CB-007",
+        "priority": "P0",
+        "task": "Daily memory observatory",
+        "intent": "Measure memory quality movement every day",
+        "kpi": "memory_quality_grade",
+        "baseline": "RED",
+        "target": "GREEN",
+        "impact": 9,
+        "urgency": 9,
+        "risk_reduction": 9,
+        "effort": 3,
+        "priority_score": 9.0
+      },
+      {
+        "id": "CB-009",
+        "priority": "P0",
+        "task": "Suppression cause audit",
+        "intent": "Identify over-suppression drivers",
+        "kpi": "advisory_emit_rate",
+        "baseline": 0.076,
+        "target": 0.14,
+        "impact": 10,
+        "urgency": 9,
+        "risk_reduction": 9,
+        "effort": 3,
+        "priority_score": 9.3
+      },
+      {
+        "id": "CB-030",
+        "priority": "P0",
+        "task": "Nightly 5-section self-interrogation",
+        "intent": "Create continuous optimization and discovery loop",
+        "kpi": "daily_action_quality",
+        "baseline": "ad_hoc",
+        "target": "systematic",
+        "impact": 8,
+        "urgency": 8,
+        "risk_reduction": 8,
+        "effort": 2,
+        "priority_score": 12.0
+      },
+      {
+        "id": "CB-004",
+        "priority": "P0",
+        "task": "Capture noise filtering",
+        "intent": "Stop low-value memory ingress",
+        "kpi": "memory_noise_ratio",
+        "baseline": 0.356,
+        "target": 0.2,
+        "impact": 10,
+        "urgency": 9,
+        "risk_reduction": 10,
+        "effort": 5,
+        "priority_score": 5.8
+      },
+      {
+        "id": "CB-027",
+        "priority": "P0",
+        "task": "Cross-surface drift checker",
+        "intent": "Detect metric contradictions daily",
+        "kpi": "metric_drift_incidents_per_day",
+        "baseline": 2,
+        "target": 1,
+        "impact": 9,
+        "urgency": 8,
+        "risk_reduction": 10,
+        "effort": 5,
+        "priority_score": 5.4
+      },
+      {
+        "id": "CB-005",
+        "priority": "P0",
+        "task": "Context window uplift",
+        "intent": "Preserve condition-action-reason in memory",
+        "kpi": "context_p50_chars",
+        "baseline": 53,
+        "target": 120,
+        "impact": 9,
+        "urgency": 8,
+        "risk_reduction": 8,
+        "effort": 5,
+        "priority_score": 5.0
+      },
+      {
+        "id": "CB-023",
+        "priority": "P0",
+        "task": "Pulse dead-widget cleanup",
+        "intent": "Increase operator trust by removing misleading panes",
+        "kpi": "dashboard_trust",
+        "baseline": "low",
+        "target": "high",
+        "impact": 8,
+        "urgency": 8,
+        "risk_reduction": 8,
+        "effort": 3,
+        "priority_score": 8.0
+      },
+      {
+        "id": "CB-019",
+        "priority": "P0",
+        "task": "Observatory Operator-Now block",
+        "intent": "Get top actions visible in <90s",
+        "kpi": "triage_time_seconds",
+        "baseline": 300,
+        "target": 90,
+        "impact": 8,
+        "urgency": 8,
+        "risk_reduction": 8,
+        "effort": 3,
+        "priority_score": 8.0
+      },
+      {
+        "id": "CB-024",
+        "priority": "P0",
+        "task": "Pulse endpoint rewiring",
+        "intent": "Populate dashboard from existing live endpoints",
+        "kpi": "dashboard_utility",
+        "baseline": "partial",
+        "target": "core_full",
+        "impact": 9,
+        "urgency": 9,
+        "risk_reduction": 8,
+        "effort": 5,
+        "priority_score": 5.2
+      },
+      {
+        "id": "SETUP-001",
+        "priority": "P0",
+        "task": "Kanban schema + scoring model created",
+        "intent": "Make tasks analyzable by numbers",
+        "impact": 7,
+        "urgency": 8,
+        "risk_reduction": 7,
+        "effort": 2,
+        "priority_score": 11.0
+      }
     ]
   }
 }

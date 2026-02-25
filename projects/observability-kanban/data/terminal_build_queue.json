@@ -18,69 +18,12 @@
     }
   },
   "summary": {
-    "total_tasks": 38,
-    "build_ready_now": 9,
-    "p0_tasks": 21,
+    "total_tasks": 29,
+    "build_ready_now": 0,
+    "p0_tasks": 12,
     "p1_tasks": 17
   },
   "tasks": [
-    {
-      "id": "CB-030",
-      "priority": "P0",
-      "task": "Nightly 5-section self-interrogation",
-      "intent": "Create continuous optimization and discovery loop",
-      "kpi": "daily_action_quality",
-      "baseline": "ad_hoc",
-      "target": "systematic",
-      "impact": 8,
-      "urgency": 8,
-      "risk_reduction": 8,
-      "effort": 2,
-      "priority_score": 12.0,
-      "source": "board",
-      "status": "in_progress",
-      "importance_score": 15.2,
-      "build_ready": true,
-      "execution_order": 1
-    },
-    {
-      "id": "CB-007",
-      "priority": "P0",
-      "task": "Daily memory observatory",
-      "intent": "Measure memory quality movement every day",
-      "kpi": "memory_quality_grade",
-      "baseline": "RED",
-      "target": "GREEN",
-      "impact": 9,
-      "urgency": 9,
-      "risk_reduction": 9,
-      "effort": 3,
-      "priority_score": 9.0,
-      "source": "board",
-      "status": "in_progress",
-      "importance_score": 12.2,
-      "build_ready": true,
-      "execution_order": 2
-    },
-    {
-      "id": "CB-009",
-      "priority": "P0",
-      "task": "Suppression cause audit",
-      "intent": "Identify over-suppression drivers",
-      "kpi": "advisory_emit_rate",
-      "baseline": 0.076,
-      "target": 0.14,
-      "impact": 10,
-      "urgency": 9,
-      "risk_reduction": 9,
-      "effort": 3,
-      "priority_score": 9.3,
-      "source": "board",
-      "status": "ready",
-      "importance_score": 12.1,
-      "build_ready": true,
-      "execution_order": 3
-    },
     {
       "id": "Q-MEM-01",
       "priority": "P0",
@@ -98,7 +41,7 @@
       "status": "backlog",
       "importance_score": 11.67,
       "build_ready": false,
-      "execution_order": 4
+      "execution_order": 1
     },
     {
       "id": "Q-ADV-01",
@@ -117,45 +60,7 @@
       "status": "backlog",
       "importance_score": 11.33,
       "build_ready": false,
-      "execution_order": 5
-    },
-    {
-      "id": "CB-019",
-      "priority": "P0",
-      "task": "Observatory Operator-Now block",
-      "intent": "Get top actions visible in <90s",
-      "kpi": "triage_time_seconds",
-      "baseline": 300,
-      "target": 90,
-      "impact": 8,
-      "urgency": 8,
-      "risk_reduction": 8,
-      "effort": 3,
-      "priority_score": 8.0,
-      "source": "board",
-      "status": "ready",
-      "importance_score": 10.8,
-      "build_ready": true,
-      "execution_order": 6
-    },
-    {
-      "id": "CB-023",
-      "priority": "P0",
-      "task": "Pulse dead-widget cleanup",
-      "intent": "Increase operator trust by removing misleading panes",
-      "kpi": "dashboard_trust",
-      "baseline": "low",
-      "target": "high",
-      "impact": 8,
-      "urgency": 8,
-      "risk_reduction": 8,
-      "effort": 3,
-      "priority_score": 8.0,
-      "source": "board",
-      "status": "ready",
-      "importance_score": 10.8,
-      "build_ready": true,
-      "execution_order": 7
+      "execution_order": 2
     },
     {
       "id": "Q-PULSE-01",
@@ -174,7 +79,7 @@
       "status": "backlog",
       "importance_score": 10.67,
       "build_ready": false,
-      "execution_order": 8
+      "execution_order": 3
     },
     {
       "id": "Q-PULSE-03",
@@ -193,7 +98,7 @@
       "status": "backlog",
       "importance_score": 10.67,
       "build_ready": false,
-      "execution_order": 9
+      "execution_order": 4
     },
     {
       "id": "Q-OBS-01",
@@ -212,7 +117,7 @@
       "status": "backlog",
       "importance_score": 10.0,
       "build_ready": false,
-      "execution_order": 10
+      "execution_order": 5
     },
     {
       "id": "Q-COH-02",
@@ -231,26 +136,7 @@
       "status": "backlog",
       "importance_score": 9.0,
       "build_ready": false,
-      "execution_order": 11
-    },
-    {
-      "id": "CB-004",
-      "priority": "P0",
-      "task": "Capture noise filtering",
-      "intent": "Stop low-value memory ingress",
-      "kpi": "memory_noise_ratio",
-      "baseline": 0.356,
-      "target": 0.2,
-      "impact": 10,
-      "urgency": 9,
-      "risk_reduction": 10,
-      "effort": 5,
-      "priority_score": 5.8,
-      "source": "board",
-      "status": "in_progress",
-      "importance_score": 9.0,
-      "build_ready": true,
-      "execution_order": 12
+      "execution_order": 6
     },
     {
       "id": "Q-MEM-02",
@@ -269,45 +155,7 @@
       "status": "backlog",
       "importance_score": 8.25,
       "build_ready": false,
-      "execution_order": 13
-    },
-    {
-      "id": "CB-027",
-      "priority": "P0",
-      "task": "Cross-surface drift checker",
-      "intent": "Detect metric contradictions daily",
-      "kpi": "metric_drift_incidents_per_day",
-      "baseline": 2,
-      "target": 1,
-      "impact": 9,
-      "urgency": 8,
-      "risk_reduction": 10,
-      "effort": 5,
-      "priority_score": 5.4,
-      "source": "board",
-      "status": "ready",
-      "importance_score": 8.2,
-      "build_ready": true,
-      "execution_order": 14
-    },
-    {
-      "id": "CB-005",
-      "priority": "P0",
-      "task": "Context window uplift",
-      "intent": "Preserve condition-action-reason in memory",
-      "kpi": "context_p50_chars",
-      "baseline": 53,
-      "target": 120,
-      "impact": 9,
-      "urgency": 8,
-      "risk_reduction": 8,
-      "effort": 5,
-      "priority_score": 5.0,
-      "source": "board",
-      "status": "in_progress",
-      "importance_score": 8.2,
-      "build_ready": true,
-      "execution_order": 15
+      "execution_order": 7
     },
     {
       "id": "Q-PULSE-02",
@@ -326,26 +174,7 @@
       "status": "backlog",
       "importance_score": 8.0,
       "build_ready": false,
-      "execution_order": 16
-    },
-    {
-      "id": "CB-024",
-      "priority": "P0",
-      "task": "Pulse endpoint rewiring",
-      "intent": "Populate dashboard from existing live endpoints",
-      "kpi": "dashboard_utility",
-      "baseline": "partial",
-      "target": "core_full",
-      "impact": 9,
-      "urgency": 9,
-      "risk_reduction": 8,
-      "effort": 5,
-      "priority_score": 5.2,
-      "source": "board",
-      "status": "ready",
-      "importance_score": 8.0,
-      "build_ready": true,
-      "execution_order": 17
+      "execution_order": 8
     },
     {
       "id": "Q-ADV-02",
@@ -364,7 +193,7 @@
       "status": "backlog",
       "importance_score": 7.8,
       "build_ready": false,
-      "execution_order": 18
+      "execution_order": 9
     },
     {
       "id": "Q-WEB-01",
@@ -383,7 +212,7 @@
       "status": "backlog",
       "importance_score": 7.0,
       "build_ready": false,
-      "execution_order": 19
+      "execution_order": 10
     },
     {
       "id": "Q-ADV-04",
@@ -402,7 +231,7 @@
       "status": "backlog",
       "importance_score": 6.83,
       "build_ready": false,
-      "execution_order": 20
+      "execution_order": 11
     },
     {
       "id": "Q-COH-01",
@@ -421,7 +250,7 @@
       "status": "backlog",
       "importance_score": 5.63,
       "build_ready": false,
-      "execution_order": 21
+      "execution_order": 12
     },
     {
       "id": "CB-020",
@@ -438,7 +267,7 @@
       "status": "backlog",
       "importance_score": 11.3,
       "build_ready": false,
-      "execution_order": 22
+      "execution_order": 13
     },
     {
       "id": "Q-MEM-04",
@@ -457,7 +286,7 @@
       "status": "backlog",
       "importance_score": 8.47,
       "build_ready": false,
-      "execution_order": 23
+      "execution_order": 14
     },
     {
       "id": "Q-OBS-03",
@@ -476,7 +305,7 @@
       "status": "backlog",
       "importance_score": 8.47,
       "build_ready": false,
-      "execution_order": 24
+      "execution_order": 15
     },
     {
       "id": "CB-033",
@@ -493,7 +322,7 @@
       "status": "backlog",
       "importance_score": 7.8,
       "build_ready": false,
-      "execution_order": 25
+      "execution_order": 16
     },
     {
       "id": "Q-OBS-04",
@@ -512,7 +341,7 @@
       "status": "backlog",
       "importance_score": 6.8,
       "build_ready": false,
-      "execution_order": 26
+      "execution_order": 17
     },
     {
       "id": "Q-MEM-03",
@@ -531,7 +360,7 @@
       "status": "backlog",
       "importance_score": 6.55,
       "build_ready": false,
-      "execution_order": 27
+      "execution_order": 18
     },
     {
       "id": "Q-PULSE-04",
@@ -550,7 +379,7 @@
       "status": "backlog",
       "importance_score": 6.55,
       "build_ready": false,
-      "execution_order": 28
+      "execution_order": 19
     },
     {
       "id": "Q-OBS-02",
@@ -569,7 +398,7 @@
       "status": "backlog",
       "importance_score": 6.3,
       "build_ready": false,
-      "execution_order": 29
+      "execution_order": 20
     },
     {
       "id": "Q-WEB-02",
@@ -588,7 +417,7 @@
       "status": "backlog",
       "importance_score": 6.3,
       "build_ready": false,
-      "execution_order": 30
+      "execution_order": 21
     },
     {
       "id": "Q-ADV-03",
@@ -607,7 +436,7 @@
       "status": "backlog",
       "importance_score": 6.0,
       "build_ready": false,
-      "execution_order": 31
+      "execution_order": 22
     },
     {
       "id": "CB-022",
@@ -624,7 +453,7 @@
       "status": "backlog",
       "importance_score": 5.6,
       "build_ready": false,
-      "execution_order": 32
+      "execution_order": 23
     },
     {
       "id": "CB-016",
@@ -641,7 +470,7 @@
       "status": "backlog",
       "importance_score": 5.4,
       "build_ready": false,
-      "execution_order": 33
+      "execution_order": 24
     },
     {
       "id": "Q-WEB-03",
@@ -660,7 +489,7 @@
       "status": "backlog",
       "importance_score": 5.2,
       "build_ready": false,
-      "execution_order": 34
+      "execution_order": 25
     },
     {
       "id": "Q-ADV-05",
@@ -679,7 +508,7 @@
       "status": "backlog",
       "importance_score": 5.13,
       "build_ready": false,
-      "execution_order": 35
+      "execution_order": 26
     },
     {
       "id": "Q-MEM-05",
@@ -698,7 +527,7 @@
       "status": "backlog",
       "importance_score": 4.97,
       "build_ready": false,
-      "execution_order": 36
+      "execution_order": 27
     },
     {
       "id": "Q-WEB-04",
@@ -717,7 +546,7 @@
       "status": "backlog",
       "importance_score": 4.63,
       "build_ready": false,
-      "execution_order": 37
+      "execution_order": 28
     },
     {
       "id": "CB-014",
@@ -734,21 +563,21 @@
       "status": "backlog",
       "importance_score": 3.9,
       "build_ready": false,
-      "execution_order": 38
+      "execution_order": 29
     }
   ],
   "terminal_start_instructions": {
     "recommended_first_batch": [
-      "CB-030",
-      "CB-007",
-      "CB-009",
       "Q-MEM-01",
       "Q-ADV-01",
-      "CB-019",
-      "CB-023",
       "Q-PULSE-01",
       "Q-PULSE-03",
-      "Q-OBS-01"
+      "Q-OBS-01",
+      "Q-COH-02",
+      "Q-MEM-02",
+      "Q-PULSE-02",
+      "Q-ADV-02",
+      "Q-WEB-01"
     ],
     "command_pattern": "Pick tasks by execution_order ascending, implement in small batches, and update status + KPI evidence after each task."
   }
