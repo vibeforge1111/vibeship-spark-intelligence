@@ -677,3 +677,19 @@ def format_gate_report(metrics: LoopMetrics, result: Dict[str, Any]) -> str:
             lines.append(f"         action: {check.get('recommendation')}")
     lines.append("=" * 66)
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Hot-reload registration
+# ---------------------------------------------------------------------------
+
+def _reload_production_gates_from(_cfg) -> None:
+    """Hot-reload callback — config is read fresh each call, no cached state."""
+    pass
+
+
+try:
+    from .tuneables_reload import register_reload as _pg_register
+    _pg_register("production_gates", _reload_production_gates_from, label="production_gates.reload")
+except Exception:
+    pass

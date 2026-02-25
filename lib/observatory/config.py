@@ -65,3 +65,19 @@ def load_config() -> ObservatoryConfig:
 def spark_dir() -> Path:
     """Return the ~/.spark/ directory."""
     return _SPARK_DIR
+
+
+# ---------------------------------------------------------------------------
+# Hot-reload registration
+# ---------------------------------------------------------------------------
+
+def _reload_observatory_from(_cfg) -> None:
+    """Hot-reload callback — config is read fresh each call, no cached state."""
+    pass
+
+
+try:
+    from ..tuneables_reload import register_reload as _obs_register
+    _obs_register("observatory", _reload_observatory_from, label="observatory.config.reload")
+except Exception:
+    pass
