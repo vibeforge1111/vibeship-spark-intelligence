@@ -102,7 +102,49 @@ _CAPTURE_NOISE_PATTERNS = (
     re.compile(r"<task-notification>|<task-id>|<output-file>|<status>|<summary>", re.I),
     re.compile(r"\n\s*- services:\s", re.I),
     re.compile(r"\bevent_type:\b|\btool_name:\b|\bfile_path:\b|\bcwd:\b", re.I),
+    re.compile(r"^#\s*provider prompt", re.I),
+    re.compile(r"\bmission id:\b|\bassigned tasks:\b|\bexecution expectations:\b", re.I),
+    re.compile(r"\bh70 skill loading\b|\bmission completion gate\b", re.I),
+    re.compile(r"\bcurl\s+-x\s+post\s+http://127\.0\.0\.1:\d+/api/events\b", re.I),
+    re.compile(r"^\s*evidence\s*:", re.I),
 )
+
+_CAPTURE_META_LINE_RE = re.compile(
+    r"^\s*(mission|mission id|provider|model|role|strategy|priority|importance|task id|task name|"
+    r"source|progress|kpi|intent|mcp plan|execution expectations|verification)\s*[:=]",
+    re.I,
+)
+
+_SIGNAL_HINT_RE = re.compile(
+    r"\b(should|must|because|prefer|decision|fix|ship|regression|bug|test|quality|confidence)\b",
+    re.I,
+)
+
+
+def _is_noise_line(text: str) -> bool:
+    line = str(text or "").strip()
+    if not line:
+        return True
+    if _CAPTURE_META_LINE_RE.search(line):
+        return True
+    return any(rx.search(line) for rx in _CAPTURE_NOISE_PATTERNS)
+
+
+def _noise_line_stats(text: str) -> Tuple[int, int, int]:
+    total = 0
+    noise = 0
+    signal = 0
+    for raw in str(text or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        total += 1
+        if _is_noise_line(line):
+            noise += 1
+            continue
+        if _SIGNAL_HINT_RE.search(line):
+            signal += 1
+    return noise, total, signal
 
 
 def _norm(s: str) -> str:
@@ -124,7 +166,14 @@ def _is_capture_noise(text: str) -> bool:
     sample = str(text or "").strip()
     if not sample:
         return True
-    return any(rx.search(sample) for rx in _CAPTURE_NOISE_PATTERNS)
+    if any(rx.search(sample) for rx in _CAPTURE_NOISE_PATTERNS):
+        return True
+    noise_lines, total_lines, signal_lines = _noise_line_stats(sample)
+    if total_lines >= 4 and noise_lines / max(1, total_lines) >= 0.55 and signal_lines <= 1:
+        return True
+    if total_lines >= 8 and noise_lines >= 6:
+        return True
+    return False
 
 
 def _compact_context_snippet(text: str, *, max_chars: int) -> str:
@@ -135,7 +184,7 @@ def _compact_context_snippet(text: str, *, max_chars: int) -> str:
         line = raw.strip()
         if not line:
             continue
-        if any(rx.search(line) for rx in _CAPTURE_NOISE_PATTERNS):
+        if _is_noise_line(line):
             continue
         lines.append(line)
     compact = " ".join(lines)
