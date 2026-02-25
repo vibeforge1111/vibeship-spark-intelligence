@@ -984,6 +984,17 @@ def cmd_update(args):
     if has_local_changes and not use_json:
         print("  [!] You have uncommitted changes. They will be preserved (pull uses merge).")
 
+    # Confirmation gate (skip for --yes or --json)
+    auto_yes = getattr(args, "yes", False)
+    if not auto_yes and not use_json:
+        try:
+            answer = input(f"  Pull {behind} update(s) and install deps? [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        if answer not in ("y", "yes"):
+            print("  Cancelled.\n")
+            sys.exit(0)
+
     # Pull
     if not use_json:
         print(f"  Pulling {behind} update(s)...")
@@ -3218,6 +3229,7 @@ Examples:
     update_parser = subparsers.add_parser("update", help="Pull latest Spark and restart services")
     update_parser.add_argument("--no-restart", action="store_true", help="Skip service restart after update")
     update_parser.add_argument("--check", action="store_true", help="Check for updates without installing")
+    update_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
     update_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
 
     # doctor - comprehensive diagnostics and repair
