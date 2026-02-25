@@ -906,6 +906,151 @@ def cmd_run(args):
     sys.exit(0 if all_ok else 1)
 
 
+def cmd_update(args):
+    """Pull latest Spark, install deps, restart services."""
+    import subprocess
+
+    use_json = getattr(args, "json", False)
+    no_restart = getattr(args, "no_restart", False)
+    check_only = getattr(args, "check", False)
+    repo_root = Path(__file__).resolve().parent.parent
+
+    result = {"ok": True, "command": "update", "updated": False, "commits": [], "services_restarted": False}
+
+    def _git(*cmd):
+        r = subprocess.run(["git"] + list(cmd), capture_output=True, text=True, cwd=str(repo_root))
+        return r.returncode, r.stdout.strip(), r.stderr.strip()
+
+    # Get current state
+    rc, branch, _ = _git("rev-parse", "--abbrev-ref", "HEAD")
+    if rc != 0:
+        result["ok"] = False
+        result["error"] = "Not a git repository"
+        if use_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print("\n  [X] Not a git repository\n")
+        sys.exit(1)
+
+    rc, old_sha, _ = _git("rev-parse", "HEAD")
+
+    # Check for uncommitted changes
+    rc, diff_out, _ = _git("status", "--porcelain")
+    has_local_changes = bool(diff_out)
+
+    # Fetch latest
+    if not use_json:
+        print(f"\n  Checking for updates on {branch}...")
+    rc, _, fetch_err = _git("fetch", "origin", branch)
+    if rc != 0:
+        result["ok"] = False
+        result["error"] = f"Fetch failed: {fetch_err}"
+        if use_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"  [X] Fetch failed: {fetch_err}\n")
+        sys.exit(1)
+
+    # Count commits behind
+    rc, count_str, _ = _git("rev-list", "--count", f"HEAD..origin/{branch}")
+    behind = int(count_str) if rc == 0 and count_str.isdigit() else 0
+
+    if behind == 0:
+        result["updated"] = False
+        if use_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print("  [+] Already up to date.\n")
+        sys.exit(0)
+
+    # Check-only mode: report and exit
+    if check_only:
+        rc, log_out, _ = _git("log", "--oneline", f"HEAD..origin/{branch}")
+        commits = [line for line in log_out.splitlines() if line.strip()]
+        result["behind"] = behind
+        result["commits"] = commits
+        if use_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"  {behind} update(s) available:")
+            for c in commits[:10]:
+                print(f"    {c}")
+            if behind > 10:
+                print(f"    ... and {behind - 10} more")
+            print()
+        sys.exit(0)
+
+    # Warn about local changes
+    if has_local_changes and not use_json:
+        print("  [!] You have uncommitted changes. They will be preserved (pull uses merge).")
+
+    # Pull
+    if not use_json:
+        print(f"  Pulling {behind} update(s)...")
+    rc, pull_out, pull_err = _git("pull", "origin", branch)
+    if rc != 0:
+        result["ok"] = False
+        result["error"] = f"Pull failed: {pull_err}"
+        if use_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"  [X] Pull failed: {pull_err}\n")
+        sys.exit(1)
+
+    # Show what changed
+    rc, new_sha, _ = _git("rev-parse", "HEAD")
+    rc, log_out, _ = _git("log", "--oneline", f"{old_sha}..{new_sha}")
+    commits = [line for line in log_out.splitlines() if line.strip()]
+    result["updated"] = True
+    result["commits"] = commits
+
+    if not use_json:
+        print(f"  [+] Updated ({len(commits)} commit(s)):")
+        for c in commits[:10]:
+            print(f"    {c}")
+        if len(commits) > 10:
+            print(f"    ... and {len(commits) - 10} more")
+
+    # Install deps
+    if not use_json:
+        print("  Installing dependencies...")
+    pip_result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-e", ".[services]", "--quiet"],
+        capture_output=True, text=True, cwd=str(repo_root),
+    )
+    if pip_result.returncode != 0:
+        result["dep_error"] = pip_result.stderr.strip()
+        if not use_json:
+            print(f"  [!] Dependency install warning: {pip_result.stderr.strip()[:200]}")
+
+    # Restart services if running
+    if not no_restart:
+        try:
+            status = service_status(include_pulse_probe=False)
+            running = [name for name, info in status.items() if info.get("running")]
+            if running:
+                if not use_json:
+                    print("  Restarting services...")
+                stop_services()
+                start_services()
+                result["services_restarted"] = True
+                if not use_json:
+                    print(f"  [+] Services restarted ({len(running)} services)")
+            else:
+                if not use_json:
+                    print("  No services were running (skipping restart).")
+        except Exception as e:
+            result["restart_error"] = str(e)
+            if not use_json:
+                print(f"  [!] Service restart error: {e}")
+
+    if use_json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"\n  Spark updated to latest.\n")
+    sys.exit(0 if result["ok"] else 1)
+
+
 def cmd_services(args):
     """Show daemon/service status."""
     use_json = getattr(args, "json", False)
@@ -3001,6 +3146,7 @@ def main():
 Getting Started:
   onboard     First-time setup wizard (start here!)
   run         Start services + health check in one step
+  update      Pull latest Spark and restart services
   doctor      Diagnose and repair system issues
   health      Quick health check (5 subsystems)
   status      Show overall system status
@@ -3024,6 +3170,8 @@ Intelligence:
 Examples:
   spark onboard                         # First-time setup
   spark run                             # Start everything + health check
+  spark update                          # Pull latest + restart services
+  spark update --check                  # Check if updates available
   spark doctor --deep                   # Full diagnostics
   spark health --json                   # Machine-readable health
   spark config get meta_ralph.quality_threshold
@@ -3066,6 +3214,12 @@ Examples:
     run_parser.add_argument("--lite", action="store_true", help="Lite mode (skip Pulse dashboard)")
     run_parser.add_argument("--no-sync", dest="sync", action="store_false", help="Skip context sync step")
     run_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    # update - pull latest and restart
+    update_parser = subparsers.add_parser("update", help="Pull latest Spark and restart services")
+    update_parser.add_argument("--no-restart", action="store_true", help="Skip service restart after update")
+    update_parser.add_argument("--check", action="store_true", help="Check for updates without installing")
+    update_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
 
     # doctor - comprehensive diagnostics and repair
     doctor_parser = subparsers.add_parser("doctor", help="Diagnose and repair system issues")
@@ -3560,6 +3714,7 @@ Examples:
         "logs": cmd_logs,
         "config": cmd_config,
         "run": cmd_run,
+        "update": cmd_update,
         "events": cmd_events,
         "opportunities": cmd_opportunities,
         "advisory": cmd_advisory,
