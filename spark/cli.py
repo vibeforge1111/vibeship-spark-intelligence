@@ -1066,9 +1066,6 @@ def cmd_services(args):
 
 
 def _should_start_watchdog(args) -> bool:
-    lite_env = os.environ.get("SPARK_LITE", "").lower() in ("1", "true", "yes")
-    if getattr(args, "lite", False) or lite_env:
-        return False
     if args.no_watchdog:
         return False
     return os.environ.get("SPARK_NO_WATCHDOG", "") == ""
@@ -3206,8 +3203,10 @@ Examples:
     onboard_parser.add_argument("--yes", "-y", action="store_true", help="Auto-confirm prompts")
     onboard_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
     onboard_sub = onboard_parser.add_subparsers(dest="onboard_cmd")
-    onboard_sub.add_parser("status", help="Show onboarding progress")
-    onboard_sub.add_parser("reset", help="Reset onboarding state")
+    onboard_status = onboard_sub.add_parser("status", help="Show onboarding progress")
+    onboard_status.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+    onboard_reset = onboard_sub.add_parser("reset", help="Reset onboarding state")
+    onboard_reset.add_argument("--json", action="store_true", help="Machine-readable JSON output")
 
     # run - convenience start + health + sync
     run_parser = subparsers.add_parser("run", help="Start services + health check in one step")
