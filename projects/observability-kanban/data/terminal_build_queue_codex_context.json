@@ -1,27 +1,21 @@
 {
   "generated_at": "2026-02-26",
-  "schema": "observability-kanban.terminal-build-queue.v1",
-  "sorting": {
-    "rule": "P0 first, then importance_score desc, then priority_score desc",
-    "importance_formula": "importance_score = priority_score + priority_boost + status_boost",
-    "priority_boost": {
-      "P0": 2.0,
-      "P1": 0.8,
-      "P2": 0.0
-    },
-    "status_boost": {
-      "in_progress": 1.2,
-      "ready": 0.8,
-      "needs_review": 0.6,
-      "backlog": 0.0,
-      "blocked": -0.5
-    }
+  "schema": "observability-kanban.terminal-build-queue.v2",
+  "global_context": {
+    "project_name": "Spark Intelligence mission execution queue",
+    "primary_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+    "secondary_repo_path": "C:\\Users\\USER\\Desktop\\spawner-ui",
+    "kanban_ui_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban",
+    "guardrails": [
+      "Default implementation repo is C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+      "Only implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban for explicit kanban UI tasks",
+      "Always assert repository path before coding"
+    ]
   },
   "summary": {
     "total_tasks": 29,
     "build_ready_now": 0,
-    "p0_tasks": 12,
-    "p1_tasks": 17
+    "p0_tasks": 12
   },
   "tasks": [
     {
@@ -37,38 +31,60 @@
       "risk_reduction": 10,
       "effort": 3,
       "priority_score": 9.67,
+      "domain_area": "memory",
+      "execution_context": {
+        "task_scope_summary": "Shrink useless memory ingestion at source",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "memory_noise_ratio",
+            "baseline": 0.356,
+            "target": 0.25
+          },
+          "note": "Prioritize signal quality over quantity in memory capture/retrieval."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-MEM-01: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-MEM-01 AREA=memory"
+        ],
+        "deliverable": {
+          "objective": "Shrink useless memory ingestion at source",
+          "kpi": "memory_noise_ratio",
+          "baseline": 0.356,
+          "target": 0.25
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 11.67,
       "build_ready": false,
-      "execution_order": 1,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Shrink useless memory ingestion at source",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 1
     },
     {
       "id": "Q-ADV-01",
@@ -83,38 +99,60 @@
       "risk_reduction": 9,
       "effort": 3,
       "priority_score": 9.33,
+      "domain_area": "advisory",
+      "execution_context": {
+        "task_scope_summary": "Recover useful advisory emissions safely",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "advisory_emit_rate",
+            "baseline": 0.076,
+            "target": 0.14
+          },
+          "note": "Improve emit usefulness while guarding noise burden thresholds."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-ADV-01: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-ADV-01 AREA=advisory"
+        ],
+        "deliverable": {
+          "objective": "Recover useful advisory emissions safely",
+          "kpi": "advisory_emit_rate",
+          "baseline": 0.076,
+          "target": 0.14
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 11.33,
       "build_ready": false,
-      "execution_order": 2,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Recover useful advisory emissions safely",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 2
     },
     {
       "id": "Q-PULSE-01",
@@ -129,38 +167,61 @@
       "risk_reduction": 8,
       "effort": 3,
       "priority_score": 8.67,
+      "domain_area": "pulse",
+      "execution_context": {
+        "task_scope_summary": "Replace empty widgets with live data",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-pulse"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "dashboard_live_panel_ratio",
+            "baseline": 0.5,
+            "target": 0.9
+          },
+          "note": "Pulse improvements are Spark mission-control oriented; if a separate pulse repo is needed, explicitly state it in commit message."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-PULSE-01: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-PULSE-01 AREA=pulse"
+        ],
+        "deliverable": {
+          "objective": "Replace empty widgets with live data",
+          "kpi": "dashboard_live_panel_ratio",
+          "baseline": 0.5,
+          "target": 0.9
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 10.67,
       "build_ready": false,
-      "execution_order": 3,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Replace empty widgets with live data",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 3
     },
     {
       "id": "Q-PULSE-03",
@@ -175,38 +236,60 @@
       "risk_reduction": 9,
       "effort": 3,
       "priority_score": 8.67,
+      "domain_area": "advisory",
+      "execution_context": {
+        "task_scope_summary": "Show top suppression reason/ratio in primary dashboard view",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "suppression_visibility",
+            "baseline": 0.0,
+            "target": 1.0
+          },
+          "note": "Improve emit usefulness while guarding noise burden thresholds."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-PULSE-03: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-PULSE-03 AREA=advisory"
+        ],
+        "deliverable": {
+          "objective": "Show top suppression reason/ratio in primary dashboard view",
+          "kpi": "suppression_visibility",
+          "baseline": 0.0,
+          "target": 1.0
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 10.67,
       "build_ready": false,
-      "execution_order": 4,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Show top suppression reason/ratio in primary dashboard view",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 4
     },
     {
       "id": "Q-OBS-01",
@@ -221,38 +304,60 @@
       "risk_reduction": 8,
       "effort": 3,
       "priority_score": 8.0,
+      "domain_area": "observatory",
+      "execution_context": {
+        "task_scope_summary": "Make triage instant",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "triage_time_seconds",
+            "baseline": 300,
+            "target": 90
+          },
+          "note": "Prefer generating or updating observatory artifacts/pages, not introducing new subsystems."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-OBS-01: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-OBS-01 AREA=observatory"
+        ],
+        "deliverable": {
+          "objective": "Make triage instant",
+          "kpi": "triage_time_seconds",
+          "baseline": 300,
+          "target": 90
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 10.0,
       "build_ready": false,
-      "execution_order": 5,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Make triage instant",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 5
     },
     {
       "id": "Q-COH-02",
@@ -267,38 +372,60 @@
       "risk_reduction": 10,
       "effort": 4,
       "priority_score": 7.0,
+      "domain_area": "coherence",
+      "execution_context": {
+        "task_scope_summary": "Prevent silent degraded runtime states",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "watchdog_uptime",
+            "baseline": 0.0,
+            "target": 0.99
+          },
+          "note": "Single source of truth metrics; reduce cross-surface drift incidents."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-COH-02: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-COH-02 AREA=coherence"
+        ],
+        "deliverable": {
+          "objective": "Prevent silent degraded runtime states",
+          "kpi": "watchdog_uptime",
+          "baseline": 0.0,
+          "target": 0.99
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 9.0,
       "build_ready": false,
-      "execution_order": 6,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Prevent silent degraded runtime states",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 6
     },
     {
       "id": "Q-MEM-02",
@@ -313,38 +440,60 @@
       "risk_reduction": 8,
       "effort": 4,
       "priority_score": 6.25,
+      "domain_area": "memory",
+      "execution_context": {
+        "task_scope_summary": "Increase valuable memory recall",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "missed_high_signal_ratio",
+            "baseline": 0.4,
+            "target": 0.2
+          },
+          "note": "Prioritize signal quality over quantity in memory capture/retrieval."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-MEM-02: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-MEM-02 AREA=memory"
+        ],
+        "deliverable": {
+          "objective": "Increase valuable memory recall",
+          "kpi": "missed_high_signal_ratio",
+          "baseline": 0.4,
+          "target": 0.2
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 8.25,
       "build_ready": false,
-      "execution_order": 7,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Increase valuable memory recall",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 7
     },
     {
       "id": "Q-PULSE-02",
@@ -359,38 +508,61 @@
       "risk_reduction": 8,
       "effort": 4,
       "priority_score": 6.0,
+      "domain_area": "pulse",
+      "execution_context": {
+        "task_scope_summary": "Increase operational usefulness",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-pulse"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "operator_decision_latency",
+            "baseline": 240,
+            "target": 90
+          },
+          "note": "Pulse improvements are Spark mission-control oriented; if a separate pulse repo is needed, explicitly state it in commit message."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-PULSE-02: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-PULSE-02 AREA=pulse"
+        ],
+        "deliverable": {
+          "objective": "Increase operational usefulness",
+          "kpi": "operator_decision_latency",
+          "baseline": 240,
+          "target": 90
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 8.0,
       "build_ready": false,
-      "execution_order": 8,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Increase operational usefulness",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 8
     },
     {
       "id": "Q-ADV-02",
@@ -405,38 +577,60 @@
       "risk_reduction": 10,
       "effort": 5,
       "priority_score": 5.8,
+      "domain_area": "advisory",
+      "execution_context": {
+        "task_scope_summary": "Reduce harmful suppression",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "noise_burden",
+            "baseline": 0.744,
+            "target": 0.65
+          },
+          "note": "Improve emit usefulness while guarding noise burden thresholds."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-ADV-02: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-ADV-02 AREA=advisory"
+        ],
+        "deliverable": {
+          "objective": "Reduce harmful suppression",
+          "kpi": "noise_burden",
+          "baseline": 0.744,
+          "target": 0.65
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 7.8,
       "build_ready": false,
-      "execution_order": 9,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Reduce harmful suppression",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 9
     },
     {
       "id": "Q-WEB-01",
@@ -451,38 +645,60 @@
       "risk_reduction": 8,
       "effort": 5,
       "priority_score": 5.0,
+      "domain_area": "onboarding_web",
+      "execution_context": {
+        "task_scope_summary": "Get real dropoff visibility",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "onboarding_step_coverage",
+            "baseline": 0.1,
+            "target": 0.9
+          },
+          "note": "Focus on instrumentation and flow simplification; avoid cosmetic-only changes."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-WEB-01: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-WEB-01 AREA=onboarding_web"
+        ],
+        "deliverable": {
+          "objective": "Get real dropoff visibility",
+          "kpi": "onboarding_step_coverage",
+          "baseline": 0.1,
+          "target": 0.9
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 7.0,
       "build_ready": false,
-      "execution_order": 10,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Get real dropoff visibility",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 10
     },
     {
       "id": "Q-ADV-04",
@@ -497,38 +713,60 @@
       "risk_reduction": 10,
       "effort": 6,
       "priority_score": 4.83,
+      "domain_area": "advisory",
+      "execution_context": {
+        "task_scope_summary": "Ensure emitted advice is current and usable",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "advisory_packet_freshness",
+            "baseline": 0.0,
+            "target": 0.35
+          },
+          "note": "Improve emit usefulness while guarding noise burden thresholds."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-ADV-04: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-ADV-04 AREA=advisory"
+        ],
+        "deliverable": {
+          "objective": "Ensure emitted advice is current and usable",
+          "kpi": "advisory_packet_freshness",
+          "baseline": 0.0,
+          "target": 0.35
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 6.83,
       "build_ready": false,
-      "execution_order": 11,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Ensure emitted advice is current and usable",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 11
     },
     {
       "id": "Q-COH-01",
@@ -543,38 +781,60 @@
       "risk_reduction": 10,
       "effort": 8,
       "priority_score": 3.63,
+      "domain_area": "observatory",
+      "execution_context": {
+        "task_scope_summary": "Eliminate contradictory queue metrics",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "metric_drift_incidents_per_day",
+            "baseline": 2,
+            "target": 1
+          },
+          "note": "Prefer generating or updating observatory artifacts/pages, not introducing new subsystems."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-COH-01: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-COH-01 AREA=observatory"
+        ],
+        "deliverable": {
+          "objective": "Eliminate contradictory queue metrics",
+          "kpi": "metric_drift_incidents_per_day",
+          "baseline": 2,
+          "target": 1
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 5.63,
       "build_ready": false,
-      "execution_order": 12,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Eliminate contradictory queue metrics",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 12
     },
     {
       "id": "CB-020",
@@ -587,38 +847,60 @@
       "risk_reduction": 7,
       "effort": 2,
       "priority_score": 10.5,
+      "domain_area": "memory",
+      "execution_context": {
+        "task_scope_summary": "Expose memory risk in front page",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "memory_visibility",
+            "baseline": null,
+            "target": null
+          },
+          "note": "Prioritize signal quality over quantity in memory capture/retrieval."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task CB-020: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=CB-020 AREA=memory"
+        ],
+        "deliverable": {
+          "objective": "Expose memory risk in front page",
+          "kpi": "memory_visibility",
+          "baseline": null,
+          "target": null
+        }
+      },
       "source": "board",
       "status": "backlog",
       "importance_score": 11.3,
       "build_ready": false,
-      "execution_order": 13,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Expose memory risk in front page",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 13
     },
     {
       "id": "Q-MEM-04",
@@ -633,38 +915,60 @@
       "risk_reduction": 8,
       "effort": 3,
       "priority_score": 7.67,
+      "domain_area": "memory",
+      "execution_context": {
+        "task_scope_summary": "Flag memories too short to support future advisory",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "context_p50_chars",
+            "baseline": 53,
+            "target": 120
+          },
+          "note": "Prioritize signal quality over quantity in memory capture/retrieval."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-MEM-04: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-MEM-04 AREA=memory"
+        ],
+        "deliverable": {
+          "objective": "Flag memories too short to support future advisory",
+          "kpi": "context_p50_chars",
+          "baseline": 53,
+          "target": 120
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 8.47,
       "build_ready": false,
-      "execution_order": 14,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Flag memories too short to support future advisory",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 14
     },
     {
       "id": "Q-OBS-03",
@@ -679,38 +983,60 @@
       "risk_reduction": 8,
       "effort": 3,
       "priority_score": 7.67,
+      "domain_area": "observatory",
+      "execution_context": {
+        "task_scope_summary": "Track regressions with owner+ETA+proof in one place",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "regression_visibility_score",
+            "baseline": 0.2,
+            "target": 0.9
+          },
+          "note": "Prefer generating or updating observatory artifacts/pages, not introducing new subsystems."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-OBS-03: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-OBS-03 AREA=observatory"
+        ],
+        "deliverable": {
+          "objective": "Track regressions with owner+ETA+proof in one place",
+          "kpi": "regression_visibility_score",
+          "baseline": 0.2,
+          "target": 0.9
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 8.47,
       "build_ready": false,
-      "execution_order": 15,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Track regressions with owner+ETA+proof in one place",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 15
     },
     {
       "id": "CB-033",
@@ -723,38 +1049,60 @@
       "risk_reduction": 8,
       "effort": 3,
       "priority_score": 7.0,
+      "domain_area": "governance",
+      "execution_context": {
+        "task_scope_summary": "Keep improvements benchmarked against frontier standards",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "weekly_maturity_delta",
+            "baseline": null,
+            "target": null
+          },
+          "note": "Orchestration/reporting tasks; do not change core pipeline behavior unless task says so."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task CB-033: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=CB-033 AREA=governance"
+        ],
+        "deliverable": {
+          "objective": "Keep improvements benchmarked against frontier standards",
+          "kpi": "weekly_maturity_delta",
+          "baseline": null,
+          "target": null
+        }
+      },
       "source": "board",
       "status": "backlog",
       "importance_score": 7.8,
       "build_ready": false,
-      "execution_order": 16,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Keep improvements benchmarked against frontier standards",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 16
     },
     {
       "id": "Q-OBS-04",
@@ -769,38 +1117,60 @@
       "risk_reduction": 9,
       "effort": 4,
       "priority_score": 6.0,
+      "domain_area": "observatory",
+      "execution_context": {
+        "task_scope_summary": "Prevent decisions on stale or conflicting data",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "metric_confidence_coverage",
+            "baseline": 0.1,
+            "target": 0.9
+          },
+          "note": "Prefer generating or updating observatory artifacts/pages, not introducing new subsystems."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-OBS-04: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-OBS-04 AREA=observatory"
+        ],
+        "deliverable": {
+          "objective": "Prevent decisions on stale or conflicting data",
+          "kpi": "metric_confidence_coverage",
+          "baseline": 0.1,
+          "target": 0.9
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 6.8,
       "build_ready": false,
-      "execution_order": 17,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Prevent decisions on stale or conflicting data",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 17
     },
     {
       "id": "Q-MEM-03",
@@ -815,38 +1185,60 @@
       "risk_reduction": 8,
       "effort": 4,
       "priority_score": 5.75,
+      "domain_area": "memory",
+      "execution_context": {
+        "task_scope_summary": "Demote noisy repeat retrieval",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "semantic_low_sim_ratio",
+            "baseline": 0.235,
+            "target": 0.18
+          },
+          "note": "Prioritize signal quality over quantity in memory capture/retrieval."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-MEM-03: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-MEM-03 AREA=memory"
+        ],
+        "deliverable": {
+          "objective": "Demote noisy repeat retrieval",
+          "kpi": "semantic_low_sim_ratio",
+          "baseline": 0.235,
+          "target": 0.18
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 6.55,
       "build_ready": false,
-      "execution_order": 18,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Demote noisy repeat retrieval",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 18
     },
     {
       "id": "Q-PULSE-04",
@@ -861,38 +1253,61 @@
       "risk_reduction": 8,
       "effort": 4,
       "priority_score": 5.75,
+      "domain_area": "pulse",
+      "execution_context": {
+        "task_scope_summary": "Turn red metrics into direct operator actions",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-pulse"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "operator_actionability_score",
+            "baseline": 0.2,
+            "target": 0.9
+          },
+          "note": "Pulse improvements are Spark mission-control oriented; if a separate pulse repo is needed, explicitly state it in commit message."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-PULSE-04: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-PULSE-04 AREA=pulse"
+        ],
+        "deliverable": {
+          "objective": "Turn red metrics into direct operator actions",
+          "kpi": "operator_actionability_score",
+          "baseline": 0.2,
+          "target": 0.9
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 6.55,
       "build_ready": false,
-      "execution_order": 19,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Turn red metrics into direct operator actions",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 19
     },
     {
       "id": "Q-OBS-02",
@@ -907,38 +1322,60 @@
       "risk_reduction": 8,
       "effort": 4,
       "priority_score": 5.5,
+      "domain_area": "observatory",
+      "execution_context": {
+        "task_scope_summary": "Prevent stale-data misreads",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "metric_trust_score",
+            "baseline": 0.4,
+            "target": 0.8
+          },
+          "note": "Prefer generating or updating observatory artifacts/pages, not introducing new subsystems."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-OBS-02: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-OBS-02 AREA=observatory"
+        ],
+        "deliverable": {
+          "objective": "Prevent stale-data misreads",
+          "kpi": "metric_trust_score",
+          "baseline": 0.4,
+          "target": 0.8
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 6.3,
       "build_ready": false,
-      "execution_order": 20,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Prevent stale-data misreads",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 20
     },
     {
       "id": "Q-WEB-02",
@@ -953,38 +1390,60 @@
       "risk_reduction": 7,
       "effort": 4,
       "priority_score": 5.5,
+      "domain_area": "onboarding_web",
+      "execution_context": {
+        "task_scope_summary": "Shorten onboarding to value",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "ttfv_minutes",
+            "baseline": 45,
+            "target": 20
+          },
+          "note": "Focus on instrumentation and flow simplification; avoid cosmetic-only changes."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-WEB-02: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-WEB-02 AREA=onboarding_web"
+        ],
+        "deliverable": {
+          "objective": "Shorten onboarding to value",
+          "kpi": "ttfv_minutes",
+          "baseline": 45,
+          "target": 20
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 6.3,
       "build_ready": false,
-      "execution_order": 21,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Shorten onboarding to value",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 21
     },
     {
       "id": "Q-ADV-03",
@@ -999,38 +1458,60 @@
       "risk_reduction": 9,
       "effort": 5,
       "priority_score": 5.2,
+      "domain_area": "advisory",
+      "execution_context": {
+        "task_scope_summary": "Link advice to outcomes",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "strict_acted_on_rate",
+            "baseline": 0.039,
+            "target": 0.12
+          },
+          "note": "Improve emit usefulness while guarding noise burden thresholds."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-ADV-03: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-ADV-03 AREA=advisory"
+        ],
+        "deliverable": {
+          "objective": "Link advice to outcomes",
+          "kpi": "strict_acted_on_rate",
+          "baseline": 0.039,
+          "target": 0.12
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 6.0,
       "build_ready": false,
-      "execution_order": 22,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Link advice to outcomes",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 22
     },
     {
       "id": "CB-022",
@@ -1043,38 +1524,60 @@
       "risk_reduction": 9,
       "effort": 5,
       "priority_score": 4.8,
+      "domain_area": "observatory",
+      "execution_context": {
+        "task_scope_summary": "Unify metric definitions/formulas/sources",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "drift_rate",
+            "baseline": null,
+            "target": null
+          },
+          "note": "Prefer generating or updating observatory artifacts/pages, not introducing new subsystems."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task CB-022: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=CB-022 AREA=observatory"
+        ],
+        "deliverable": {
+          "objective": "Unify metric definitions/formulas/sources",
+          "kpi": "drift_rate",
+          "baseline": null,
+          "target": null
+        }
+      },
       "source": "board",
       "status": "backlog",
       "importance_score": 5.6,
       "build_ready": false,
-      "execution_order": 23,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Unify metric definitions/formulas/sources",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 23
     },
     {
       "id": "CB-016",
@@ -1087,38 +1590,60 @@
       "risk_reduction": 8,
       "effort": 5,
       "priority_score": 4.6,
+      "domain_area": "onboarding_web",
+      "execution_context": {
+        "task_scope_summary": "Make onboarding errors actionable",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "recovery_rate",
+            "baseline": null,
+            "target": null
+          },
+          "note": "Focus on instrumentation and flow simplification; avoid cosmetic-only changes."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task CB-016: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=CB-016 AREA=onboarding_web"
+        ],
+        "deliverable": {
+          "objective": "Make onboarding errors actionable",
+          "kpi": "recovery_rate",
+          "baseline": null,
+          "target": null
+        }
+      },
       "source": "board",
       "status": "backlog",
       "importance_score": 5.4,
       "build_ready": false,
-      "execution_order": 24,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Make onboarding errors actionable",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 24
     },
     {
       "id": "Q-WEB-03",
@@ -1133,38 +1658,60 @@
       "risk_reduction": 7,
       "effort": 5,
       "priority_score": 4.4,
+      "domain_area": "onboarding_web",
+      "execution_context": {
+        "task_scope_summary": "Lower first-run overwhelm and improve completion",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "onboarding_first_try_success",
+            "baseline": 0.0,
+            "target": 0.85
+          },
+          "note": "Focus on instrumentation and flow simplification; avoid cosmetic-only changes."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-WEB-03: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-WEB-03 AREA=onboarding_web"
+        ],
+        "deliverable": {
+          "objective": "Lower first-run overwhelm and improve completion",
+          "kpi": "onboarding_first_try_success",
+          "baseline": 0.0,
+          "target": 0.85
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 5.2,
       "build_ready": false,
-      "execution_order": 25,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Lower first-run overwhelm and improve completion",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 25
     },
     {
       "id": "Q-ADV-05",
@@ -1179,38 +1726,60 @@
       "risk_reduction": 9,
       "effort": 6,
       "priority_score": 4.33,
+      "domain_area": "advisory",
+      "execution_context": {
+        "task_scope_summary": "Reduce over-suppression during exploration while protecting noise",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "advisory_emit_rate",
+            "baseline": 0.076,
+            "target": 0.2
+          },
+          "note": "Improve emit usefulness while guarding noise burden thresholds."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-ADV-05: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-ADV-05 AREA=advisory"
+        ],
+        "deliverable": {
+          "objective": "Reduce over-suppression during exploration while protecting noise",
+          "kpi": "advisory_emit_rate",
+          "baseline": 0.076,
+          "target": 0.2
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 5.13,
       "build_ready": false,
-      "execution_order": 26,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Reduce over-suppression during exploration while protecting noise",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 26
     },
     {
       "id": "Q-MEM-05",
@@ -1225,38 +1794,60 @@
       "risk_reduction": 9,
       "effort": 6,
       "priority_score": 4.17,
+      "domain_area": "memory",
+      "execution_context": {
+        "task_scope_summary": "Promote memories that actually improve outcomes",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "memory_utility_link_rate",
+            "baseline": 0.1,
+            "target": 0.45
+          },
+          "note": "Prioritize signal quality over quantity in memory capture/retrieval."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-MEM-05: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-MEM-05 AREA=memory"
+        ],
+        "deliverable": {
+          "objective": "Promote memories that actually improve outcomes",
+          "kpi": "memory_utility_link_rate",
+          "baseline": 0.1,
+          "target": 0.45
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 4.97,
       "build_ready": false,
-      "execution_order": 27,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Promote memories that actually improve outcomes",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 27
     },
     {
       "id": "Q-WEB-04",
@@ -1271,38 +1862,60 @@
       "risk_reduction": 8,
       "effort": 6,
       "priority_score": 3.83,
+      "domain_area": "onboarding_web",
+      "execution_context": {
+        "task_scope_summary": "Make model selection strategic and user-safe",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "llm_config_success_rate",
+            "baseline": 0.0,
+            "target": 0.8
+          },
+          "note": "Focus on instrumentation and flow simplification; avoid cosmetic-only changes."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task Q-WEB-04: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=Q-WEB-04 AREA=onboarding_web"
+        ],
+        "deliverable": {
+          "objective": "Make model selection strategic and user-safe",
+          "kpi": "llm_config_success_rate",
+          "baseline": 0.0,
+          "target": 0.8
+        }
+      },
       "source": "questions_backlog",
       "status": "backlog",
       "importance_score": 4.63,
       "build_ready": false,
-      "execution_order": 28,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Make model selection strategic and user-safe",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 28
     },
     {
       "id": "CB-014",
@@ -1315,66 +1928,68 @@
       "risk_reduction": 8,
       "effort": 8,
       "priority_score": 3.1,
+      "domain_area": "onboarding_web",
+      "execution_context": {
+        "task_scope_summary": "Make dropoff/TTFV measurable",
+        "repo_assertion": "Run: git rev-parse --show-toplevel and confirm path matches target_repo_path before coding.",
+        "forbidden_actions": [
+          "Do not implement this task in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless task is explicitly Kanban UI.",
+          "Do not perform broad refactors outside stated objective.",
+          "Do not edit multiple repos in one task unless explicitly required."
+        ],
+        "target_repo": "spark-intelligence",
+        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "allowed_paths": [
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\scripts",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\lib",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\docs",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\_observatory",
+          "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\tests"
+        ],
+        "context_payload": {
+          "project_identity": "Spark Intelligence runtime + observability + advisory system",
+          "do_not_confuse_with": "Observability Kanban UI project",
+          "kpi_focus": {
+            "kpi": "onboarding_success_rate",
+            "baseline": null,
+            "target": null
+          },
+          "note": "Focus on instrumentation and flow simplification; avoid cosmetic-only changes."
+        },
+        "verification_commands": [
+          "python -m compileall -q lib scripts",
+          "python -m ruff check scripts lib tests",
+          "pytest -q"
+        ],
+        "codex_prompt_prefix": "Task CB-014: implement in C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence. Do NOT edit C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence\\projects\\observability-kanban unless explicitly required. State planned files first, then implement minimally."
+      },
+      "terminal_instruction": {
+        "workdir": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+        "preflight": [
+          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
+          "git rev-parse --show-toplevel",
+          "echo TASK=CB-014 AREA=onboarding_web"
+        ],
+        "deliverable": {
+          "objective": "Make dropoff/TTFV measurable",
+          "kpi": "onboarding_success_rate",
+          "baseline": null,
+          "target": null
+        }
+      },
       "source": "board",
       "status": "backlog",
       "importance_score": 3.9,
       "build_ready": false,
-      "execution_order": 29,
-      "execution_context": {
-        "target_repo": "spark-intelligence",
-        "target_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-        "objective": "Make dropoff/TTFV measurable",
-        "in_scope": [
-          "Implement only files directly tied to this task objective",
-          "Preserve existing behavior outside this task",
-          "Add tests or validation where possible"
-        ],
-        "out_of_scope": [
-          "Unrelated UI redesign",
-          "Refactors not required for acceptance criteria",
-          "Cross-repo edits without explicit task scope"
-        ],
-        "definition_of_done": [
-          "Task objective implemented in correct repo",
-          "Validation command passes (lint/test/smoke)",
-          "KPI movement evidence or measurement hook added",
-          "Commit message references task id"
-        ],
-        "preflight_checklist": [
-          "cd C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-          "git rev-parse --show-toplevel",
-          "confirm task id and acceptance criteria",
-          "announce planned changed files before edit"
-        ]
-      }
+      "execution_order": 29
     }
   ],
   "terminal_start_instructions": {
-    "recommended_first_batch": [
-      "Q-MEM-01",
-      "Q-ADV-01",
-      "Q-PULSE-01",
-      "Q-PULSE-03",
-      "Q-OBS-01",
-      "Q-COH-02",
-      "Q-MEM-02",
-      "Q-PULSE-02",
-      "Q-ADV-02",
-      "Q-WEB-01"
-    ],
-    "command_pattern": "Pick tasks by execution_order ascending, implement in small batches, and update status + KPI evidence after each task."
-  },
-  "global_context": {
-    "project_name": "Spark Intelligence (not Observability Kanban UI)",
-    "primary_repo_path": "C:\\Users\\USER\\Desktop\\vibeship-spark-intelligence",
-    "secondary_repo_path": "C:\\Users\\USER\\Desktop\\spawner-ui",
-    "default_target_repo": "spark-intelligence",
-    "hard_guardrails": [
-      "Do NOT implement task logic in projects/observability-kanban unless task explicitly says UI/kanban.",
-      "For intelligence pipeline, observability, memory, advisory, pulse, and onboarding tasks: modify only vibeship-spark-intelligence.",
-      "For spawner bridge tasks only: modify only spawner-ui.",
-      "Always echo selected repo path before coding and verify with git rev-parse --show-toplevel."
+    "rule": "Execute by execution_order ascending unless blocked by dependency/evidence gates.",
+    "required_first_lines": [
+      "echo Selected task id and target_repo_path",
+      "git rev-parse --show-toplevel"
     ]
   },
-  "recommended_terminal_prompt_prefix": "You are implementing Spark Intelligence tasks. Use execution_context.target_repo_path for each task. If task target_repo is spark-intelligence, never implement in observability-kanban UI files. State chosen repo path before coding."
+  "recommended_terminal_prompt_prefix": "You are implementing Spark Intelligence tasks from a context-enriched queue. For each task, use execution_context.target_repo_path as the only coding workdir. If workdir does not match, stop and ask for confirmation."
 }
