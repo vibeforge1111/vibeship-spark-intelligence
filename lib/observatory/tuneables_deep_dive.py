@@ -79,13 +79,29 @@ KNOWN_RELOAD_SECTIONS = {
     "advisory_engine": ["lib/advisory_engine.py"],
     "advisory_gate": ["lib/advisory_gate.py"],
     "advisory_packet_store": ["lib/advisory_packet_store.py"],
-    "advisory_state": ["lib/advisory_state.py"],
-    "advisor": ["lib/advisor.py"],
+    "advisory_prefetch": ["lib/advisory_prefetch_worker.py"],
+    "advisory_quality": ["lib/advisory_preferences.py"],
+    "advisor": ["lib/advisor.py", "lib/advisory_preferences.py"],
+    "auto_tuner": ["lib/advisor.py"],
     "bridge_worker": ["lib/bridge_cycle.py"],
-    "meta_ralph": ["lib/meta_ralph.py"],
+    "chip_merge": ["lib/chip_merger.py"],
     "eidos": ["lib/eidos/models.py"],
-    "values": ["lib/pipeline.py"],
+    "memory_capture": ["lib/memory_capture.py"],
+    "memory_emotion": ["lib/memory_store.py", "lib/memory_banks.py"],
+    "memory_learning": ["lib/memory_store.py"],
+    "memory_retrieval_guard": ["lib/memory_store.py"],
+    "meta_ralph": ["lib/meta_ralph.py"],
+    "observatory": ["lib/observatory/config.py"],
+    "pipeline": ["lib/pipeline.py"],
+    "production_gates": ["lib/production_gates.py"],
+    "promotion": ["lib/promoter.py", "lib/auto_promote.py"],
     "queue": ["lib/queue.py"],
+    "request_tracker": ["lib/pattern_detection/request_tracker.py"],
+    "semantic": ["lib/semantic_retriever.py"],
+    "sync": ["lib/context_sync.py"],
+    "synthesizer": ["lib/advisory_synthesizer.py"],
+    "triggers": ["lib/semantic_retriever.py"],
+    "values": ["lib/pipeline.py", "lib/eidos/models.py"],
 }
 
 # Schema sections from tuneables_schema.py
@@ -97,6 +113,7 @@ SCHEMA_SECTIONS = [
     "advisory_quality", "advisory_preferences", "memory_emotion",
     "memory_learning", "memory_retrieval_guard", "bridge_worker",
     "memory_capture", "observatory", "production_gates",
+    "sync", "queue", "request_tracker",
 ]
 
 # Impact rating for each section
@@ -127,6 +144,9 @@ SECTION_IMPACT = {
     "memory_retrieval_guard": "LOW",
     "memory_capture": "LOW",
     "observatory": "LOW",
+    "sync": "MEDIUM",
+    "queue": "MEDIUM",
+    "request_tracker": "LOW",
 }
 
 # Consumer map (from tuneables_schema.py SECTION_CONSUMERS)
@@ -146,16 +166,19 @@ SECTION_CONSUMERS = {
     "eidos": ["lib/eidos/models.py"],
     "pipeline": ["lib/pipeline.py"],
     "auto_tuner": ["lib/auto_tuner.py"],
-    "chip_merge": ["lib/chips/runtime.py"],
+    "chip_merge": ["lib/chips/runtime.py", "lib/chip_merger.py"],
     "advisory_quality": ["lib/advisory_synthesizer.py"],
     "advisory_preferences": ["lib/advisory_preferences.py"],
-    "memory_emotion": ["lib/memory_store.py"],
+    "memory_emotion": ["lib/memory_store.py", "lib/memory_banks.py"],
     "memory_learning": ["lib/memory_store.py"],
     "memory_retrieval_guard": ["lib/memory_store.py"],
     "bridge_worker": ["lib/bridge_cycle.py"],
     "memory_capture": ["lib/memory_capture.py"],
     "production_gates": ["lib/production_gates.py"],
-    "observatory": ["lib/observatory/*"],
+    "observatory": ["lib/observatory/config.py"],
+    "sync": ["lib/context_sync.py"],
+    "queue": ["lib/queue.py"],
+    "request_tracker": ["lib/pattern_detection/request_tracker.py"],
 }
 
 

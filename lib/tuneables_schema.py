@@ -473,7 +473,7 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
 }
 
 # Sections with internal _doc keys that should not trigger unknown-key warnings
-_DOC_KEY_SECTIONS: set = set()
+_DOC_KEY_SECTIONS: set = {"source_roles", "scheduler"}
 
 # Module consumer map (which module reads which section)
 SECTION_CONSUMERS: Dict[str, List[str]] = {

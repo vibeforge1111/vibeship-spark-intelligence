@@ -139,6 +139,18 @@ def _value_differs(actual: Any, expected: Any) -> bool:
     return actual != expected
 
 
+def _load_runtime_only_keys(path: Path = TUNEABLES_PATH) -> Dict[str, Any]:
+    """Read the raw advisor section from the runtime file (no schema merge)."""
+    try:
+        if not path.exists():
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+        section = data.get("advisor")
+        return dict(section) if isinstance(section, dict) else {}
+    except Exception:
+        return {}
+
+
 def _detect_profile_drift(advisor_cfg: Dict[str, Any], baseline: Dict[str, Any]) -> Dict[str, Any]:
     overrides = []
     for key in DRIFT_KEYS:
@@ -268,14 +280,14 @@ def get_current_preferences(path: Path = TUNEABLES_PATH) -> Dict[str, Any]:
     runtime_advisor = resolve_section("advisor", runtime_path=path).data
     if not isinstance(runtime_advisor, dict):
         runtime_advisor = {}
-    advisor = dict(runtime_advisor)
-    if not isinstance(advisor, dict):
-        advisor = {}
-    memory_mode = _normalize_memory_mode(advisor.get("replay_mode"))
-    guidance_style = _normalize_guidance_style(advisor.get("guidance_style"))
+    memory_mode = _normalize_memory_mode(runtime_advisor.get("replay_mode"))
+    guidance_style = _normalize_guidance_style(runtime_advisor.get("guidance_style"))
     baseline = _derived_overrides(memory_mode, guidance_style)
     effective = dict(baseline)
-    drift = _detect_profile_drift(runtime_advisor, baseline)
+    # Only compare keys the user explicitly set in runtime config to avoid
+    # false drift from schema defaults merged by resolve_section.
+    runtime_only_keys = _load_runtime_only_keys(path)
+    drift = _detect_profile_drift(runtime_only_keys, baseline)
     # Keep explicit overrides visible if present.
     for key in DRIFT_KEYS:
         if key in runtime_advisor:

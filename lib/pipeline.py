@@ -82,7 +82,7 @@ def reload_pipeline_from(cfg: Dict[str, Any]) -> None:
 
 
 try:
-    from lib.tuneables_reload import register_reload as _pipeline_register
+    from .tuneables_reload import register_reload as _pipeline_register
     _pipeline_register("values", reload_pipeline_from, label="pipeline.reload_from")
 except ImportError:
     pass
@@ -150,8 +150,11 @@ def _load_pipeline_section_config() -> None:
             "pipeline", runtime_path=tuneables, env_overrides=_PIPELINE_ENV_OVERRIDES,
         ).data
         _apply_pipeline_section(cfg)
-    except Exception:
-        pass
+    except Exception as exc:
+        import logging as _pl_logging
+        _pl_logging.getLogger("spark.pipeline").debug(
+            "Failed to load pipeline section config: %s", exc,
+        )
 
 
 _load_pipeline_section_config()

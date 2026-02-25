@@ -181,9 +181,9 @@ Modules with `register_reload()` pick up file changes automatically (1-30s). Oth
 | `memory_capture` | Yes | `memory_capture.py` |
 | `request_tracker` | Yes | `request_tracker.py` |
 | `flow` | Yes | `validate_and_store.py` |
-| `semantic` | **No** | `semantic_retriever.py` |
-| `triggers` | **No** | `semantic_retriever.py` |
-| `sync` | **No** | `context_sync.py` |
+| `semantic` | Yes | `semantic_retriever.py` |
+| `triggers` | Yes | `semantic_retriever.py` |
+| `sync` | Yes | `context_sync.py` |
 
 ## Verification
 - `tests/test_config_authority.py`

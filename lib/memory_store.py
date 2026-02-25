@@ -119,11 +119,11 @@ def _load_memory_emotion_config(*, force: bool = False) -> Dict[str, Any]:
         return dict(_MEMORY_EMOTION_CFG_CACHE)
 
     cfg = dict(MEMORY_EMOTION_DEFAULTS)
-    runtime_path = (
-        TUNEABLES_FILE
-        if _tuneables_read_allowed()
-        else (Path.home() / ".spark" / "__disabled_tuneables_runtime__.json")
-    )
+    if not _tuneables_read_allowed():
+        _MEMORY_EMOTION_CFG_CACHE.update(cfg)
+        _MEMORY_EMOTION_CFG_MTIME = current_mtime
+        return dict(cfg)
+    runtime_path = TUNEABLES_FILE
     resolved = resolve_section(
         "memory_emotion",
         runtime_path=runtime_path,

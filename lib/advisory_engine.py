@@ -332,9 +332,32 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
         except Exception:
             return {}
     if not tuneables.exists():
-        return {}
+        # Fall through to resolver so schema defaults still apply.
+        pass
     from .config_authority import resolve_section
-    cfg = resolve_section("advisory_engine", runtime_path=tuneables).data
+    from .config_authority import env_bool, env_float, env_int
+    cfg = resolve_section(
+        "advisory_engine",
+        runtime_path=tuneables,
+        env_overrides={
+            "enabled": env_bool("SPARK_ADVISORY_ENGINE"),
+            "max_ms": env_float("SPARK_ADVISORY_MAX_MS"),
+            "include_mind": env_bool("SPARK_ADVISORY_INCLUDE_MIND"),
+            "prefetch_queue_enabled": env_bool("SPARK_ADVISORY_PREFETCH_QUEUE"),
+            "prefetch_inline_enabled": env_bool("SPARK_ADVISORY_PREFETCH_INLINE"),
+            "packet_fallback_emit_enabled": env_bool("SPARK_ADVISORY_PACKET_FALLBACK_EMIT"),
+            "fallback_rate_guard_enabled": env_bool("SPARK_ADVISORY_FALLBACK_RATE_GUARD"),
+            "fallback_rate_max_ratio": env_float("SPARK_ADVISORY_FALLBACK_RATE_MAX_RATIO"),
+            "fallback_rate_window": env_int("SPARK_ADVISORY_FALLBACK_RATE_WINDOW"),
+            "fallback_budget_cap": env_int("SPARK_ADVISORY_FALLBACK_BUDGET_CAP"),
+            "fallback_budget_window": env_int("SPARK_ADVISORY_FALLBACK_BUDGET_WINDOW"),
+            "prefetch_inline_max_jobs": env_int("SPARK_ADVISORY_PREFETCH_INLINE_MAX_JOBS"),
+            "actionability_enforce": env_bool("SPARK_ADVISORY_REQUIRE_ACTION"),
+            "delivery_stale_s": env_float("SPARK_ADVISORY_STALE_S"),
+            "advisory_text_repeat_cooldown_s": env_float("SPARK_ADVISORY_TEXT_REPEAT_COOLDOWN_S"),
+            "global_dedupe_cooldown_s": env_float("SPARK_ADVISORY_GLOBAL_DEDUPE_COOLDOWN_S"),
+        },
+    ).data
     return cfg if isinstance(cfg, dict) else {}
 
 

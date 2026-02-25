@@ -959,8 +959,8 @@ def get_promotion_status(project_dir: Optional[Path] = None) -> Dict:
 
 def _reload_promotion_from(_cfg: Dict) -> None:
     """Hot-reload callback — invalidate cached Promoter so next call picks up new config."""
-    global _PROMOTER
-    _PROMOTER = None
+    global _promoter
+    _promoter = None
 
 
 try:
