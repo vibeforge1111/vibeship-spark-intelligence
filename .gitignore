@@ -158,3 +158,20 @@ C?UsersUSER*
 *test_output.txt
 *test_out.txt
 *test_err.txt
+
+# Kanban/task-system workspace (not production-ready yet)
+projects/observability-kanban/
+docs/KANBAN_DASHBOARD.md
+docs/kanban_board.json
+
+# Local observatory/report artifacts
+_observatory/explore/
+_observatory/stages/
+_observatory/*.json
+_observatory/*.md
+_observatory/*.canvas
+SPARK_CONTEXT_FOR_CODEX.md
+SPARK_ADVISORY_PAYLOAD.json
+bandit_report.json
+scripts/.spark_openclaw_pids.json
+spark-alive/
