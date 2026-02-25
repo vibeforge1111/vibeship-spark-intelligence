@@ -70,6 +70,13 @@ Use this for daily/weekly reporting. If a gate fails, mark it red. No soft wordi
 - What we should stop pretending is fine:
 - Release posture: NOT READY / LIMITED READY / READY
 
+## 11) Triple Self-Interrogation (Mandatory)
+- Run 10–12 fresh Q&A each for:
+  1) Memory quality/capture
+  2) Advisory emissions/suppression
+  3) Website UX + onboarding flow
+- Use: `docs/reports/SELF_INTERROGATION_TRIPLE_TEMPLATE.md`
+
 ---
 
 ## Data Pull Commands (reference)
