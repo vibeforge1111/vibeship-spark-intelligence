@@ -88,10 +88,9 @@ echo "Installing Spark (services extras)..."
 if [[ "$SKIP_UP" -eq 1 ]]; then
   echo
   echo "Install complete."
-  echo "Start later with: $VENV_PY -m spark.cli up"
+  echo "Start later with: $VENV_PY -m spark.cli onboard --quick --yes"
   exit 0
 fi
 
 echo
-echo "Starting Spark services..."
-"$VENV_PY" -m spark.cli up
+"$VENV_PY" -m spark.cli onboard --quick --yes
