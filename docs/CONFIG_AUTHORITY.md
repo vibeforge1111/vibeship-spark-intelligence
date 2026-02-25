@@ -53,6 +53,37 @@ Resolver implementation:
   (for drift/reporting) may read both files directly; runtime behavior modules
   should still resolve through `ConfigAuthority`.
 
+## Hot-Reload Coverage
+
+All modules register via `register_reload()` in `lib/tuneables_reload.py`. When
+`~/.spark/tuneables.json` is modified, `check_and_reload()` (called on bridge
+cycles) dispatches callbacks for changed sections.
+
+| Section | Module(s) | Reload Label |
+|---------|-----------|-------------|
+| `advisor` | advisor.py, advisory_preferences.py | `advisor.reload_from`, `advisory_preferences.reload` |
+| `advisory_engine` | advisory_engine.py | `advisory_engine.apply_config` |
+| `advisory_gate` | advisory_gate.py, advisory_state.py | `advisory_gate.reload_from`, `advisory_state.reload_gate_from` |
+| `advisory_quality` | advisory_preferences.py | `advisory_preferences.reload.quality` |
+| `auto_tuner` | advisor.py | `advisor.reload_from.auto_tuner` |
+| `bridge_worker` | bridge_cycle.py | `bridge_worker.reload_from` |
+| `chip_merge` | chip_merger.py | `chip_merger.reload` |
+| `eidos` | eidos/models.py | `eidos.models.reload_from` |
+| `memory_capture` | memory_capture.py | `memory_capture.reload_from` |
+| `memory_emotion` | memory_banks.py, memory_store.py | `memory_banks.reload`, `memory_store.reload.emotion` |
+| `memory_learning` | memory_store.py | `memory_store.reload.learning` |
+| `memory_retrieval_guard` | memory_store.py | `memory_store.reload.guard` |
+| `meta_ralph` | meta_ralph.py | `meta_ralph.reload_from` |
+| `pipeline` | pipeline.py | `pipeline.reload_from_section` |
+| `promotion` | promoter.py, auto_promote.py | `promoter.reload`, `auto_promote.reload` |
+| `queue` | queue.py | `queue.apply_config` |
+| `request_tracker` | request_tracker.py | `request_tracker.reload_from` |
+| `semantic` | semantic_retriever.py | `semantic_retriever.reload` |
+| `sync` | context_sync.py | `context_sync.reload` |
+| `synthesizer` | advisory_synthesizer.py | `advisory_synthesizer.reload` |
+| `triggers` | semantic_retriever.py | `semantic_retriever.reload.triggers` |
+| `values` | eidos/models.py, pipeline.py | `eidos.models.reload_from_values`, `pipeline.reload_from` |
+
 ## Migration Standard
 - New modules should load runtime knobs via `resolve_section(...)`.
 - Env overrides should use explicit mappings (`env_bool/env_int/env_float/env_str`).

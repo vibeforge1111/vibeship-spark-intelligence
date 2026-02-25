@@ -766,3 +766,16 @@ def get_merge_stats() -> Dict[str, Any]:
         "chip_insight_counts": chip_counts,
         "learning_distillation_count": learning_distillations,
     }
+
+
+def _reload_chip_merge_from(_cfg):
+    """Hot-reload callback — config is read fresh each merge call."""
+    pass
+
+
+try:
+    from .tuneables_reload import register_reload as _cm_register
+
+    _cm_register("chip_merge", _reload_chip_merge_from, label="chip_merger.reload")
+except Exception:
+    pass

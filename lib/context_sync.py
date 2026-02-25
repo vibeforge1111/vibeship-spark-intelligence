@@ -949,5 +949,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     return 0
 
 
+def _reload_sync_from(_cfg: Dict) -> None:
+    """Hot-reload callback — config is read fresh each sync call."""
+    pass
+
+
+try:
+    from .tuneables_reload import register_reload as _sync_register
+
+    _sync_register("sync", _reload_sync_from, label="context_sync.reload")
+except Exception:
+    pass
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -265,9 +265,10 @@ def setup_questions(current: Dict[str, Any] | None = None) -> Dict[str, Any]:
 
 
 def get_current_preferences(path: Path = TUNEABLES_PATH) -> Dict[str, Any]:
-    data = _read_json(path)
-    runtime_advisor = data.get("advisor") if isinstance(data.get("advisor"), dict) else {}
-    advisor = resolve_section("advisor", runtime_path=path).data
+    runtime_advisor = resolve_section("advisor", runtime_path=path).data
+    if not isinstance(runtime_advisor, dict):
+        runtime_advisor = {}
+    advisor = dict(runtime_advisor)
     if not isinstance(advisor, dict):
         advisor = {}
     memory_mode = _normalize_memory_mode(advisor.get("replay_mode"))
@@ -455,3 +456,20 @@ def repair_profile_drift(
         "after_drift": after.get("drift", {}),
         "applied": applied,
     }
+
+
+# ---------------------------------------------------------------------------
+# Hot-reload registration
+# ---------------------------------------------------------------------------
+
+def _reload_preferences_from(_cfg) -> None:
+    """Hot-reload callback — config is read fresh each call, no cached state."""
+    pass
+
+
+try:
+    from .tuneables_reload import register_reload as _pref_register
+    _pref_register("advisor", _reload_preferences_from, label="advisory_preferences.reload")
+    _pref_register("advisory_quality", _reload_preferences_from, label="advisory_preferences.reload.quality")
+except Exception:
+    pass

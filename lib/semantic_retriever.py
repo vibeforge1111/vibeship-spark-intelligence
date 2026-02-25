@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from .config_authority import env_bool, resolve_section
 from .embeddings import embed_text, embed_texts
 from .diagnostics import log_debug
 
@@ -990,28 +991,25 @@ class SemanticRetriever:
             log_debug("semantic", "log_retrieval failed", e)
 
 
-def _load_config() -> Dict[str, Any]:
+def _load_config(path: Optional[Path] = None) -> Dict[str, Any]:
     config = dict(DEFAULT_CONFIG)
-    try:
-        tuneables = Path.home() / ".spark" / "tuneables.json"
-        if tuneables.exists():
-            # Accept UTF-8 with BOM (common on Windows).
-            data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-            semantic = data.get("semantic", {}) or {}
-            triggers = data.get("triggers", {}) or {}
-            config.update(semantic)
-            if "enabled" in triggers:
-                config["triggers_enabled"] = bool(triggers.get("enabled"))
-            if "rules_file" in triggers:
-                config["trigger_rules_file"] = triggers.get("rules_file")
-    except Exception:
-        pass
-
-    # Env overrides
-    if os.environ.get("SPARK_SEMANTIC_ENABLED", "").lower() in ("1", "true", "yes"):
-        config["enabled"] = True
-    if os.environ.get("SPARK_TRIGGERS_ENABLED", "").lower() in ("1", "true", "yes"):
-        config["triggers_enabled"] = True
+    tuneables = path or (Path.home() / ".spark" / "tuneables.json")
+    semantic = resolve_section(
+        "semantic",
+        runtime_path=tuneables,
+        env_overrides={"enabled": env_bool("SPARK_SEMANTIC_ENABLED")},
+    ).data
+    triggers = resolve_section(
+        "triggers",
+        runtime_path=tuneables,
+        env_overrides={"enabled": env_bool("SPARK_TRIGGERS_ENABLED")},
+    ).data
+    config.update(semantic if isinstance(semantic, dict) else {})
+    if isinstance(triggers, dict):
+        if "enabled" in triggers:
+            config["triggers_enabled"] = bool(triggers.get("enabled"))
+        if "rules_file" in triggers:
+            config["trigger_rules_file"] = triggers.get("rules_file")
 
     return config
 
@@ -1103,3 +1101,18 @@ def backfill_index(force: bool = False) -> Dict[str, Any]:
         "total_in_index": total,
         "total_insights": len(insights),
     }
+
+
+def _reload_semantic_from(_cfg):
+    """Hot-reload callback — invalidates cached retriever so next call re-creates with fresh config."""
+    global _RETRIEVER
+    _RETRIEVER = None
+
+
+try:
+    from .tuneables_reload import register_reload as _sem_register
+
+    _sem_register("semantic", _reload_semantic_from, label="semantic_retriever.reload")
+    _sem_register("triggers", _reload_semantic_from, label="semantic_retriever.reload.triggers")
+except Exception:
+    pass

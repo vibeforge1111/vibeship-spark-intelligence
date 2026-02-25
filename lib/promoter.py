@@ -28,6 +28,7 @@ from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
 
+from .config_authority import resolve_section
 from .cognitive_learner import CognitiveInsight, CognitiveCategory, get_cognitive_learner
 from .project_profile import load_profile
 from .chip_merger import merge_chip_insights
@@ -157,16 +158,9 @@ def _clean_text_for_write(text: str) -> str:
         return text or ""
 
 
-def _load_promotion_config() -> Dict[str, Any]:
-    cfg: Dict[str, Any] = {}
-    try:
-        tuneables = Path.home() / ".spark" / "tuneables.json"
-        if tuneables.exists():
-            # Accept UTF-8 with BOM (common on Windows).
-            data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-            cfg = data.get("promotion") or data.get("promoter") or {}
-    except Exception:
-        return {}
+def _load_promotion_config(path: Optional[Path] = None) -> Dict[str, Any]:
+    tuneables = path or (Path.home() / ".spark" / "tuneables.json")
+    cfg = resolve_section("promotion", runtime_path=tuneables).data
     return cfg if isinstance(cfg, dict) else {}
 
 
@@ -957,3 +951,20 @@ def check_and_promote(
 def get_promotion_status(project_dir: Optional[Path] = None) -> Dict:
     """Get promotion status."""
     return get_promoter(project_dir).get_promotion_status()
+
+
+# ---------------------------------------------------------------------------
+# Hot-reload registration
+# ---------------------------------------------------------------------------
+
+def _reload_promotion_from(_cfg: Dict) -> None:
+    """Hot-reload callback — invalidate cached Promoter so next call picks up new config."""
+    global _PROMOTER
+    _PROMOTER = None
+
+
+try:
+    from .tuneables_reload import register_reload as _prom_register
+    _prom_register("promotion", _reload_promotion_from, label="promoter.reload")
+except Exception:
+    pass

@@ -21,6 +21,7 @@ from array import array
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from lib.config_authority import env_bool, env_float, resolve_section
 from lib.embeddings import embed_texts
 
 DB_PATH = Path.home() / ".spark" / "memory_store.sqlite"
@@ -118,32 +119,29 @@ def _load_memory_emotion_config(*, force: bool = False) -> Dict[str, Any]:
         return dict(_MEMORY_EMOTION_CFG_CACHE)
 
     cfg = dict(MEMORY_EMOTION_DEFAULTS)
-    try:
-        if TUNEABLES_FILE.exists() and _tuneables_read_allowed():
-            payload = json.loads(TUNEABLES_FILE.read_text(encoding="utf-8-sig"))
-            section = payload.get("memory_emotion") if isinstance(payload, dict) else None
-            if isinstance(section, dict):
-                cfg["enabled"] = _safe_bool(section.get("enabled"), cfg["enabled"])
-                cfg["retrieval_state_match_weight"] = _safe_float(
-                    section.get("retrieval_state_match_weight"),
-                    cfg["retrieval_state_match_weight"],
-                )
-                cfg["retrieval_min_state_similarity"] = _safe_float(
-                    section.get("retrieval_min_state_similarity"),
-                    cfg["retrieval_min_state_similarity"],
-                )
-    except Exception:
-        pass
-
-    env_enabled = os.getenv("SPARK_MEMORY_EMOTION_ENABLED")
-    if env_enabled is not None:
-        cfg["enabled"] = _safe_bool(env_enabled, cfg["enabled"])
-    env_weight = os.getenv("SPARK_MEMORY_EMOTION_WEIGHT")
-    if env_weight is not None:
-        cfg["retrieval_state_match_weight"] = _safe_float(env_weight, cfg["retrieval_state_match_weight"])
-    env_min_sim = os.getenv("SPARK_MEMORY_EMOTION_MIN_SIM")
-    if env_min_sim is not None:
-        cfg["retrieval_min_state_similarity"] = _safe_float(env_min_sim, cfg["retrieval_min_state_similarity"])
+    runtime_path = (
+        TUNEABLES_FILE
+        if _tuneables_read_allowed()
+        else (Path.home() / ".spark" / "__disabled_tuneables_runtime__.json")
+    )
+    resolved = resolve_section(
+        "memory_emotion",
+        runtime_path=runtime_path,
+        env_overrides={
+            "enabled": env_bool("SPARK_MEMORY_EMOTION_ENABLED"),
+            "retrieval_state_match_weight": env_float("SPARK_MEMORY_EMOTION_WEIGHT", lo=0.0, hi=1.0),
+            "retrieval_min_state_similarity": env_float("SPARK_MEMORY_EMOTION_MIN_SIM", lo=0.0, hi=1.0),
+        },
+    ).data
+    cfg["enabled"] = _safe_bool(resolved.get("enabled"), cfg["enabled"])
+    cfg["retrieval_state_match_weight"] = _safe_float(
+        resolved.get("retrieval_state_match_weight"),
+        cfg["retrieval_state_match_weight"],
+    )
+    cfg["retrieval_min_state_similarity"] = _safe_float(
+        resolved.get("retrieval_min_state_similarity"),
+        cfg["retrieval_min_state_similarity"],
+    )
 
     cfg["retrieval_state_match_weight"] = max(0.0, float(cfg["retrieval_state_match_weight"]))
     cfg["retrieval_min_state_similarity"] = _clamp01(cfg["retrieval_min_state_similarity"])
@@ -168,33 +166,32 @@ def _load_memory_learning_config(*, force: bool = False) -> Dict[str, Any]:
         return dict(_MEMORY_LEARNING_CFG_CACHE)
 
     cfg = dict(MEMORY_LEARNING_DEFAULTS)
-    try:
-        if TUNEABLES_FILE.exists() and _tuneables_read_allowed():
-            payload = json.loads(TUNEABLES_FILE.read_text(encoding="utf-8-sig"))
-            section = payload.get("memory_learning") if isinstance(payload, dict) else None
-            if isinstance(section, dict):
-                cfg["enabled"] = _safe_bool(section.get("enabled"), cfg["enabled"])
-                cfg["retrieval_learning_weight"] = _safe_float(
-                    section.get("retrieval_learning_weight"),
-                    cfg["retrieval_learning_weight"],
-                )
-                cfg["retrieval_min_learning_signal"] = _safe_float(
-                    section.get("retrieval_min_learning_signal"),
-                    cfg["retrieval_min_learning_signal"],
-                )
-                cfg["calm_mode_bonus"] = _safe_float(
-                    section.get("calm_mode_bonus"),
-                    cfg["calm_mode_bonus"],
-                )
-    except Exception:
-        pass
-
-    env_enabled = os.getenv("SPARK_MEMORY_LEARNING_ENABLED")
-    if env_enabled is not None:
-        cfg["enabled"] = _safe_bool(env_enabled, cfg["enabled"])
-    env_weight = os.getenv("SPARK_MEMORY_LEARNING_WEIGHT")
-    if env_weight is not None:
-        cfg["retrieval_learning_weight"] = _safe_float(env_weight, cfg["retrieval_learning_weight"])
+    runtime_path = (
+        TUNEABLES_FILE
+        if _tuneables_read_allowed()
+        else (Path.home() / ".spark" / "__disabled_tuneables_runtime__.json")
+    )
+    resolved = resolve_section(
+        "memory_learning",
+        runtime_path=runtime_path,
+        env_overrides={
+            "enabled": env_bool("SPARK_MEMORY_LEARNING_ENABLED"),
+            "retrieval_learning_weight": env_float("SPARK_MEMORY_LEARNING_WEIGHT", lo=0.0, hi=1.0),
+        },
+    ).data
+    cfg["enabled"] = _safe_bool(resolved.get("enabled"), cfg["enabled"])
+    cfg["retrieval_learning_weight"] = _safe_float(
+        resolved.get("retrieval_learning_weight"),
+        cfg["retrieval_learning_weight"],
+    )
+    cfg["retrieval_min_learning_signal"] = _safe_float(
+        resolved.get("retrieval_min_learning_signal"),
+        cfg["retrieval_min_learning_signal"],
+    )
+    cfg["calm_mode_bonus"] = _safe_float(
+        resolved.get("calm_mode_bonus"),
+        cfg["calm_mode_bonus"],
+    )
 
     cfg["retrieval_learning_weight"] = max(0.0, float(cfg["retrieval_learning_weight"]))
     cfg["retrieval_min_learning_signal"] = _clamp01(cfg["retrieval_min_learning_signal"])
@@ -220,20 +217,27 @@ def _load_memory_retrieval_guard_config(*, force: bool = False) -> Dict[str, Any
         return dict(_MEMORY_RETRIEVAL_GUARD_CFG_CACHE)
 
     cfg = dict(MEMORY_RETRIEVAL_GUARD_DEFAULTS)
-    try:
-        if TUNEABLES_FILE.exists() and _tuneables_read_allowed():
-            payload = json.loads(TUNEABLES_FILE.read_text(encoding="utf-8-sig"))
-            section = payload.get("memory_retrieval_guard") if isinstance(payload, dict) else None
-            if isinstance(section, dict):
-                cfg["enabled"] = _safe_bool(section.get("enabled"), cfg["enabled"])
-                cfg["base_score_floor"] = _safe_float(section.get("base_score_floor"), cfg["base_score_floor"])
-                cfg["max_total_boost"] = _safe_float(section.get("max_total_boost"), cfg["max_total_boost"])
-    except Exception:
-        pass
-
-    env_enabled = os.getenv("SPARK_MEMORY_RETRIEVAL_GUARD_ENABLED")
-    if env_enabled is not None:
-        cfg["enabled"] = _safe_bool(env_enabled, cfg["enabled"])
+    runtime_path = (
+        TUNEABLES_FILE
+        if _tuneables_read_allowed()
+        else (Path.home() / ".spark" / "__disabled_tuneables_runtime__.json")
+    )
+    resolved = resolve_section(
+        "memory_retrieval_guard",
+        runtime_path=runtime_path,
+        env_overrides={
+            "enabled": env_bool("SPARK_MEMORY_RETRIEVAL_GUARD_ENABLED"),
+        },
+    ).data
+    cfg["enabled"] = _safe_bool(resolved.get("enabled"), cfg["enabled"])
+    cfg["base_score_floor"] = _safe_float(
+        resolved.get("base_score_floor"),
+        cfg["base_score_floor"],
+    )
+    cfg["max_total_boost"] = _safe_float(
+        resolved.get("max_total_boost"),
+        cfg["max_total_boost"],
+    )
 
     cfg["base_score_floor"] = _clamp01(cfg["base_score_floor"])
     cfg["max_total_boost"] = max(0.0, float(cfg["max_total_boost"]))
@@ -1318,3 +1322,23 @@ def retrieve(
         return items[:want]
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Hot-reload registration
+# ---------------------------------------------------------------------------
+
+def _reload_memory_store_from(_cfg) -> None:
+    """Hot-reload callback — force-refresh all 3 config caches."""
+    _load_memory_emotion_config(force=True)
+    _load_memory_learning_config(force=True)
+    _load_memory_retrieval_guard_config(force=True)
+
+
+try:
+    from .tuneables_reload import register_reload as _ms_register
+    _ms_register("memory_emotion", _reload_memory_store_from, label="memory_store.reload.emotion")
+    _ms_register("memory_learning", _reload_memory_store_from, label="memory_store.reload.learning")
+    _ms_register("memory_retrieval_guard", _reload_memory_store_from, label="memory_store.reload.guard")
+except Exception:
+    pass

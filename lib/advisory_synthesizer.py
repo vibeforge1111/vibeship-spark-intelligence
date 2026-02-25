@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
+from .config_authority import env_float, env_str, resolve_section
 from .diagnostics import log_debug
 from .soul_upgrade import fetch_soul_state, guidance_preface, soul_kernel_pass
 from .soul_metrics import record_metric
@@ -84,7 +85,7 @@ ANTHROPIC_MODEL = os.getenv("SPARK_ANTHROPIC_MODEL", "claude-haiku-4-5-20251001"
 GEMINI_API_KEY = _load_repo_env_value("GEMINI_API_KEY", "GOOGLE_API_KEY")
 GEMINI_MODEL = os.getenv("SPARK_GEMINI_MODEL", "gemini-2.0-flash")
 
-# Synthesis mode: "auto" (try AI → fall back to programmatic), "ai_only", "programmatic"
+# Synthesis mode: "auto" (try AI -> fall back to programmatic), "ai_only", "programmatic"
 SYNTH_MODE = os.getenv("SPARK_SYNTH_MODE", "auto")
 
 # Optional soul-upgrade context injection (disabled by default for safety/perf)
@@ -95,8 +96,8 @@ SOUL_UPGRADE_PROMPT_ENABLED = os.getenv("SPARK_SOUL_UPGRADE_PROMPT", "0") in {"1
 AI_TIMEOUT_S = float(os.getenv("SPARK_SYNTH_TIMEOUT", "8.0"))
 PREFERRED_PROVIDER_ENV = os.getenv("SPARK_SYNTH_PREFERRED_PROVIDER", "")
 
-# Cache synthesized results (same inputs → same output)
-_synth_cache: Dict[str, tuple] = {}  # key → (result, timestamp)
+# Cache synthesized results (same inputs -> same output)
+_synth_cache: Dict[str, tuple] = {}  # key -> (result, timestamp)
 CACHE_TTL_S = 120
 MAX_CACHE_ENTRIES = 50
 PREFERRED_PROVIDER: Optional[str] = None
@@ -232,17 +233,19 @@ def apply_synth_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     return _apply_synth_config(cfg)
 
 
-def _load_synth_config() -> dict:
-    """Load synthesis config from tuneables.json → 'synthesizer' section."""
-    try:
-        if SYNTH_CONFIG_FILE.exists():
-            # Accept UTF-8 with BOM (common on Windows).
-            data = json.loads(SYNTH_CONFIG_FILE.read_text(encoding="utf-8-sig"))
-            return data.get("synthesizer") or {}
-    except Exception:
-        pass
-    return {}
-
+def _load_synth_config(path: Optional[Path] = None) -> dict:
+    """Load synthesis config via ConfigAuthority from the 'synthesizer' section."""
+    tuneables = path or SYNTH_CONFIG_FILE
+    return resolve_section(
+        "synthesizer",
+        runtime_path=tuneables,
+        env_overrides={
+            "mode": env_str("SPARK_SYNTH_MODE", lower=True),
+            "ai_timeout_s": env_float("SPARK_SYNTH_TIMEOUT", lo=0.2, hi=120.0),
+            "preferred_provider": env_str("SPARK_SYNTH_PREFERRED_PROVIDER", lower=True),
+            "minimax_model": env_str("SPARK_MINIMAX_MODEL"),
+        },
+    ).data
 
 def _refresh_synth_config(force: bool = False) -> None:
     """Reload config from tuneables when file changes."""
@@ -494,7 +497,7 @@ def synthesize_programmatic(
                 sections.append(f"- {text}{source_hint}")
 
     if ask_clarifying_question:
-        sections.append("If this doesn’t match your intent, what outcome matters most for this step?")
+        sections.append("If this doesn't match your intent, what outcome matters most for this step?")
 
     if not sections:
         return ""
@@ -660,7 +663,7 @@ def _query_ollama(prompt: str) -> Optional[str]:
                     "think": False,  # Disable thinking for Qwen3 models
                     "options": {
                         "temperature": 0.3,
-                        "num_predict": 100,  # 1-3 sentences ≈ 40-80 tokens
+                        "num_predict": 100,  # 1-3 sentences ~ 40-80 tokens
                     },
                 },
             )
@@ -952,3 +955,17 @@ def get_synth_status() -> Dict[str, Any]:
         "ollama_model": OLLAMA_MODEL if ai.get("ollama") else None,
         "minimax_model": MINIMAX_MODEL,
     }
+
+
+def _reload_synth_from(_cfg):
+    """Hot-reload callback — re-reads config through config_authority."""
+    _refresh_synth_config(force=True)
+
+
+try:
+    from .tuneables_reload import register_reload as _synth_register
+
+    _synth_register("synthesizer", _reload_synth_from, label="advisory_synthesizer.reload")
+except Exception:
+    pass
+

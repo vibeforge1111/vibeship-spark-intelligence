@@ -705,3 +705,16 @@ def purge_telemetry_entries(
         "preview": preview,
         "dry_run": dry_run,
     }
+
+
+def _reload_memory_banks_from(_cfg):
+    """Hot-reload callback — config is read fresh each call."""
+    pass
+
+
+try:
+    from .tuneables_reload import register_reload as _mb_register
+
+    _mb_register("memory_emotion", _reload_memory_banks_from, label="memory_banks.reload")
+except Exception:
+    pass
