@@ -479,6 +479,46 @@ def _evaluate_constraints(
     return out
 
 
+def _evaluate_benchmark_checks(
+    goal: Dict[str, Any],
+    *,
+    sources: Optional[Dict[str, Any]] = None,
+    benchmark_cache: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    checks = list(goal.get("benchmark_checks") or [])
+    if not checks:
+        return []
+    src = sources if isinstance(sources, dict) else _measure_sources()
+    cache = benchmark_cache if isinstance(benchmark_cache, dict) else {}
+    out: List[Dict[str, Any]] = []
+    for item in checks:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "benchmark_check"))
+        operator = str(item.get("operator", ">=")).strip() or ">="
+        threshold = float(item.get("threshold", 0.0) or 0.0)
+        value = _resolve_metric(item, src, benchmark_cache=cache)
+        ok = _compare(value, operator, threshold)
+        out.append(
+            {
+                "name": name,
+                "source": str(item.get("source", "")),
+                "field": str(item.get("field", "")),
+                "operator": operator,
+                "threshold": threshold,
+                "value": float(value),
+                "ok": bool(ok),
+                "blocking": bool(item.get("blocking", True)),
+            }
+        )
+    return out
+
+
+def _blocking_checks_ok(checks: List[Dict[str, Any]]) -> bool:
+    blocking = [item for item in checks if bool((item or {}).get("blocking", True))]
+    return all(bool((item or {}).get("ok")) for item in blocking)
+
+
 def _measure_goal(goal: Dict[str, Any]) -> Dict[str, Any]:
     sources = _measure_sources()
     benchmark_cache: Dict[str, Any] = {}
@@ -842,6 +882,20 @@ def _validate_goal(goal: Dict[str, Any]) -> None:
     for key in ("name", "source", "field"):
         if key not in metric:
             raise ValueError(f"goal.metric.{key} missing")
+    checks = goal.get("benchmark_checks")
+    if checks is None:
+        return
+    if not isinstance(checks, list):
+        raise ValueError("goal.benchmark_checks must be a list")
+    for idx, item in enumerate(checks):
+        if not isinstance(item, dict):
+            raise ValueError(f"goal.benchmark_checks[{idx}] must be an object")
+        for field in ("name", "source", "field", "operator", "threshold"):
+            if field not in item:
+                raise ValueError(f"goal.benchmark_checks[{idx}].{field} missing")
+        source = str(item.get("source", "")).strip().lower()
+        if source != "benchmark":
+            raise ValueError(f"goal.benchmark_checks[{idx}].source must be benchmark")
 
 
 def _max_cycles_reached(goal: Dict[str, Any]) -> bool:
@@ -1116,9 +1170,34 @@ def _run_cycle(
     improved = delta > EPSILON
     constraints_ok = bool(after.get("all_constraints_ok"))
     gates_ok = bool(after.get("gates_ready"))
+    benchmark_checks: List[Dict[str, Any]] = []
+    benchmark_checks_ok = True
+    if improved and constraints_ok and gates_ok:
+        try:
+            benchmark_checks = _evaluate_benchmark_checks(
+                goal,
+                sources=after.get("sources") if isinstance(after, dict) else None,
+                benchmark_cache={},
+            )
+            benchmark_checks_ok = _blocking_checks_ok(benchmark_checks)
+        except Exception as exc:
+            benchmark_checks = [
+                {
+                    "name": "benchmark_checks",
+                    "source": "benchmark",
+                    "field": "",
+                    "operator": ">=",
+                    "threshold": 0.0,
+                    "value": 0.0,
+                    "ok": False,
+                    "blocking": True,
+                    "error": str(exc),
+                }
+            ]
+            benchmark_checks_ok = False
 
     outcome = "promoted"
-    if not (improved and constraints_ok and gates_ok):
+    if not (improved and constraints_ok and gates_ok and benchmark_checks_ok):
         _restore_tuneables(tuneables_path, backup)
         outcome = "rolled_back"
 
@@ -1138,6 +1217,8 @@ def _run_cycle(
         "proposal": proposal_dict,
         "constraints_checked": after.get("constraints", []),
         "gates_ready_after": bool(after.get("gates_ready")),
+        "benchmark_checks": benchmark_checks,
+        "benchmark_checks_ok": bool(benchmark_checks_ok),
         "validation": validation_meta,
         "backup_path": str(backup),
         "cycle_regret": cycle_regret,

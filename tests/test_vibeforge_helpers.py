@@ -123,3 +123,35 @@ def test_resolve_metric_supports_benchmark_command_stdout_json():
     }
     value = vibeforge._resolve_metric(spec, {"production_gates": {}, "carmack_kpi": {}}, benchmark_cache={})
     assert abs(value - 0.73) < 1e-9
+
+
+def test_evaluate_benchmark_checks_supports_blocking_field(tmp_path):
+    vibeforge = _load_vibeforge_module()
+    benchmark = tmp_path / "bench.json"
+    benchmark.write_text(json.dumps({"precision": 0.42}), encoding="utf-8")
+    goal = {
+        "benchmark_checks": [
+            {
+                "name": "precision_guard",
+                "source": "benchmark",
+                "field": "precision",
+                "operator": ">=",
+                "threshold": 0.40,
+                "path": str(benchmark),
+                "blocking": True,
+            }
+        ]
+    }
+    checks = vibeforge._evaluate_benchmark_checks(goal, sources={"production_gates": {}, "carmack_kpi": {}}, benchmark_cache={})
+    assert len(checks) == 1
+    assert checks[0]["ok"] is True
+    assert checks[0]["blocking"] is True
+
+
+def test_blocking_checks_ok_ignores_non_blocking_failures():
+    vibeforge = _load_vibeforge_module()
+    checks = [
+        {"name": "main_guard", "ok": True, "blocking": True},
+        {"name": "info_only", "ok": False, "blocking": False},
+    ]
+    assert vibeforge._blocking_checks_ok(checks) is True
