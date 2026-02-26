@@ -37,7 +37,8 @@ _THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.IGNORECASE | re.DOTALL)
 @dataclass(frozen=True)
 class LLMAdjudicatorConfig:
     spark_dir: Path
-    provider: str = "auto"  # auto|minimax|kimi
+    provider: str = "auto"  # auto|minimax|kimi|qwen
+    scope: str = "all"  # all|architecture
     timeout_s: float = 16.0
     temperature: float = 0.0
     max_output_tokens: int = 220
@@ -126,10 +127,17 @@ def _extract_json_obj(text: str) -> Optional[Dict[str, Any]]:
 
 def _choose_provider(preferred: str) -> Optional[str]:
     p = _norm_text(preferred).lower() or "auto"
-    if p in {"minimax", "kimi"}:
+    if p in {"minimax", "kimi", "qwen"}:
         return p
+    has_qwen = bool(
+        os.getenv("SPARK_QWEN_API_KEY")
+        or os.getenv("QWEN_API_KEY")
+        or os.getenv("DASHSCOPE_API_KEY")
+    )
     has_minimax = bool(os.getenv("SPARK_MINIMAX_API_KEY") or os.getenv("MINIMAX_API_KEY"))
     has_kimi = bool(os.getenv("SPARK_KIMI_API_KEY") or os.getenv("KIMI_API_KEY"))
+    if has_qwen:
+        return "qwen"
     if has_minimax:
         return "minimax"
     if has_kimi:
@@ -149,7 +157,54 @@ def _provider_settings(provider: str) -> Dict[str, str]:
         base = _norm_text(os.getenv("SPARK_KIMI_BASE_URL") or "https://api.moonshot.cn/v1").rstrip("/")
         model = _norm_text(os.getenv("SPARK_KIMI_MODEL") or "kimi-k2.5")
         return {"provider": p, "api_key": key, "base_url": base, "model": model}
+    if p == "qwen":
+        key = _norm_text(
+            os.getenv("SPARK_QWEN_API_KEY")
+            or os.getenv("QWEN_API_KEY")
+            or os.getenv("DASHSCOPE_API_KEY")
+        )
+        base = _norm_text(
+            os.getenv("SPARK_QWEN_BASE_URL")
+            or "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        ).rstrip("/")
+        model = _norm_text(os.getenv("SPARK_QWEN_MODEL") or "qwen3.5-35b-a3b")
+        return {"provider": p, "api_key": key, "base_url": base, "model": model}
     return {"provider": p, "api_key": "", "base_url": "", "model": ""}
+
+
+_ARCH_HINT_TOKENS = (
+    "architecture",
+    "architectural",
+    "system design",
+    "system-design",
+    "api design",
+    "interface design",
+    "component",
+    "module",
+    "dependency",
+    "scalability",
+    "performance",
+    "latency",
+    "throughput",
+    "refactor",
+    "design",
+)
+
+
+def _is_architecture_row(row: Dict[str, Any]) -> bool:
+    parts = [
+        _norm_text(row.get("source_hint")),
+        _norm_text(row.get("route")),
+        _norm_text(row.get("tool")),
+        _norm_text(row.get("advice_id")),
+        _norm_text(row.get("packet_id")),
+        _norm_text(row.get("session_kind")),
+        " ".join(str(x) for x in (row.get("evidence_refs") or [])[:4]),
+    ]
+    blob = " ".join(parts).lower()
+    if not blob:
+        return False
+    return any(tok in blob for tok in _ARCH_HINT_TOKENS)
 
 
 def _query_openai_style_chat(
@@ -302,12 +357,17 @@ def run_helpfulness_llm_adjudicator(
 
     reviewed_now = 0
     skipped_existing = 0
+    skipped_scope = 0
     processed = 0
     for row in queue_rows:
         if processed >= max(1, int(cfg.max_events)):
             break
         event_id = _norm_text(row.get("event_id"))
         if not event_id:
+            continue
+        scope = _norm_text(cfg.scope).lower() or "all"
+        if scope == "architecture" and not _is_architecture_row(row):
+            skipped_scope += 1
             continue
         existing = reviews_by_event.get(event_id)
         if existing and not cfg.force:
@@ -375,6 +435,7 @@ def run_helpfulness_llm_adjudicator(
         "processed": processed,
         "reviewed_now": reviewed_now,
         "skipped_existing": skipped_existing,
+        "skipped_scope": skipped_scope,
         "total_reviews": len(merged),
         "by_status": by_status,
         "by_label": by_label,
@@ -385,6 +446,7 @@ def run_helpfulness_llm_adjudicator_default(
     *,
     spark_dir: Optional[Path] = None,
     provider: str = "auto",
+    scope: str = "all",
     timeout_s: float = 16.0,
     temperature: float = 0.0,
     max_output_tokens: int = 220,
@@ -399,6 +461,7 @@ def run_helpfulness_llm_adjudicator_default(
     cfg = LLMAdjudicatorConfig(
         spark_dir=(spark_dir or (Path.home() / ".spark")),
         provider=provider,
+        scope=scope,
         timeout_s=timeout_s,
         temperature=temperature,
         max_output_tokens=max_output_tokens,

@@ -208,17 +208,23 @@ except Exception:
 # 1) Rebuild deterministic helpfulness events + summary
 python scripts/helpfulness_watcher.py --once
 
-# 2) Let Minimax/Kimi adjudicate queued ambiguous events (if keys are available)
-python scripts/helpfulness_llm_adjudicator.py --provider auto --max-events 120
+# 2) Architecture-first pilot with Qwen3.5 (scope-filtered)
+python scripts/helpfulness_llm_adjudicator.py --provider qwen --scope architecture --max-events 120
 
-# 3) Re-apply watcher so accepted LLM reviews are folded into events/summary
+# 3) Or run all-scope adjudication with available provider (Qwen/Minimax/Kimi)
+python scripts/helpfulness_llm_adjudicator.py --provider auto --scope all --max-events 120
+
+# 4) Re-apply watcher so accepted LLM reviews are folded into events/summary
 python scripts/helpfulness_watcher.py --once
 
-# 4) Regenerate Observatory to refresh explore/helpfulness
+# 5) Regenerate Observatory to refresh explore/helpfulness
 python scripts/generate_observatory.py --force --verbose
 ```
 
 Environment variables supported by the adjudicator:
+- `SPARK_QWEN_API_KEY` (or `QWEN_API_KEY` / `DASHSCOPE_API_KEY`)
+- `SPARK_QWEN_BASE_URL` (default: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`)
+- `SPARK_QWEN_MODEL` (default: `qwen3.5-35b-a3b`)
 - `SPARK_MINIMAX_API_KEY` (or `MINIMAX_API_KEY`)
 - `SPARK_KIMI_API_KEY` (or `KIMI_API_KEY`)
 

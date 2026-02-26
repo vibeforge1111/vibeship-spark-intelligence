@@ -9,8 +9,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
+
+# Ensure local repo root is importable when running as `python scripts/...`.
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from lib.helpfulness_llm_adjudicator import run_helpfulness_llm_adjudicator_default
 
@@ -24,6 +30,7 @@ def _print_result(result: dict) -> None:
                 "processed": result.get("processed", 0),
                 "reviewed_now": result.get("reviewed_now", 0),
                 "skipped_existing": result.get("skipped_existing", 0),
+                "skipped_scope": result.get("skipped_scope", 0),
                 "total_reviews": result.get("total_reviews", 0),
                 "by_status": result.get("by_status", {}),
                 "by_label": result.get("by_label", {}),
@@ -37,7 +44,8 @@ def _print_result(result: dict) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Run LLM adjudication for advisory helpfulness queue.")
     ap.add_argument("--spark-dir", default="", help="Override ~/.spark root directory")
-    ap.add_argument("--provider", default="auto", help="auto|minimax|kimi")
+    ap.add_argument("--provider", default="auto", help="auto|minimax|kimi|qwen")
+    ap.add_argument("--scope", default="all", help="all|architecture")
     ap.add_argument("--max-events", type=int, default=120, help="Max queue rows to adjudicate this run")
     ap.add_argument("--max-queue-rows", type=int, default=2000, help="Tail size for LLM queue file")
     ap.add_argument("--max-reviews-rows", type=int, default=20000, help="Tail size for existing reviews")
@@ -57,6 +65,7 @@ def main() -> int:
         return run_helpfulness_llm_adjudicator_default(
             spark_dir=spark_dir,
             provider=str(args.provider or "auto").strip().lower(),
+            scope=str(args.scope or "all").strip().lower(),
             timeout_s=max(3.0, float(args.timeout_s)),
             temperature=max(0.0, min(1.0, float(args.temperature))),
             max_output_tokens=max(80, int(args.max_output_tokens)),

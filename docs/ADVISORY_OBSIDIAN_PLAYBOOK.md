@@ -140,7 +140,7 @@ python scripts/check_obsidian_watchtower.py
 
 ```bash
 python scripts/helpfulness_watcher.py --once
-python scripts/helpfulness_llm_adjudicator.py --provider auto --max-events 120
+python scripts/helpfulness_llm_adjudicator.py --provider qwen --scope architecture --max-events 120
 python scripts/helpfulness_watcher.py --once
 python scripts/generate_observatory.py --force --verbose
 ```

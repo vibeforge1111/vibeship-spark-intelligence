@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from lib.helpfulness_llm_adjudicator import LLMAdjudicatorConfig, run_helpfulness_llm_adjudicator
+from lib.helpfulness_llm_adjudicator import (
+    LLMAdjudicatorConfig,
+    _choose_provider,
+    _provider_settings,
+    run_helpfulness_llm_adjudicator,
+)
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -150,4 +155,60 @@ def test_llm_adjudicator_enforces_min_review_confidence(tmp_path: Path) -> None:
     assert row["status"] == "abstain"
     assert row["label"] == "abstain"
     assert "below_min_confidence:0.80" in row["error"]
+
+
+def test_llm_adjudicator_scope_architecture_filters_queue(tmp_path: Path) -> None:
+    spark_dir = tmp_path / ".spark"
+    _write_jsonl(
+        spark_dir / "advisor" / "helpfulness_llm_queue.jsonl",
+        [
+            {
+                "event_id": "e-arch",
+                "tool": "Edit",
+                "trace_id": "t-arch",
+                "request_ts": 50.0,
+                "source_hint": "architecture:module-boundary",
+            },
+            {
+                "event_id": "e-nonarch",
+                "tool": "Bash",
+                "trace_id": "t-nonarch",
+                "request_ts": 55.0,
+                "source_hint": "style:formatting",
+            },
+        ],
+    )
+
+    called = {"n": 0}
+
+    def fake_judge(_event: dict, _cfg: LLMAdjudicatorConfig) -> dict:
+        called["n"] += 1
+        return {"ok": True, "status": "ok", "label": "helpful", "confidence": 0.91}
+
+    out = run_helpfulness_llm_adjudicator(
+        LLMAdjudicatorConfig(
+            spark_dir=spark_dir,
+            scope="architecture",
+            max_events=10,
+            write_files=True,
+        ),
+        judge_fn=fake_judge,
+    )
+    assert out["processed"] == 1
+    assert out["skipped_scope"] == 1
+    assert called["n"] == 1
+
+
+def test_qwen_provider_selection_and_defaults(monkeypatch) -> None:
+    for key in ("SPARK_QWEN_API_KEY", "QWEN_API_KEY", "DASHSCOPE_API_KEY", "SPARK_QWEN_BASE_URL", "SPARK_QWEN_MODEL"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("SPARK_QWEN_API_KEY", "qwen-test-key")
+
+    assert _choose_provider("auto") == "qwen"
+
+    settings = _provider_settings("qwen")
+    assert settings["provider"] == "qwen"
+    assert settings["api_key"] == "qwen-test-key"
+    assert settings["base_url"] == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    assert settings["model"] == "qwen3.5-35b-a3b"
 
