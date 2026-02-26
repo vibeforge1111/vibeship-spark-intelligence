@@ -114,7 +114,7 @@ def _load_distillation_row(
         return None
 
     row = conn.execute(
-        f"SELECT {', '.join(selected)} FROM {table} "
+        f"SELECT {', '.join(selected)} FROM {table} "  # noqa: S608 - table is allowlisted above
         "WHERE distillation_id = ? ORDER BY rowid DESC LIMIT 1",
         (distillation_id,),
     ).fetchone()
@@ -157,7 +157,7 @@ def _persist_refinement(
         return False
 
     conn.execute(
-        f"UPDATE {table} SET {', '.join(sets)} WHERE distillation_id = ?",
+        f"UPDATE {table} SET {', '.join(sets)} WHERE distillation_id = ?",  # noqa: S608 - table is allowlisted above
         tuple(args + [distillation_id]),
     )
     return True
@@ -207,7 +207,7 @@ def _promote_archive_row(
     where_clause = " AND ".join([f"{col} = ?" for col in pk_cols])
     where_values = [payload[col] for col in pk_cols]
     exists = conn.execute(
-        f"SELECT 1 FROM distillations WHERE {where_clause} LIMIT 1",
+        f"SELECT 1 FROM distillations WHERE {where_clause} LIMIT 1",  # noqa: S608 - where clause is derived from validated PK cols
         tuple(where_values),
     ).fetchone()
 
@@ -216,7 +216,7 @@ def _promote_archive_row(
         if update_cols:
             set_clause = ", ".join([f"{col} = ?" for col in update_cols])
             conn.execute(
-                f"UPDATE distillations SET {set_clause} WHERE {where_clause}",
+                f"UPDATE distillations SET {set_clause} WHERE {where_clause}",  # noqa: S608 - set/where clauses are derived from validated column names
                 tuple([payload[col] for col in update_cols] + where_values),
             )
         return True
@@ -225,7 +225,7 @@ def _promote_archive_row(
     placeholders = ", ".join(["?"] * len(insert_cols))
     try:
         conn.execute(
-            f"INSERT INTO distillations ({', '.join(insert_cols)}) VALUES ({placeholders})",
+            f"INSERT INTO distillations ({', '.join(insert_cols)}) VALUES ({placeholders})",  # noqa: S608 - insert cols derived from validated schema columns
             tuple(payload[col] for col in insert_cols),
         )
         return True

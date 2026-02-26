@@ -122,7 +122,7 @@ def _load_rows_from_distillations(conn: sqlite3.Connection, limit: int) -> List[
     if not selected:
         return []
 
-    sql = f"SELECT {', '.join(selected)} FROM distillations ORDER BY rowid DESC LIMIT ?"
+    sql = f"SELECT {', '.join(selected)} FROM distillations ORDER BY rowid DESC LIMIT ?"  # noqa: S608 - columns are selected from schema introspection
     out: List[DistillationRow] = []
     try:
         rows = conn.execute(sql, (max(1, int(limit)),)).fetchall()
@@ -165,7 +165,7 @@ def _load_rows_from_archive(conn: sqlite3.Connection, limit: int) -> List[Distil
     if not selected:
         return []
 
-    sql = f"SELECT {', '.join(selected)} FROM distillations_archive ORDER BY rowid DESC LIMIT ?"
+    sql = f"SELECT {', '.join(selected)} FROM distillations_archive ORDER BY rowid DESC LIMIT ?"  # noqa: S608 - columns are selected from schema introspection
     out: List[DistillationRow] = []
     try:
         rows = conn.execute(sql, (max(1, int(limit)),)).fetchall()
