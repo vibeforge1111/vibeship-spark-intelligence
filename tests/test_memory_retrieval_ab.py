@@ -96,6 +96,19 @@ def test_hybrid_lexical_scores_boost_term_frequency():
     assert scores[1] > scores[0]
 
 
+def test_reciprocal_rank_fusion_scores_rewards_cross_signal():
+    mod = _load_module()
+    scores = mod.reciprocal_rank_fusion_scores(
+        semantic_scores=[0.90, 0.80, 0.30],
+        lexical_scores=[0.20, 0.95, 0.10],
+        support_scores=[1.0, 2.0, 1.0],
+    )
+    assert len(scores) == 3
+    assert all(0.0 <= s <= 1.0 for s in scores)
+    assert scores[1] > scores[0]
+    assert scores[2] < scores[0]
+
+
 def test_retrieve_hybrid_filters_low_signal_candidates():
     mod = _load_module()
 

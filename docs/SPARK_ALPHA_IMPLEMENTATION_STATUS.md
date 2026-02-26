@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-26 (local branch snapshot, post PR-04 SQLite dual-write slice)
+Last updated: 2026-02-26 (local branch snapshot, post PR-05 deterministic RRF retrieval fusion)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -54,6 +54,15 @@ Branch: feat/spark-alpha
   - Optional read fallback from SQLite when JSON is unavailable.
 - Added focused tests (`tests/test_memory_spine_sqlite.py`).
 
+9. `(working tree)` - `feat(alpha-retrieval): add deterministic RRF rerank signal`
+- Added normalized reciprocal-rank-fusion scoring to advisory retrieval (`lib/advisor.py`):
+  - Fuses semantic rank + lexical rank + support rank.
+  - Injected as an explicit rerank feature (`rrf_fusion`) with policy weight (`rrf_weight`).
+- Added the same deterministic RRF helper to the retrieval A/B harness (`benchmarks/memory_retrieval_ab.py`).
+- Added tests for cross-signal RRF behavior:
+  - `tests/test_advisor.py`
+  - `tests/test_memory_retrieval_ab.py`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -69,6 +78,8 @@ Branch: feat/spark-alpha
 - `pytest tests/test_10_improvements.py -q` -> `9 passed, 1 skipped`
 - `pytest tests/test_cognitive_learner.py -q` -> `76 passed`
 - `pytest tests/test_memory_spine_sqlite.py -q` -> `2 passed`
+- `pytest tests/test_advisor.py -q` -> `97 passed`
+- `pytest tests/test_memory_retrieval_ab.py -q` -> `11 passed`
 
 Notable metrics now:
 - `context.p50`: 230
@@ -90,7 +101,8 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 8. Final migration playbook for old paths/deprecated modules is not done.
 9. PR-03 deletion commitment is still pending (legacy scorer path removal after replay wins).
 10. PR-04 deletion commitment is still pending (JSONL/legacy path retirement after parity criteria).
+11. PR-05 deletion commitment is still pending (retire superseded rank paths after replay/canary wins).
 
 ## In progress right now
 
-- PR-04 SQLite dual-write slice is in local working tree and ready to commit.
+- PR-05 deterministic RRF retrieval fusion is in local working tree and ready to commit.

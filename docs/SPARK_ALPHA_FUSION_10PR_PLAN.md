@@ -26,6 +26,7 @@ Completed commits:
 6. `734bddf` strict trace binding repairs + packet freshness repair + quality-band telemetry guard
 7. `(working tree)` PR-03 dual scoring challenger integration (shadow + enforce gated)
 8. `(working tree)` PR-04 SQLite dual-write for cognitive insights (JSON still canonical)
+9. `(working tree)` PR-05 deterministic RRF retrieval fusion signal (runtime + AB harness)
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -66,10 +67,11 @@ Current measured state:
 3. Remaining: extend spine coverage across advisory/memory surfaces and add parity checks.
 4. Deletion commitment: remove JSONL writes after parity >= 99.5% for 3 runs.
 
-### PR-05 Retrieval Fusion (RRF + Contextual Retrieval)  (Pending)
-1. Hybrid retrieval with deterministic fusion.
+### PR-05 Retrieval Fusion (RRF + Contextual Retrieval)  (Partial)
+1. Hybrid retrieval now includes deterministic RRF fusion (semantic + lexical + support ranks).
 2. Improve dominant-key and low-sim behavior.
-3. Deletion commitment: remove superseded single-path rank logic after replay pass.
+3. Remaining: replay/canary validation before replacing old ranking paths.
+4. Deletion commitment: remove superseded single-path rank logic after replay pass.
 
 ### PR-06 Advisory Alpha Vertical Slice  (Partial)
 1. Emission reliability and trace binding improved.

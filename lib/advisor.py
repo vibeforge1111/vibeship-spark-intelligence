@@ -138,6 +138,7 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "intent_coverage_weight": 0.0,
         "support_boost_weight": 0.0,
         "reliability_weight": 0.0,
+        "rrf_weight": 0.18,
         "semantic_context_min": 0.15,
         "semantic_lexical_min": 0.03,
         "semantic_intent_min": 0.0,
@@ -192,6 +193,7 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "intent_coverage_weight": 0.0,
         "support_boost_weight": 0.0,
         "reliability_weight": 0.0,
+        "rrf_weight": 0.18,
         "semantic_context_min": 0.15,
         "semantic_lexical_min": 0.03,
         "semantic_intent_min": 0.0,
@@ -248,6 +250,7 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "intent_coverage_weight": 0.10,
         "support_boost_weight": 0.10,
         "reliability_weight": 0.10,
+        "rrf_weight": 0.18,
         "semantic_context_min": 0.12,
         "semantic_lexical_min": 0.02,
         "semantic_intent_min": 0.02,
@@ -497,6 +500,7 @@ RETRIEVAL_DOMAIN_PROFILE_KEYS = {
     "intent_coverage_weight",
     "support_boost_weight",
     "reliability_weight",
+    "rrf_weight",
     "bm25_k1",
     "bm25_b",
     "bm25_mix",
@@ -1870,7 +1874,7 @@ class SparkAdvisor:
                             "semantic_context_min", "semantic_lexical_min",
                             "semantic_strong_override", "lexical_weight",
                             "semantic_intent_min", "intent_coverage_weight",
-                            "support_boost_weight", "reliability_weight",
+                            "support_boost_weight", "reliability_weight", "rrf_weight",
                         } | minimax_keys
                         for key in tracked:
                             if key in overrides:
@@ -1886,7 +1890,7 @@ class SparkAdvisor:
                         "prefilter_enabled", "prefilter_max_insights",
                         "prefilter_drop_low_signal", "lexical_weight",
                         "intent_coverage_weight", "support_boost_weight",
-                        "reliability_weight", "bm25_k1", "bm25_b", "bm25_mix",
+                        "reliability_weight", "rrf_weight", "bm25_k1", "bm25_b", "bm25_mix",
                         "semantic_intent_min", "complexity_threshold",
                         "min_results_no_escalation", "min_top_score_no_escalation",
                         "escalate_on_weak_primary", "escalate_on_high_risk",
@@ -1968,6 +1972,9 @@ class SparkAdvisor:
         )
         policy["reliability_weight"] = max(
             0.0, min(1.0, float(policy.get("reliability_weight", 0.0) or 0.0))
+        )
+        policy["rrf_weight"] = max(
+            0.0, min(1.0, float(policy.get("rrf_weight", 0.18) or 0.18))
         )
         policy["minimax_fast_rerank"] = _parse_bool(policy.get("minimax_fast_rerank", True), True)
         policy["minimax_fast_rerank_top_k"] = max(4, int(policy.get("minimax_fast_rerank_top_k", 16) or 16))
@@ -2847,6 +2854,7 @@ class SparkAdvisor:
         semantic_lexical_min = float(policy.get("semantic_lexical_min", 0.03) or 0.03)
         semantic_intent_min = float(policy.get("semantic_intent_min", 0.0) or 0.0)
         semantic_strong_override = float(policy.get("semantic_strong_override", 0.90) or 0.90)
+        rrf_weight = float(policy.get("rrf_weight", 0.18) or 0.18)
         bm25_k1 = float(policy.get("bm25_k1", 1.2) or 1.2)
         bm25_b = float(policy.get("bm25_b", 0.75) or 0.75)
         bm25_mix = float(policy.get("bm25_mix", 0.75) or 0.75)
@@ -3040,6 +3048,16 @@ class SparkAdvisor:
             (int(bucket.get("support_count") or 1) for _, bucket in merged_items),
             default=1,
         )
+        semantic_scores = [
+            float(getattr((bucket.get("row") or None), "fusion_score", 0.0) or 0.0)
+            for _, bucket in merged_items
+        ]
+        support_scores = [float(max(1, int(bucket.get("support_count") or 1))) for _, bucket in merged_items]
+        rrf_fusion_scores = self._reciprocal_rank_fusion_scores(
+            semantic_scores=semantic_scores,
+            lexical_scores=lexical_scores,
+            support_scores=support_scores,
+        )
         rank_features: Dict[str, Dict[str, float]] = {}
         scored: List[Tuple[Any, float]] = []
         emotion_state_match_count = 0
@@ -3074,15 +3092,18 @@ class SparkAdvisor:
                 "support_count": float(support_count),
                 "support_norm": support_norm,
                 "reliability": reliability,
+                "rrf_fusion": rrf_fusion_scores[idx] if idx < len(rrf_fusion_scores) else 0.0,
                 "emotion_similarity": emotion_similarity,
                 "emotion_boost": emotion_boost,
             }
+            rrf_fusion = float(rank_features[insight_key]["rrf_fusion"])
             rerank_score = (
                 base
                 + (lexical_weight * lex)
                 + (intent_coverage_weight * intent_coverage)
                 + (support_boost_weight * support_norm)
                 + (reliability_weight * reliability)
+                + (rrf_weight * rrf_fusion)
                 + emotion_boost
             )
             scored.append((row, rerank_score))
@@ -3189,6 +3210,7 @@ class SparkAdvisor:
                 "intent_coverage_weight": intent_coverage_weight,
                 "support_boost_weight": support_boost_weight,
                 "reliability_weight": reliability_weight,
+                "rrf_weight": rrf_weight,
                 "emotion_state_enabled": emotion_state_enabled,
                 "emotion_state_weight": emotion_state_weight,
                 "emotion_min_state_similarity": emotion_min_state_similarity,
@@ -3396,6 +3418,49 @@ class SparkAdvisor:
         overlap = [self._lexical_overlap_score(query, doc) for doc in docs]
         blend = max(0.0, min(1.0, float(bm25_mix)))
         return [(blend * bm) + ((1.0 - blend) * ov) for bm, ov in zip(bm25, overlap)]
+
+    def _reciprocal_rank_fusion_scores(
+        self,
+        *,
+        semantic_scores: List[float],
+        lexical_scores: List[float],
+        support_scores: List[float],
+        k: float = 20.0,
+    ) -> List[float]:
+        """Compute normalized reciprocal-rank-fusion scores [0..1]."""
+        count = min(len(semantic_scores), len(lexical_scores), len(support_scores))
+        if count <= 0:
+            return []
+        k_value = max(1.0, float(k or 20.0))
+
+        def _rank(values: List[float]) -> Dict[int, int]:
+            pairs = sorted(
+                ((idx, float(values[idx] or 0.0)) for idx in range(count)),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+            out: Dict[int, int] = {}
+            for pos, (idx, _score) in enumerate(pairs, start=1):
+                out[idx] = pos
+            return out
+
+        semantic_rank = _rank(semantic_scores)
+        lexical_rank = _rank(lexical_scores)
+        support_rank = _rank(support_scores)
+
+        raw: List[float] = []
+        for idx in range(count):
+            score = (
+                (1.0 / (k_value + float(semantic_rank.get(idx, count))))
+                + (1.0 / (k_value + float(lexical_rank.get(idx, count))))
+                + (0.5 / (k_value + float(support_rank.get(idx, count))))
+            )
+            raw.append(score)
+
+        best = max(raw) if raw else 0.0
+        if best <= 0.0:
+            return [0.0 for _ in range(count)]
+        return [float(v / best) for v in raw]
 
     def _get_cognitive_advice_keyword(self, tool_name: str, context: str) -> List[Advice]:
         """Get advice from cognitive insights using keyword matching."""

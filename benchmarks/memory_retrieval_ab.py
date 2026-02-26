@@ -130,6 +130,45 @@ def hybrid_lexical_scores(query: str, corpus: Iterable[str], bm25_mix: float = 0
     return output
 
 
+def reciprocal_rank_fusion_scores(
+    semantic_scores: List[float],
+    lexical_scores: List[float],
+    support_scores: List[float],
+    *,
+    k: float = 20.0,
+) -> List[float]:
+    count = min(len(semantic_scores), len(lexical_scores), len(support_scores))
+    if count <= 0:
+        return []
+    k_value = max(1.0, float(k or 20.0))
+
+    def _ranks(values: List[float]) -> Dict[int, int]:
+        ordered = sorted(
+            ((idx, float(values[idx] or 0.0)) for idx in range(count)),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        return {idx: pos for pos, (idx, _score) in enumerate(ordered, start=1)}
+
+    sem_rank = _ranks(semantic_scores)
+    lex_rank = _ranks(lexical_scores)
+    sup_rank = _ranks(support_scores)
+
+    raw: List[float] = []
+    for idx in range(count):
+        score = (
+            (1.0 / (k_value + float(sem_rank.get(idx, count))))
+            + (1.0 / (k_value + float(lex_rank.get(idx, count))))
+            + (0.5 / (k_value + float(sup_rank.get(idx, count))))
+        )
+        raw.append(score)
+
+    best = max(raw) if raw else 0.0
+    if best <= 0.0:
+        return [0.0 for _ in range(count)]
+    return [float(v / best) for v in raw]
+
+
 def _read_signal(item: Any, field: str, default: float = 0.0) -> float:
     return _safe_float(getattr(item, field, default), default=default)
 
@@ -178,6 +217,7 @@ def resolve_case_knobs(
         "intent_coverage_weight": 0.1,
         "support_boost_weight": 0.2,
         "reliability_weight": 0.1,
+        "rrf_weight": 0.18,
         "emotion_state_weight": emotion_state_weight if emotion_state_weight is not None else 0.0,
         "semantic_intent_min": semantic_intent_min if semantic_intent_min is not None else 0.0,
         "runtime_active_domain": "",
@@ -247,6 +287,7 @@ def retrieve_hybrid(
     semantic_intent_min: float,
     strict_filter: bool,
     agentic: bool,
+    rrf_weight: float = 0.18,
     emotion_state_weight: float = 0.0,
     emotion_state: Optional[Dict[str, Any]] = None,
     **_extra: Any,
@@ -278,6 +319,13 @@ def retrieve_hybrid(
             if key:
                 support_counts[key] = support_counts.get(key, 0) + 1
     lex_scores = hybrid_lexical_scores(query, [getattr(r, "insight_text", "") for r in raw], bm25_mix=1.0)
+    semantic_scores = [_safe_float(getattr(r, "fusion_score", getattr(r, "semantic_sim", 0.0))) for r in raw]
+    support_values = [float(max(1, int(support_counts.get(str(getattr(r, "insight_key", "") or ""), 0)))) for r in raw]
+    rrf_scores = reciprocal_rank_fusion_scores(
+        semantic_scores=semantic_scores,
+        lexical_scores=lex_scores,
+        support_scores=support_values,
+    )
 
     scored: List[RetrievedItem] = []
     for idx, row in enumerate(raw):
@@ -300,6 +348,7 @@ def retrieve_hybrid(
         if support_count > 1:
             support = max(support, min(1.0, (support_count - 1) / 2.0))
         emotion = _emotion_similarity(raw_row.get("meta", {}), emotion_state or {})
+        rrf = rrf_scores[idx] if idx < len(rrf_scores) else 0.0
         score = (
             semantic * 0.35
             + fusion * 0.35
@@ -307,6 +356,7 @@ def retrieve_hybrid(
             + intent_cov * intent_coverage_weight
             + support * support_boost_weight
             + reliability * reliability_weight
+            + rrf * float(rrf_weight)
             + emotion * emotion_state_weight
         )
         scored.append(

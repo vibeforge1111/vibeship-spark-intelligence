@@ -467,6 +467,18 @@ class TestLexicalScoring:
         # First doc should score higher
         assert scores[0] > scores[1]
 
+    def test_reciprocal_rank_fusion_scores_rewards_cross_signal(self, monkeypatch, tmp_path):
+        adv = _build_advisor(monkeypatch, tmp_path)
+        scores = adv._reciprocal_rank_fusion_scores(
+            semantic_scores=[0.90, 0.80, 0.30],
+            lexical_scores=[0.20, 0.95, 0.10],
+            support_scores=[1.0, 2.0, 1.0],
+        )
+        assert len(scores) == 3
+        assert all(0.0 <= s <= 1.0 for s in scores)
+        assert scores[1] > scores[0]
+        assert scores[2] < scores[0]
+
     def test_intent_terms_filters_stopwords(self, monkeypatch, tmp_path):
         adv = _build_advisor(monkeypatch, tmp_path)
         terms = adv._intent_terms("the python for testing and debugging")
