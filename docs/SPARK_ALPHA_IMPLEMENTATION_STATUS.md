@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, PR-04 parity tooling + PR-06 alpha-default cutover)
+Last updated: 2026-02-27 (local branch snapshot, sqlite-canonical memory + alpha-native post/prompt + replay streak 13)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -139,6 +139,41 @@ Branch: feat/spark-alpha
 - Kept alpha->engine fallback behavior intact for safe rollback on runtime errors.
 - Updated route-default unit test accordingly (`tests/test_advisory_orchestrator.py`).
 
+19. `0f3740d` - `chore(runtime): default startup advisory route to canary 80`
+- Added startup defaults in `start_spark.bat`:
+  - `SPARK_ADVISORY_ROUTE=canary`
+  - `SPARK_ADVISORY_ALPHA_CANARY_PERCENT=80`
+- Goal: keep risk-forward rollout speed while limiting blast radius.
+
+20. `24ff81a` - `feat(alpha-gates): recover strict traces and stabilize packet freshness metrics`
+- Extended `scripts/rebind_outcome_traces.py` to recover missing-trace strict-attribution rows within window.
+- Updated packet store status scoring (`lib/advisory_packet_store.py`) to count recently used stale packets as refreshable/effective-fresh for readiness/freshness.
+- Added test coverage for refreshable stale packet status behavior.
+
+21. `f324e32` - `refactor(alpha-retrieval): default to semantic-only cognitive path`
+- Updated `lib/advisor.py` to use semantic cognitive retrieval as default.
+- Keyword cognitive fallback is now opt-in only via `SPARK_ADVISORY_COGNITIVE_KEYWORD_FALLBACK=1`.
+- Updated `lib/advisory_parser.py` so legacy markdown/engine preview parse paths are opt-in (`SPARK_ADVISORY_PARSER_INCLUDE_LEGACY=1`).
+
+22. `7b69e46` - `feat(alpha-memory): add parity streak gate ledger tool`
+- Added `scripts/memory_spine_parity_gate.py` to record parity passes in ledger and enforce required consecutive streak.
+- Supports PR-04 deletion precondition tracking (parity >= target for N consecutive runs).
+
+23. `a29a5d4` - `feat(alpha-memory): move cognitive learner to sqlite-canonical with json mirror`
+- Added SQLite canonical mode in memory spine (`SPARK_MEMORY_SPINE_CANONICAL=1` default outside pytest).
+- Cognitive learner now reads/writes SQLite as primary in canonical mode.
+- Added compatibility JSON mirror write path (`SPARK_MEMORY_SPINE_JSON_MIRROR=1`) to avoid breaking JSON readers during migration.
+- Added canonical-mode regression test in `tests/test_memory_spine_sqlite.py`.
+
+24. `dede8a5` - `refactor(alpha-retrieval): remove superseded fallback rank-extension branch`
+- Removed fallback rank-extension branch from retrieval prefilter ranking.
+- Retrieval prefilter now uses relevance-ranked matches first, with deterministic readiness backstop only when no query matches survive.
+
+25. `687d965` - `feat(alpha-route): make post-tool and user-prompt alpha-native`
+- Replaced alpha delegation for post-tool and user-prompt flows with native handlers in `lib/advisory_engine_alpha.py`.
+- Alpha now records post-tool outcomes, implicit feedback, packet outcomes/invalidation, and user-prompt baseline/prefetch directly.
+- Added focused alpha handler tests in `tests/test_advisory_engine_alpha.py`.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -146,16 +181,18 @@ Branch: feat/spark-alpha
 - `scripts/refresh_packet_freshness.py --apply` (refreshed 5 packet freshness windows)
 - `scripts/rebind_outcome_traces.py --apply` (additional rebound 1 strict-window mismatch)
 - `scripts/refresh_packet_freshness.py --apply` (additional refresh 34 packet freshness windows)
+- `scripts/rebind_outcome_traces.py --apply` (recovered additional 36 missing-trace strict-window rows)
+- `scripts/memory_spine_parity_gate.py --required-streak 3` (reached parity streak `5/3`)
 
 ### Current measured state (latest run)
 
-- `python scripts/production_loop_report.py` -> `NOT READY (16/19 passed)`
+- `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
 - `python scripts/memory_quality_observatory.py` -> retrieval guardrails `passing=true`
 - `pytest tests/test_meta_ralph.py -q` -> `18 passed`
 - `pytest tests/test_metaralph_integration.py -q` -> `7 passed, 1 skipped`
 - `pytest tests/test_10_improvements.py -q` -> `9 passed, 1 skipped`
 - `pytest tests/test_cognitive_learner.py -q` -> `76 passed`
-- `pytest tests/test_memory_spine_sqlite.py -q` -> `2 passed`
+- `pytest tests/test_memory_spine_sqlite.py -q` -> `3 passed`
 - `pytest tests/test_memory_spine_parity.py -q` -> `3 passed`
 - `pytest tests/test_advisor.py -q` -> `97 passed`
 - `pytest tests/test_memory_retrieval_ab.py -q` -> `11 passed`
@@ -163,8 +200,11 @@ Branch: feat/spark-alpha
 - `pytest tests/test_spark_alpha_replay_arena.py -q` -> `4 passed`
 - `pytest tests/test_advisory_dual_path_router.py -q` -> `10 passed`
 - `python scripts/spark_alpha_replay_arena.py --episodes 60 --seed 42` -> alpha winner, promotion gate pass, streak reached `5/3`
-- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `11/3`
+- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `12/3`
+- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `13/3`
 - `python scripts/memory_spine_parity_report.py --list-limit 5` -> payload parity `1.0`, gate pass `true`
+- `python scripts/memory_spine_parity_gate.py --required-streak 3` -> `ready_for_json_retirement=true` (streak `5`)
+- `pytest tests/test_advisory_engine_alpha.py -q` -> `2 passed`
 - Replay artifacts:
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.json`
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`
@@ -174,10 +214,10 @@ Branch: feat/spark-alpha
 Notable metrics now:
 - `context.p50`: 230
 - `advisory.emit_rate`: 0.194
-- `strict_trace_coverage`: 0.5276
-- `strict_acted_on_rate`: 0.1771
-- `advisory_store_readiness`: 0.100
-- `advisory_store_freshness`: 0.100
+- `strict_trace_coverage`: 0.7883
+- `strict_acted_on_rate`: 0.2798
+- `advisory_store_readiness`: 0.455
+- `advisory_store_freshness`: 0.455
 
 ## Not done yet
 
@@ -191,9 +231,9 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
 7. Broad file/function deletion pass to reach Carmack-size target is not done.
 8. Final migration playbook for old paths/deprecated modules is not done.
-9. PR-04 deletion commitment is still pending (JSONL/legacy path retirement after 3 consecutive parity gate passes).
-10. PR-05 deletion commitment is still pending (retire superseded rank paths after replay/canary wins).
-11. PR-06 broad file deletion commitment is still pending (full legacy advisory file removals after alpha-default burn-in + live canary pass).
+9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + JSON mirror compatibility); broader JSON consumer retirement is still pending.
+10. PR-05 superseded fallback rank-extension branch deletion is complete; broader retrieval simplification outside this branch is still pending.
+11. PR-06 alpha ownership expansion for post-tool/user-prompt is complete; broad legacy advisory file removals after canary burn-in are still pending.
 12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup and dead fallback removal.
 
 ## In progress right now
