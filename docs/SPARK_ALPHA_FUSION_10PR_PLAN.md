@@ -28,7 +28,7 @@ Completed commits:
 8. `(working tree)` PR-04 SQLite dual-write for cognitive insights (JSON still canonical)
 9. `(working tree)` PR-05 deterministic RRF retrieval fusion signal (runtime + AB harness)
 10. `23ef06a` PR-06 advisory alpha vertical slice route + canary orchestration
-11. `(working tree)` PR-07 deterministic replay arena + promotion ledger
+11. `d02fdae` PR-07 deterministic replay arena + promotion ledger
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`

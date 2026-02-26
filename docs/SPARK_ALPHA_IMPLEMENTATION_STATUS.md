@@ -80,7 +80,7 @@ Branch: feat/spark-alpha
 - Added alpha-vs-engine comparison script (`scripts/advisory_alpha_quality_report.py`).
 - Added explicit legacy deletion candidate manifest for PR-10 (`docs/SPARK_ALPHA_PR06_LEGACY_DELETION_CANDIDATES.md`).
 
-11. `(working tree)` - `feat(alpha-replay): add deterministic replay arena with promotion ledger`
+11. `d02fdae` - `feat(alpha-replay): add deterministic replay arena with promotion ledger`
 - Added deterministic champion/challenger replay harness (`scripts/spark_alpha_replay_arena.py`):
   - Same episode set for both routes (legacy vs alpha) from a fixed seed or explicit episode file.
   - Per-route scorecards on utility, safety, trace integrity, and latency.
@@ -144,4 +144,4 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 
 ## In progress right now
 
-- No active in-progress patch; PR-07 replay arena is checkpointed and awaiting commit plus extended-run evidence collection.
+- No active in-progress patch; PR-07 replay arena is committed and ready for larger-run evidence collection.
