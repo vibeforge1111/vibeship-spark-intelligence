@@ -149,6 +149,7 @@ _rejection_flush_counter = 0
 
 
 def _flush_rejection_telemetry() -> None:
+    """Merge in-memory rejection counters to disk and clear the buffer."""
     existing: Dict[str, int] = {}
     if REJECTION_TELEMETRY_FILE.exists():
         loaded = json.loads(REJECTION_TELEMETRY_FILE.read_text(encoding="utf-8"))
@@ -380,8 +381,7 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
     if not tuneables.exists():
         # Fall through to resolver so schema defaults still apply.
         pass
-    from .config_authority import resolve_section
-    from .config_authority import env_bool, env_float, env_int, env_str
+    from .config_authority import env_bool, env_float, env_int, env_str, resolve_section
     cfg = resolve_section(
         "advisory_engine",
         runtime_path=tuneables,
@@ -1272,7 +1272,9 @@ def _dedupe_scope_key(
         phase = str(task_phase or "").strip().lower() or "implementation"
         intent = str(intent_family or "").strip().lower() or "emergent_other"
         return f"{tree_key}:{phase}:{intent}"
-    return "global"
+
+    # LLM area: dedupe_optimize — refine dedupe key with semantic intent
+    return _llm_area_dedupe_optimize("global", session_id, intent_family, task_phase)
 
 
 def _diagnostics_envelope(

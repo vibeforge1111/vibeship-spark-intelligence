@@ -40,7 +40,7 @@ jobs:
           fi
 
       - name: Checkout spark-pr-sentinel
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: vibeforge1111/spark-pr-sentinel
           path: spark-pr-sentinel
@@ -97,7 +97,7 @@ jobs:
           fi
 
       - name: Checkout spark-pr-sentinel
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: vibeforge1111/spark-pr-sentinel
           path: spark-pr-sentinel
@@ -127,7 +127,7 @@ jobs:
           python scripts/pr_sentinel_report.py
 
       - name: Upload Sentinel artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pr-sentinel-${{ github.run_id }}
           path: |

@@ -141,6 +141,13 @@ def test_engine_config_exposes_global_dedupe_scope(monkeypatch):
     assert cfg["global_dedupe_scope"] == "contextual"
 
 
+def test_engine_config_exposes_global_dedupe_scope_tree(monkeypatch):
+    monkeypatch.setattr(advisory_engine, "GLOBAL_DEDUPE_SCOPE", "global")
+    advisory_engine.apply_engine_config({"global_dedupe_scope": "tree"})
+    cfg = advisory_engine.get_engine_config()
+    assert cfg["global_dedupe_scope"] == "tree"
+
+
 def test_record_rejection_flushes_global_dedupe_suppressed(monkeypatch, tmp_path):
     telemetry_file = tmp_path / "advisory_rejection_telemetry.json"
     monkeypatch.setattr(advisory_engine, "REJECTION_TELEMETRY_FILE", telemetry_file)
