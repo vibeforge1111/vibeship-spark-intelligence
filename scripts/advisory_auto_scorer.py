@@ -31,12 +31,10 @@ def _dedupe_strs(values: List[str]) -> List[str]:
 
 def run_autoscore(
     *,
-    include_engine_fallback: bool,
     limit_requests: int,
     max_match_window_s: float,
     use_minimax: bool,
 ) -> Dict[str, Any]:
-    del include_engine_fallback  # legacy parser fallback lane removed
     advisories = load_advisories(
         limit_requests=limit_requests,
     )
@@ -83,11 +81,6 @@ def run_autoscore(
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Score advisory->action conversion automatically.")
-    ap.add_argument(
-        "--include-engine-fallback",
-        action="store_true",
-        help="Deprecated no-op (legacy parser fallback path removed).",
-    )
     ap.add_argument("--limit-requests", type=int, default=2000, help="Max request rows to parse.")
     ap.add_argument("--max-match-window-s", type=float, default=6 * 3600, help="Max seconds after advisory to consider action matches.")
     ap.add_argument("--use-minimax", action="store_true", help="Use MiniMax for ambiguous effect inference.")
@@ -95,7 +88,6 @@ def main() -> int:
     args = ap.parse_args()
 
     report = run_autoscore(
-        include_engine_fallback=bool(args.include_engine_fallback),
         limit_requests=max(1, int(args.limit_requests)),
         max_match_window_s=max(0.0, float(args.max_match_window_s)),
         use_minimax=bool(args.use_minimax),

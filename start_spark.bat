@@ -39,10 +39,6 @@ if "%SPARK_MEMORY_DELTA_MIN_SIM%"=="" set SPARK_MEMORY_DELTA_MIN_SIM=0.86
 REM Phase 3 advisory intelligence flags (overridable via environment).
 if "%SPARK_OUTCOME_PREDICTOR%"=="" set SPARK_OUTCOME_PREDICTOR=1
 
-REM Advisory: cheap fallback hint when time budget is low (improves real-time delivery).
-if "%SPARK_ADVISORY_LIVE_QUICK_FALLBACK%"=="" set SPARK_ADVISORY_LIVE_QUICK_FALLBACK=1
-if "%SPARK_ADVISORY_LIVE_QUICK_MIN_REMAINING_MS%"=="" set SPARK_ADVISORY_LIVE_QUICK_MIN_REMAINING_MS=900
-
 REM Advisory: action-first formatting (put Next check command on first line)
 if "%SPARK_ADVISORY_ACTION_FIRST%"=="" set SPARK_ADVISORY_ACTION_FIRST=1
 REM Advisory route rollout: alpha-first by default. Set canary/engine explicitly to override.

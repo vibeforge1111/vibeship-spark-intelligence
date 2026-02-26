@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
 REQUESTS_FILE = Path.home() / ".spark" / "advice_feedback_requests.jsonl"
 
@@ -109,13 +109,7 @@ def load_advisories(
     *,
     request_file: Path = REQUESTS_FILE,
     limit_requests: int = 2000,
-    advisory_paths: Optional[Iterable[Path]] = None,
-    engine_file: Optional[Path] = None,
-    include_engine_fallback: bool = False,
 ) -> List[Dict[str, Any]]:
-    del advisory_paths
-    del engine_file
-    del include_engine_fallback
     advisories = parse_feedback_requests(request_file, limit=limit_requests)
     advisories.sort(key=lambda x: float(x.get("created_at") or 0.0))
     return advisories
