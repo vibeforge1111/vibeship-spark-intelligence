@@ -12,6 +12,7 @@ def _row(ts: float, mode: str, metrics: dict) -> dict:
     return {
         "ts": ts,
         "mode": mode,
+        "observe_forwarding_enabled": mode == "observe",
         "active_files": 10,
         "pending_calls": 0,
         "metrics": metrics,
@@ -35,6 +36,8 @@ def test_shadow_gates_pass_with_healthy_metrics():
                 "observe_calls": 0,
                 "observe_success": 0,
                 "observe_failures": 0,
+                "pre_input_truncated": 1,
+                "post_output_truncated": 2,
                 "coverage_ratio": 0.95,
                 "pairing_ratio": 1.0,
                 "observe_latency_p95_ms": 0.0,
@@ -55,6 +58,8 @@ def test_shadow_gates_pass_with_healthy_metrics():
                 "observe_calls": 0,
                 "observe_success": 0,
                 "observe_failures": 0,
+                "pre_input_truncated": 2,
+                "post_output_truncated": 3,
                 "coverage_ratio": 0.975,
                 "pairing_ratio": 1.0,
                 "observe_latency_p95_ms": 0.0,
@@ -68,6 +73,11 @@ def test_shadow_gates_pass_with_healthy_metrics():
     assert summary["available"] is True
     assert summary["derived"]["coverage_ratio"] >= 0.9
     assert summary["derived"]["pairing_ratio"] >= 0.9
+    assert summary["derived"]["workflow_event_ratio"] > 0.0
+    assert summary["derived"]["tool_result_capture_rate"] > 0.0
+    assert summary["derived"]["truncated_tool_result_ratio"] >= 0.0
+    assert summary["derived"]["mode_shadow_ratio"] == 1.0
+    assert summary["derived"]["observe_forwarding_enabled_ratio"] == 0.0
     assert gates["passing"] is True
     assert gates["failed_count"] == 0
 
@@ -89,6 +99,8 @@ def test_observe_gates_fail_on_low_success_and_high_latency():
                 "observe_calls": 100,
                 "observe_success": 90,
                 "observe_failures": 10,
+                "pre_input_truncated": 5,
+                "post_output_truncated": 6,
                 "coverage_ratio": 0.96,
                 "pairing_ratio": 1.0,
                 "observe_latency_p95_ms": 2600.0,
@@ -109,6 +121,8 @@ def test_observe_gates_fail_on_low_success_and_high_latency():
                 "observe_calls": 200,
                 "observe_success": 180,
                 "observe_failures": 20,
+                "pre_input_truncated": 10,
+                "post_output_truncated": 12,
                 "coverage_ratio": 0.96,
                 "pairing_ratio": 1.0,
                 "observe_latency_p95_ms": 2700.0,
@@ -121,6 +135,8 @@ def test_observe_gates_fail_on_low_success_and_high_latency():
 
     assert summary["mode"] == "observe"
     assert summary["derived"]["observe_success_ratio_window"] == 0.9
+    assert summary["derived"]["mode_shadow_ratio"] == 0.0
+    assert summary["derived"]["observe_forwarding_enabled_ratio"] == 1.0
     assert gates["passing"] is False
     assert "observe.success_ratio" in gates["failed_names"]
     assert "observe.latency_p95_ms" in gates["failed_names"]
@@ -143,6 +159,8 @@ def test_shadow_pairing_checks_not_required_while_pending_calls_exist():
                 "observe_calls": 0,
                 "observe_success": 0,
                 "observe_failures": 0,
+                "pre_input_truncated": 0,
+                "post_output_truncated": 0,
                 "coverage_ratio": 1.0,
                 "pairing_ratio": 0.8,
                 "observe_latency_p95_ms": 0.0,

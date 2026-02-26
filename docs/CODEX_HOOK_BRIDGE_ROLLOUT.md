@@ -28,6 +28,12 @@ Live hook forwarding (after gates pass):
 python3 adapters/codex_hook_bridge.py --mode observe --poll 2 --max-per-tick 200
 ```
 
+Production-safe shadow check:
+
+```bash
+python3 adapters/codex_hook_bridge.py --mode shadow --environment production --fail-on-shadow-prod
+```
+
 ## Telemetry
 
 Shadow and observe modes both write snapshots to:
@@ -42,10 +48,16 @@ Key metrics:
 - `observe_success_ratio`: successful `observe.py` calls / total observe calls
 - `observe_latency_p95_ms`: p95 hook forwarding latency
 - `observe_forwarding_enabled`: `true` in observe mode, `false` in shadow mode
+- `workflow_event_ratio`: `(pre_events + post_events) / mapped_events`
+- `tool_result_capture_rate`: `post_events / max(pre_events,1)`
+- `truncated_tool_result_ratio`: `post_output_truncated / max(post_events,1)`
+- `mode_shadow_ratio`: fraction of telemetry snapshots in `shadow` mode
 
 Operational guardrails:
 - singleton lock prevents multiple bridge processes (`--lock-file`, default `~/.spark/adapters/codex_hook_bridge.lock`)
 - startup warning row is emitted when running long-lived shadow mode (`event=startup_warning`)
+- production guard emits `warning_code=shadow_mode_in_production` when `mode=shadow` and `environment=prod|production`
+- optional hard block with `--fail-on-shadow-prod` (or `SPARK_CODEX_FAIL_ON_SHADOW_PROD=1`)
 
 Default payload capture limits (relaxed for context retention):
 - input/tool args: `6000` chars (`SPARK_CODEX_HOOK_INPUT_TEXT_LIMIT`)

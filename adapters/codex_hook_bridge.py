@@ -32,6 +32,7 @@ DEFAULT_LOCK_FILE = STATE_DIR / "codex_hook_bridge.lock"
 DEFAULT_CODEX_SESSIONS_ROOT = Path.home() / ".codex" / "sessions"
 DEFAULT_OBSERVE_PATH = Path(__file__).resolve().parent.parent / "hooks" / "observe.py"
 
+
 def _env_int(name: str, default: int, lo: int, hi: int) -> int:
     raw = os.environ.get(name)
     if raw is None or str(raw).strip() == "":
@@ -41,6 +42,21 @@ def _env_int(name: str, default: int, lo: int, hi: int) -> int:
     except Exception:
         return int(default)
     return max(int(lo), min(int(hi), value))
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return bool(default)
+    s = str(raw).strip().lower()
+    if not s:
+        return bool(default)
+    return s in ("1", "true", "yes", "on")
+
+
+def _is_production_environment(value: Any) -> bool:
+    env = str(value or "").strip().lower()
+    return env in ("prod", "production")
 
 
 HOOK_INPUT_TEXT_LIMIT = _env_int("SPARK_CODEX_HOOK_INPUT_TEXT_LIMIT", 6000, 500, 50000)
@@ -142,16 +158,20 @@ def _emit_shadow_mode_warning(
     *,
     telemetry_file: Path,
     sessions_root: Path,
+    environment: str = "dev",
+    warning_code: str = "shadow_mode_active",
 ) -> None:
     row = {
         "ts": _now(),
         "adapter": "codex_hook_bridge",
         "event": "startup_warning",
-        "warning_code": "shadow_mode_active",
+        "warning_code": str(warning_code or "shadow_mode_active"),
         "warning": "Bridge is running in shadow mode; events are not forwarded to hooks/observe.py",
         "mode": "shadow",
         "observe_forwarding_enabled": False,
         "sessions_root": str(sessions_root),
+        "environment": str(environment or "dev"),
+        "shadow_in_production": _is_production_environment(environment),
     }
     _append_jsonl(telemetry_file, row)
 
@@ -305,6 +325,8 @@ class BridgeMetrics:
     observe_calls: int = 0
     observe_success: int = 0
     observe_failures: int = 0
+    pre_input_truncated: int = 0
+    post_output_truncated: int = 0
     row_type_counts: Counter = field(default_factory=Counter)
     unknown_response_item_types: Counter = field(default_factory=Counter)
     unknown_event_msg_types: Counter = field(default_factory=Counter)
@@ -349,6 +371,8 @@ class BridgeMetrics:
             "observe_calls": self.observe_calls,
             "observe_success": self.observe_success,
             "observe_failures": self.observe_failures,
+            "pre_input_truncated": self.pre_input_truncated,
+            "post_output_truncated": self.post_output_truncated,
             "coverage_ratio": self.coverage_ratio(),
             "pairing_ratio": self.pairing_ratio(),
             "observe_success_ratio": self.observe_success_ratio(),
@@ -498,6 +522,8 @@ def map_codex_row(
             else:
                 tool_input_raw = payload.get("input")
             tool_input = _normalize_tool_input(tool_input_raw)
+            if any(str(k).endswith("_truncated") and bool(v) for k, v in tool_input.items()):
+                runtime.metrics.pre_input_truncated += 1
             trace_id = _short_hash(f"pre:{session_id}:{call_id}:{tool_name}:{ts}")
 
             if call_id:
@@ -542,6 +568,8 @@ def map_codex_row(
                 output_text, exit_code = _parse_custom_tool_output(payload.get("output"))
 
             normalized_output = _truncate_text(output_text, HOOK_OUTPUT_TEXT_LIMIT)
+            if bool(normalized_output.get("truncated")):
+                runtime.metrics.post_output_truncated += 1
             is_failure = False
             unknown_exit = False
 
@@ -632,11 +660,15 @@ def _write_telemetry_snapshot(
     active_files: int,
     observe_forwarding_enabled: bool,
     shadow_mode_warning_emitted: bool,
+    environment: str,
+    shadow_in_production: bool,
 ) -> None:
     row = {
         "ts": _now(),
         "adapter": "codex_hook_bridge",
         "mode": mode,
+        "environment": str(environment or "dev"),
+        "shadow_in_production": bool(shadow_in_production),
         "observe_forwarding_enabled": bool(observe_forwarding_enabled),
         "shadow_mode_warning_emitted": bool(shadow_mode_warning_emitted),
         "active_files": int(active_files),
@@ -661,13 +693,43 @@ def run_bridge(args: argparse.Namespace) -> int:
     mode = str(args.mode or "shadow").strip().lower()
     if mode not in ("shadow", "observe"):
         raise SystemExit(f"Unsupported mode: {mode}")
+    environment = str(args.environment or os.environ.get("SPARK_ENV") or "dev").strip().lower() or "dev"
+    shadow_in_production = bool(mode == "shadow" and _is_production_environment(environment))
     observe_forwarding_enabled = mode == "observe"
     shadow_mode_warning_emitted = False
 
     _acquire_singleton_lock(lock_file, mode=mode)
     try:
-        if mode == "shadow" and not args.once:
-            _emit_shadow_mode_warning(telemetry_file=telemetry_file, sessions_root=sessions_root)
+        if shadow_in_production:
+            _emit_shadow_mode_warning(
+                telemetry_file=telemetry_file,
+                sessions_root=sessions_root,
+                environment=environment,
+                warning_code="shadow_mode_in_production",
+            )
+            shadow_mode_warning_emitted = True
+            if args.verbose:
+                print(
+                    (
+                        f"[codex_hook_bridge] WARNING: shadow mode in production "
+                        f"(environment={environment}); observe forwarding disabled"
+                    ),
+                    flush=True,
+                )
+            if bool(args.fail_on_shadow_prod):
+                raise SystemExit(
+                    (
+                        f"Refusing to run in shadow mode for production environment "
+                        f"(environment={environment})"
+                    )
+                )
+        elif mode == "shadow" and not args.once:
+            _emit_shadow_mode_warning(
+                telemetry_file=telemetry_file,
+                sessions_root=sessions_root,
+                environment=environment,
+                warning_code="shadow_mode_active",
+            )
             shadow_mode_warning_emitted = True
             if args.verbose:
                 print(
@@ -736,6 +798,8 @@ def run_bridge(args: argparse.Namespace) -> int:
                 active_files=len(files),
                 observe_forwarding_enabled=observe_forwarding_enabled,
                 shadow_mode_warning_emitted=shadow_mode_warning_emitted,
+                environment=environment,
+                shadow_in_production=shadow_in_production,
             )
 
             if args.once:
@@ -756,6 +820,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--observe-path", default=str(DEFAULT_OBSERVE_PATH), help="Path to hooks/observe.py")
     ap.add_argument("--observe-timeout-s", type=float, default=8.0, help="observe.py timeout per event")
     ap.add_argument("--unknown-exit-policy", default="success", choices=["success", "failure", "skip"], help="How to classify outputs when exit code is unknown")
+    ap.add_argument("--environment", default=str(os.environ.get("SPARK_ENV") or "dev"), help="Bridge environment tag (dev/staging/prod)")
+    ap.add_argument("--fail-on-shadow-prod", action="store_true", default=_env_bool("SPARK_CODEX_FAIL_ON_SHADOW_PROD", False), help="Exit if mode=shadow and environment is production")
     ap.add_argument("--lock-file", default=str(DEFAULT_LOCK_FILE), help="Singleton lock file path")
     ap.add_argument("--poll", type=float, default=2.0, help="Poll interval in seconds")
     ap.add_argument("--max-per-tick", type=int, default=200, help="Max new lines per file per tick")

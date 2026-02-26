@@ -49,6 +49,8 @@ COUNTER_KEYS = (
     "observe_calls",
     "observe_success",
     "observe_failures",
+    "pre_input_truncated",
+    "post_output_truncated",
 )
 
 
@@ -135,6 +137,13 @@ def summarize_telemetry(
     latest_unmatched = max(0, _to_int(last_metrics.get("post_unmatched_call_id"), 0))
     latest_observe_calls = max(0, _to_int(last_metrics.get("observe_calls"), 0))
     latest_observe_success = max(0, _to_int(last_metrics.get("observe_success"), 0))
+    latest_pre_events = max(0, _to_int(last_metrics.get("pre_events"), 0))
+    latest_mapped_events = max(0, _to_int(last_metrics.get("mapped_events"), 0))
+    latest_post_output_truncated = max(0, _to_int(last_metrics.get("post_output_truncated"), 0))
+
+    delta_pre_events = max(0, deltas.get("pre_events", 0))
+    delta_mapped_events = max(0, deltas.get("mapped_events", 0))
+    delta_post_output_truncated = max(0, deltas.get("post_output_truncated", 0))
 
     coverage_ratio = _to_float(last_metrics.get("coverage_ratio"), 0.0)
     pairing_ratio = _to_float(last_metrics.get("pairing_ratio"), 0.0)
@@ -161,6 +170,34 @@ def summarize_telemetry(
         observe_success_ratio_window = _safe_ratio(latest_observe_success, latest_observe_calls)
         observe_ratio_basis = "latest_snapshot"
 
+    if delta_mapped_events > 0:
+        workflow_event_ratio = _safe_ratio(delta_pre_events + post_events, delta_mapped_events)
+        workflow_ratio_basis = "window_delta"
+    else:
+        workflow_event_ratio = _safe_ratio(latest_pre_events + latest_post_events, latest_mapped_events)
+        workflow_ratio_basis = "latest_snapshot"
+
+    if delta_pre_events > 0:
+        tool_result_capture_rate = _safe_ratio(post_events, delta_pre_events)
+        capture_ratio_basis = "window_delta"
+    else:
+        tool_result_capture_rate = _safe_ratio(latest_post_events, latest_pre_events)
+        capture_ratio_basis = "latest_snapshot"
+
+    if post_events > 0:
+        truncated_tool_result_ratio = _safe_ratio(delta_post_output_truncated, post_events)
+        truncation_ratio_basis = "window_delta"
+    else:
+        truncated_tool_result_ratio = _safe_ratio(latest_post_output_truncated, latest_post_events)
+        truncation_ratio_basis = "latest_snapshot"
+
+    total_rows = max(1, len(window_rows))
+    mode_shadow_ratio = _safe_ratio(sum(1 for r in window_rows if str(r.get("mode") or "") == "shadow"), total_rows)
+    observe_forwarding_enabled_ratio = _safe_ratio(
+        sum(1 for r in window_rows if bool(r.get("observe_forwarding_enabled"))),
+        total_rows,
+    )
+
     summary = {
         "available": True,
         "mode": str(last.get("mode") or "unknown"),
@@ -178,6 +215,14 @@ def summarize_telemetry(
             "post_unmatched_ratio": round(float(post_unmatched_ratio), 4),
             "observe_success_ratio_window": round(float(observe_success_ratio_window), 4),
             "observe_latency_p95_ms": round(float(observe_latency_p95_ms), 2),
+            "workflow_event_ratio": round(float(workflow_event_ratio), 4),
+            "workflow_ratio_basis": workflow_ratio_basis,
+            "tool_result_capture_rate": round(float(tool_result_capture_rate), 4),
+            "capture_ratio_basis": capture_ratio_basis,
+            "truncated_tool_result_ratio": round(float(truncated_tool_result_ratio), 4),
+            "truncation_ratio_basis": truncation_ratio_basis,
+            "mode_shadow_ratio": round(float(mode_shadow_ratio), 4),
+            "observe_forwarding_enabled_ratio": round(float(observe_forwarding_enabled_ratio), 4),
             "post_ratio_basis": post_ratio_basis,
             "observe_ratio_basis": observe_ratio_basis,
             "window_activity_rows": _to_int(deltas.get("rows_seen"), 0),
@@ -346,6 +391,8 @@ def _render_markdown(summary: Dict[str, Any], gates: Dict[str, Any]) -> str:
             f"- `post_unmatched_call_id`: {delta.get('post_unmatched_call_id', 0)}",
             f"- `observe_calls`: {delta.get('observe_calls', 0)}",
             f"- `observe_failures`: {delta.get('observe_failures', 0)}",
+            f"- `pre_input_truncated`: {delta.get('pre_input_truncated', 0)}",
+            f"- `post_output_truncated`: {delta.get('post_output_truncated', 0)}",
             "",
             "## Ratios",
             "",
@@ -354,6 +401,11 @@ def _render_markdown(summary: Dict[str, Any], gates: Dict[str, Any]) -> str:
             f"- unknown_exit_ratio: `{derived.get('unknown_exit_ratio', 0.0)}` (basis: `{derived.get('post_ratio_basis', 'unknown')}`)",
             f"- observe_success_ratio_window: `{derived.get('observe_success_ratio_window', 0.0)}` (basis: `{derived.get('observe_ratio_basis', 'unknown')}`)",
             f"- observe_latency_p95_ms: `{derived.get('observe_latency_p95_ms', 0.0)}`",
+            f"- workflow_event_ratio: `{derived.get('workflow_event_ratio', 0.0)}` (basis: `{derived.get('workflow_ratio_basis', 'unknown')}`)",
+            f"- tool_result_capture_rate: `{derived.get('tool_result_capture_rate', 0.0)}` (basis: `{derived.get('capture_ratio_basis', 'unknown')}`)",
+            f"- truncated_tool_result_ratio: `{derived.get('truncated_tool_result_ratio', 0.0)}` (basis: `{derived.get('truncation_ratio_basis', 'unknown')}`)",
+            f"- mode_shadow_ratio: `{derived.get('mode_shadow_ratio', 0.0)}`",
+            f"- observe_forwarding_enabled_ratio: `{derived.get('observe_forwarding_enabled_ratio', 0.0)}`",
             f"- window_activity_rows: `{derived.get('window_activity_rows', 0)}`",
             "",
             "## Hook Event Totals (Latest Snapshot)",

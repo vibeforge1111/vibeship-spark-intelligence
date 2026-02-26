@@ -256,6 +256,8 @@ def test_telemetry_snapshot_includes_forwarding_flags(tmp_path):
         active_files=3,
         observe_forwarding_enabled=True,
         shadow_mode_warning_emitted=False,
+        environment="dev",
+        shadow_in_production=False,
     )
 
     rows = telemetry_file.read_text(encoding="utf-8").strip().splitlines()
@@ -264,6 +266,8 @@ def test_telemetry_snapshot_includes_forwarding_flags(tmp_path):
     assert payload["mode"] == "observe"
     assert payload["observe_forwarding_enabled"] is True
     assert payload["shadow_mode_warning_emitted"] is False
+    assert payload["environment"] == "dev"
+    assert payload["shadow_in_production"] is False
 
 
 def test_emit_shadow_mode_warning_writes_event(tmp_path):
@@ -280,3 +284,59 @@ def test_emit_shadow_mode_warning_writes_event(tmp_path):
     assert payload["event"] == "startup_warning"
     assert payload["warning_code"] == "shadow_mode_active"
     assert payload["observe_forwarding_enabled"] is False
+    assert payload["environment"] == "dev"
+    assert payload["shadow_in_production"] is False
+
+
+def test_emit_shadow_mode_warning_marks_production(tmp_path):
+    telemetry_file = tmp_path / "telemetry.jsonl"
+
+    bridge._emit_shadow_mode_warning(
+        telemetry_file=telemetry_file,
+        sessions_root=Path.home() / ".codex" / "sessions",
+        environment="production",
+        warning_code="shadow_mode_in_production",
+    )
+
+    rows = telemetry_file.read_text(encoding="utf-8").strip().splitlines()
+    payload = json.loads(rows[0])
+    assert payload["warning_code"] == "shadow_mode_in_production"
+    assert payload["environment"] == "production"
+    assert payload["shadow_in_production"] is True
+
+
+def test_map_truncation_metrics_increment(monkeypatch):
+    monkeypatch.setattr(bridge, "HOOK_INPUT_TEXT_LIMIT", 5)
+    monkeypatch.setattr(bridge, "HOOK_OUTPUT_TEXT_LIMIT", 5)
+    runtime = bridge.BridgeRuntime()
+    session_id = "2026:02:26:session-trunc"
+
+    bridge.map_codex_row(
+        {
+            "timestamp": "2026-02-26T13:00:00.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "call_1",
+                "arguments": json.dumps({"cmd": "very-long-command"}),
+            },
+        },
+        session_id=session_id,
+        runtime=runtime,
+    )
+    bridge.map_codex_row(
+        {
+            "timestamp": "2026-02-26T13:00:01.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": "call_1",
+                "output": "Process exited with code 0\nthis output is very long",
+            },
+        },
+        session_id=session_id,
+        runtime=runtime,
+    )
+    assert runtime.metrics.pre_input_truncated == 1
+    assert runtime.metrics.post_output_truncated == 1
