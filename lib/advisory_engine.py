@@ -120,6 +120,10 @@ DELIVERY_STALE_SECONDS = float(os.getenv("SPARK_ADVISORY_STALE_S", "900"))
 ADVISORY_TEXT_REPEAT_COOLDOWN_S = float(
     os.getenv("SPARK_ADVISORY_TEXT_REPEAT_COOLDOWN_S", "600")
 )
+QUALITY_REPEAT_ESCAPE_ENABLED = os.getenv("SPARK_ADVISORY_REPEAT_ESCAPE", "1") != "0"
+QUALITY_REPEAT_ESCAPE_MIN_AGE_S = float(
+    os.getenv("SPARK_ADVISORY_REPEAT_ESCAPE_MIN_AGE_S", "120")
+)
 
 # Cross-session dedupe for any emitted advice_id. This reduces high-frequency spam
 # like "Always Read..." when session_id churns and per-session cooldowns can't help.
@@ -1153,10 +1157,75 @@ def _apply_emission_quality_filters(
                     continue
         kept.append(decision)
 
+    kept, suppressed = _restore_repeat_candidate_if_safe(
+        kept=kept,
+        suppressed=suppressed,
+        emitted_decisions=emitted_decisions,
+    )
+
     # LLM area: suppression_triage — classify suppressed items as fixable vs valid
     suppressed = _llm_area_suppression_triage(suppressed)
 
     return kept, suppressed
+
+
+def _restore_repeat_candidate_if_safe(
+    *,
+    kept: List[Any],
+    suppressed: List[Dict[str, Any]],
+    emitted_decisions: List[Any],
+) -> Tuple[List[Any], List[Dict[str, Any]]]:
+    """Restore one repeat-suppressed candidate when suppression is cooldown-only.
+
+    This avoids pathological no-emit loops where every candidate is blocked only
+    by repeat cooldown, while still preserving hard filters (unsafe/noise/template).
+    """
+    if kept or not suppressed or not emitted_decisions or not QUALITY_REPEAT_ESCAPE_ENABLED:
+        return kept, suppressed
+
+    # Only allow restoration when every suppression reason is repeat cooldown.
+    non_repeat = [row for row in suppressed if str(row.get("reason") or "") != "insight_repeat_cooldown"]
+    if non_repeat:
+        return kept, suppressed
+
+    min_age = max(0.0, float(QUALITY_REPEAT_ESCAPE_MIN_AGE_S))
+    by_id = {str(row.get("advice_id") or ""): row for row in suppressed}
+    candidates: List[Tuple[float, Any, Dict[str, Any]]] = []
+    for decision in list(emitted_decisions or []):
+        aid = str(getattr(decision, "advice_id", "") or "")
+        row = by_id.get(aid)
+        if not row:
+            continue
+        age_s = float(row.get("repeat_age_s") or 0.0)
+        if age_s < min_age:
+            continue
+        score = float(getattr(decision, "adjusted_score", 0.0) or 0.0)
+        candidates.append((score, decision, row))
+
+    if not candidates:
+        return kept, suppressed
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    _, winner, winner_row = candidates[0]
+    try:
+        winner.emit = True
+        winner.reason = "emission_quality_filter: repeat_escape_restored"
+    except Exception:
+        pass
+
+    kept = [winner]
+    kept_id = str(getattr(winner, "advice_id", "") or "")
+    remaining = [row for row in suppressed if str(row.get("advice_id") or "") != kept_id]
+    remaining.append(
+        {
+            "advice_id": kept_id,
+            "reason": "repeat_escape_restored",
+            "repeat_age_s": winner_row.get("repeat_age_s"),
+            "repeat_cooldown_s": winner_row.get("repeat_cooldown_s"),
+            "min_age_s": round(min_age, 2),
+        }
+    )
+    return kept, remaining
 
 
 def _duplicate_repeat_state(state, advisory_text: str) -> Dict[str, Any]:

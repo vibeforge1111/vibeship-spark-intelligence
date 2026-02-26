@@ -409,3 +409,62 @@ def test_apply_emission_quality_filters_allows_repeat_after_outcome_update():
     )
     assert len(kept) == 1
     assert suppressed == []
+
+
+def test_apply_emission_quality_filters_restores_one_repeat_candidate(monkeypatch):
+    from lib.advisor import Advice
+    from lib.advisory_gate import GateDecision
+
+    monkeypatch.setattr(advisory_engine, "QUALITY_REPEAT_ESCAPE_ENABLED", True)
+    monkeypatch.setattr(advisory_engine, "QUALITY_REPEAT_ESCAPE_MIN_AGE_S", 120.0)
+
+    advice_a = Advice(
+        advice_id="a1",
+        insight_key="reasoning:read_before_edit",
+        text="Always read before edit.",
+        confidence=0.8,
+        source="cognitive",
+        context_match=0.8,
+    )
+    advice_b = Advice(
+        advice_id="a2",
+        insight_key="reasoning:run_tests_after_edit",
+        text="Run focused tests after edit.",
+        confidence=0.85,
+        source="cognitive",
+        context_match=0.85,
+    )
+    d_a = GateDecision(
+        advice_id="a1",
+        authority="note",
+        emit=True,
+        reason="ok",
+        adjusted_score=0.62,
+        original_score=0.62,
+    )
+    d_b = GateDecision(
+        advice_id="a2",
+        authority="note",
+        emit=True,
+        reason="ok",
+        adjusted_score=0.91,
+        original_score=0.91,
+    )
+
+    now = time.time()
+    id_a = advisory_engine._repeat_identity_for_item(advice_a, advice_id="a1")
+    id_b = advisory_engine._repeat_identity_for_item(advice_b, advice_id="a2")
+    kept, suppressed = advisory_engine._apply_emission_quality_filters(
+        [d_a, d_b],
+        {"a1": advice_a, "a2": advice_b},
+        now_ts=now,
+        cooldown_s=600.0,
+        recent_identity_ts={id_a: now - 180.0, id_b: now - 240.0},
+        outcome_ts_by_insight={},
+        outcome_ts_by_advice_id={},
+    )
+
+    assert len(kept) == 1
+    assert kept[0].advice_id == "a2"
+    reasons = [str(s.get("reason") or "") for s in suppressed]
+    assert "repeat_escape_restored" in reasons
