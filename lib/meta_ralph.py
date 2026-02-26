@@ -1213,7 +1213,55 @@ class MetaRalph:
         if score.outcome_linked < 2:
             suggestions.append("Add outcome: '...which leads to [result]'")
 
+        # LLM area: meta_ralph_remediate — generate detailed fix suggestions
+        llm_suggestion = self._llm_area_meta_ralph_remediate(learning, score, issues)
+        if llm_suggestion:
+            suggestions.insert(0, llm_suggestion)
+
         return suggestions
+
+    def _llm_area_meta_ralph_remediate(
+        self, learning: str, score: "QualityScore", issues: List[str],
+    ) -> Optional[str]:
+        """LLM area: generate a specific fix for NEEDS_WORK statements."""
+        try:
+            from .llm_dispatch import llm_area_call
+            from .llm_area_prompts import format_prompt
+
+            weak_dims = []
+            if score.actionability < 2:
+                weak_dims.append("actionability")
+            if score.reasoning < 2:
+                weak_dims.append("reasoning")
+            if score.specificity < 2:
+                weak_dims.append("specificity")
+            if score.outcome_linked < 2:
+                weak_dims.append("outcome_linked")
+
+            prompt = format_prompt(
+                "meta_ralph_remediate",
+                statement=learning[:500],
+                score=str(score.total),
+                weak_dimensions=", ".join(weak_dims),
+                quality_notes="; ".join(issues[:3]),
+            )
+            result = llm_area_call("meta_ralph_remediate", prompt, fallback="")
+            if not result.used_llm or not result.text:
+                return None
+
+            import json as _json
+            try:
+                data = _json.loads(result.text)
+                fix = str(data.get("fix", "")).strip()
+                if fix:
+                    return f"[LLM] {fix}"
+            except (ValueError, TypeError):
+                # Non-JSON response — use as plain suggestion
+                if len(result.text) > 10:
+                    return f"[LLM] {result.text[:200]}"
+            return None
+        except Exception:
+            return None
 
     @staticmethod
     def _refinement_rank(score: QualityScore) -> tuple[int, int]:

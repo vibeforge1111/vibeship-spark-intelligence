@@ -22,6 +22,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from .noise_patterns import is_session_boilerplate
+
 
 @dataclass
 class AdvisoryQuality:
@@ -406,6 +408,9 @@ def should_suppress(text: str, dims: Dict[str, float], structure: Dict[str, Opti
     text_stripped = text.strip()
     text_lower = text_stripped.lower()
 
+    if is_session_boilerplate(text_stripped):
+        return True, "session_boilerplate"
+
     # Prefix-based suppression (observations, not advice)
     for prefix in _SUPPRESS_PREFIXES:
         if text_stripped.startswith(prefix):
@@ -439,6 +444,19 @@ def should_suppress(text: str, dims: Dict[str, float], structure: Dict[str, Opti
         else:
             return True, "no_action_no_reasoning"
 
+    # Operationalizability gate: require explicit action plus one of
+    # condition/reasoning/outcome so retrieval can produce actionable advice later.
+    has_action = bool(structure.get("action")) or dims.get("actionability", 0) >= 0.5
+    has_support = (
+        bool(structure.get("condition"))
+        or dims.get("reasoning", 0) >= 0.5
+        or dims.get("outcome_linked", 0) >= 0.5
+    )
+    if not has_action:
+        return True, "missing_action_structure"
+    if not has_support:
+        return True, "missing_condition_reason_or_outcome"
+
     # Tautology: actionable but no condition, reasoning, outcome, OR specificity
     if dims.get("actionability", 0) >= 0.5:
         has_condition = bool(structure.get("condition"))
@@ -456,6 +474,27 @@ def should_suppress(text: str, dims: Dict[str, float], structure: Dict[str, Opti
         return True, f"unified_score_too_low:{unified:.2f}"
 
     return False, ""
+
+
+def _llm_area_reasoning_patch(text: str, reasoning_score: float) -> Optional[str]:
+    """LLM area: patch weak reasoning chains in a statement."""
+    try:
+        from .llm_dispatch import llm_area_call
+        from .llm_area_prompts import format_prompt
+
+        issue = "lacks causal reasoning" if reasoning_score == 0.0 else "weak reasoning chain"
+        prompt = format_prompt(
+            "reasoning_patch",
+            statement=text[:500],
+            reasoning_score=str(reasoning_score),
+            issue=issue,
+        )
+        result = llm_area_call("reasoning_patch", prompt, fallback=text)
+        if result.used_llm and result.text and result.text != text:
+            return result.text
+        return None
+    except Exception:
+        return None
 
 
 def transform_for_advisory(
@@ -501,6 +540,16 @@ def transform_for_advisory(
             "specificity": _score_specificity(text),
             "outcome_linked": _score_outcome_linked(text),
         }
+
+    # LLM area: reasoning_patch — improve weak reasoning before scoring
+    if dims["reasoning"] < 0.5:
+        patched = _llm_area_reasoning_patch(text, dims["reasoning"])
+        if patched and patched != text:
+            # Re-score reasoning on the patched text
+            new_reasoning = _score_reasoning(patched)
+            if new_reasoning > dims["reasoning"]:
+                text = patched
+                dims["reasoning"] = new_reasoning
 
     # Compute unified score
     unified = _compute_unified_score(dims)
