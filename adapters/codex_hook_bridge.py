@@ -31,6 +31,8 @@ DEFAULT_TELEMETRY_FILE = Path.home() / ".spark" / "logs" / "codex_hook_bridge_te
 DEFAULT_LOCK_FILE = STATE_DIR / "codex_hook_bridge.lock"
 DEFAULT_CODEX_SESSIONS_ROOT = Path.home() / ".codex" / "sessions"
 DEFAULT_OBSERVE_PATH = Path(__file__).resolve().parent.parent / "hooks" / "observe.py"
+DEFAULT_WORKFLOW_REPORT_DIR = Path.home() / ".spark" / "workflow_reports" / "codex"
+TOOL_RESULT_REF_DIR = Path.home() / ".spark" / "workflow_refs" / "codex_tool_results"
 
 
 def _env_int(name: str, default: int, lo: int, hi: int) -> int:
@@ -62,6 +64,8 @@ def _is_production_environment(value: Any) -> bool:
 HOOK_INPUT_TEXT_LIMIT = _env_int("SPARK_CODEX_HOOK_INPUT_TEXT_LIMIT", 6000, 500, 50000)
 HOOK_OUTPUT_TEXT_LIMIT = _env_int("SPARK_CODEX_HOOK_OUTPUT_TEXT_LIMIT", 12000, 500, 100000)
 PENDING_CALL_TTL_S = 1800
+WORKFLOW_SUMMARY_ENABLED = _env_bool("SPARK_CODEX_WORKFLOW_SUMMARY_ENABLED", True)
+WORKFLOW_SUMMARY_MIN_INTERVAL_S = _env_int("SPARK_CODEX_WORKFLOW_SUMMARY_MIN_INTERVAL_S", 120, 10, 86400)
 
 
 def _now() -> float:
@@ -203,6 +207,165 @@ def _truncate_text(value: str, limit: int) -> Dict[str, Any]:
         "len": len(text),
         "hash": hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest(),
     }
+
+
+def _persist_tool_result_reference(text: str, ref_dir: Path = TOOL_RESULT_REF_DIR) -> Dict[str, Any] | None:
+    raw = str(text or "")
+    if not raw:
+        return None
+    try:
+        digest = hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        path = ref_dir / f"{digest}.txt"
+        if not path.exists():
+            path.write_text(raw, encoding="utf-8")
+        return {"tool_result_hash": digest, "tool_result_ref": str(path)}
+    except Exception:
+        return None
+
+
+def _extract_paths_from_tool_input(tool_input: Any) -> List[str]:
+    if not isinstance(tool_input, dict):
+        return []
+    paths: List[str] = []
+    direct_keys = ("file_path", "path", "cwd", "workdir", "directory", "target_path", "destination")
+    for key in direct_keys:
+        value = tool_input.get(key)
+        if isinstance(value, str) and value.strip():
+            paths.append(value.strip())
+    list_value = tool_input.get("paths")
+    if isinstance(list_value, list):
+        for row in list_value:
+            if isinstance(row, str) and row.strip():
+                paths.append(row.strip())
+    return paths
+
+
+def _new_workflow_summary(session_id: str, session_file: Path) -> Dict[str, Any]:
+    return {
+        "session_id": str(session_id),
+        "session_file": str(session_file),
+        "rows_processed": 0,
+        "event_count": 0,
+        "tool_events": 0,
+        "tool_calls": 0,
+        "tool_results": 0,
+        "tool_successes": 0,
+        "tool_failures": 0,
+        "tools": {},
+        "files_touched": set(),
+        "tool_failure_tools": set(),
+        "tool_success_tools": set(),
+        "window_start_ts": None,
+        "window_end_ts": None,
+    }
+
+
+def _accumulate_workflow_summary(summary: Dict[str, Any], events: List[Dict[str, Any]]) -> None:
+    if not isinstance(summary, dict) or not isinstance(events, list):
+        return
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        summary["event_count"] += 1
+        evt_ts = evt.get("ts")
+        if isinstance(evt_ts, (int, float)):
+            if summary["window_start_ts"] is None:
+                summary["window_start_ts"] = float(evt_ts)
+            summary["window_end_ts"] = float(evt_ts)
+
+        if str(evt.get("hook_event_name") or "") not in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
+            continue
+
+        summary["tool_events"] += 1
+        tool_name = str(evt.get("tool_name") or "unknown_tool")
+        tools = summary["tools"]
+        tools[tool_name] = int(tools.get(tool_name, 0)) + 1
+
+        for path in _extract_paths_from_tool_input(evt.get("tool_input")):
+            summary["files_touched"].add(path)
+
+        hook = str(evt.get("hook_event_name") or "")
+        if hook == "PreToolUse":
+            summary["tool_calls"] += 1
+        elif hook == "PostToolUse":
+            summary["tool_results"] += 1
+            summary["tool_successes"] += 1
+            summary["tool_success_tools"].add(tool_name)
+        elif hook == "PostToolUseFailure":
+            summary["tool_results"] += 1
+            summary["tool_failures"] += 1
+            summary["tool_failure_tools"].add(tool_name)
+
+
+def _materialize_workflow_summary(summary: Dict[str, Any], *, ts: float) -> Dict[str, Any] | None:
+    if not isinstance(summary, dict):
+        return None
+    tool_events = int(summary.get("tool_events") or 0)
+    if tool_events <= 0:
+        return None
+    tool_results = int(summary.get("tool_results") or 0)
+    tool_successes = int(summary.get("tool_successes") or 0)
+    confidence = 0.0
+    if tool_results > 0:
+        confidence = round(tool_successes / float(tool_results), 3)
+    elif int(summary.get("tool_calls") or 0) > 0:
+        confidence = 0.5
+
+    tools = summary.get("tools") if isinstance(summary.get("tools"), dict) else {}
+    top_tools = [
+        {"tool_name": name, "count": int(count)}
+        for name, count in sorted(tools.items(), key=lambda row: (-int(row[1]), row[0]))[:10]
+    ]
+    failures = summary.get("tool_failure_tools") if isinstance(summary.get("tool_failure_tools"), set) else set()
+    successes = summary.get("tool_success_tools") if isinstance(summary.get("tool_success_tools"), set) else set()
+    recovery_tools = sorted(failures.intersection(successes))
+    files_touched = summary.get("files_touched") if isinstance(summary.get("files_touched"), set) else set()
+
+    return {
+        "kind": "workflow_summary",
+        "provider": "codex",
+        "ts": float(ts),
+        "session_id": summary.get("session_id"),
+        "session_file": summary.get("session_file"),
+        "rows_processed": int(summary.get("rows_processed") or 0),
+        "event_count": int(summary.get("event_count") or 0),
+        "tool_events": int(summary.get("tool_events") or 0),
+        "tool_calls": int(summary.get("tool_calls") or 0),
+        "tool_results": int(summary.get("tool_results") or 0),
+        "tool_successes": int(summary.get("tool_successes") or 0),
+        "tool_failures": int(summary.get("tool_failures") or 0),
+        "top_tools": top_tools,
+        "files_touched": sorted(files_touched)[:50],
+        "recovery_tools": recovery_tools,
+        "outcome_confidence": confidence,
+        "window_start_ts": summary.get("window_start_ts"),
+        "window_end_ts": summary.get("window_end_ts"),
+    }
+
+
+def _write_workflow_summary_report(
+    *,
+    report_dir: Path,
+    summary: Dict[str, Any],
+    verbose: bool = False,
+) -> Path | None:
+    payload = _materialize_workflow_summary(summary, ts=_now())
+    if not payload:
+        return None
+    try:
+        report_dir.mkdir(parents=True, exist_ok=True)
+        suffix = _short_hash(str(payload.get("session_id") or "session"))[:8]
+        filename = f"workflow_{int(_now() * 1000)}_{suffix}.json"
+        path = report_dir / filename
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        if verbose:
+            print(f"[codex_hook_bridge] wrote workflow summary {path}", flush=True)
+        return path
+    except Exception as exc:
+        if verbose:
+            print(f"[codex_hook_bridge] workflow summary write failed: {exc}", flush=True)
+        return None
 
 
 def _normalize_tool_input(raw_input: Any) -> Dict[str, Any]:
@@ -570,6 +733,11 @@ def map_codex_row(
             normalized_output = _truncate_text(output_text, HOOK_OUTPUT_TEXT_LIMIT)
             if bool(normalized_output.get("truncated")):
                 runtime.metrics.post_output_truncated += 1
+            result_ref: Dict[str, Any] = {}
+            if bool(normalized_output.get("truncated")):
+                persisted = _persist_tool_result_reference(output_text)
+                if isinstance(persisted, dict):
+                    result_ref = persisted
             is_failure = False
             unknown_exit = False
 
@@ -594,6 +762,14 @@ def map_codex_row(
                     "tool_input": tool_input,
                     "tool_error": normalized_output["text"],
                 }
+                if normalized_output.get("truncated"):
+                    event["tool_error_truncated"] = True
+                if normalized_output.get("len") is not None:
+                    event["tool_error_len"] = int(normalized_output.get("len") or 0)
+                if normalized_output.get("hash"):
+                    event["tool_error_hash"] = normalized_output.get("hash")
+                if result_ref:
+                    event.update(result_ref)
             else:
                 event = {
                     "hook_event_name": "PostToolUse",
@@ -604,6 +780,14 @@ def map_codex_row(
                     "tool_input": tool_input,
                     "tool_result": normalized_output["text"],
                 }
+                if normalized_output.get("truncated"):
+                    event["tool_result_truncated"] = True
+                if normalized_output.get("len") is not None:
+                    event["tool_result_len"] = int(normalized_output.get("len") or 0)
+                if normalized_output.get("hash"):
+                    event["tool_result_hash"] = normalized_output.get("hash")
+                if result_ref:
+                    event.update(result_ref)
             if ctx.cwd:
                 event["cwd"] = ctx.cwd
             if unknown_exit:
@@ -684,6 +868,7 @@ def run_bridge(args: argparse.Namespace) -> int:
     telemetry_file = Path(args.telemetry_file).expanduser()
     observe_path = Path(args.observe_path).expanduser()
     lock_file = Path(args.lock_file).expanduser()
+    workflow_report_dir = Path(args.workflow_report_dir).expanduser()
 
     if not sessions_root.exists():
         raise SystemExit(f"No Codex sessions root at {sessions_root}")
@@ -697,6 +882,11 @@ def run_bridge(args: argparse.Namespace) -> int:
     shadow_in_production = bool(mode == "shadow" and _is_production_environment(environment))
     observe_forwarding_enabled = mode == "observe"
     shadow_mode_warning_emitted = False
+    workflow_summary_enabled = bool(WORKFLOW_SUMMARY_ENABLED and not bool(args.no_workflow_summary))
+    workflow_summary_min_interval_s = max(
+        10, min(86400, int(args.workflow_summary_min_interval_s or WORKFLOW_SUMMARY_MIN_INTERVAL_S))
+    )
+    workflow_last_emit_ts: Dict[str, float] = {}
 
     _acquire_singleton_lock(lock_file, mode=mode)
     try:
@@ -763,6 +953,7 @@ def run_bridge(args: argparse.Namespace) -> int:
                 session_id = _session_key(sessions_root, session_file)
                 consumed = 0
                 batch = new_lines[: max(1, int(args.max_per_tick))]
+                workflow_summary = _new_workflow_summary(session_id, session_file)
                 for line in batch:
                     consumed += 1
                     try:
@@ -774,6 +965,7 @@ def run_bridge(args: argparse.Namespace) -> int:
                     events = map_codex_row(row, session_id=session_id, runtime=runtime)
                     if not events:
                         continue
+                    _accumulate_workflow_summary(workflow_summary, events)
 
                     if mode == "observe":
                         for event in events:
@@ -789,6 +981,23 @@ def run_bridge(args: argparse.Namespace) -> int:
 
                 state.set_offset(file_key, off + consumed)
                 state.save()
+
+                workflow_summary["rows_processed"] = int(consumed)
+                if (
+                    workflow_summary_enabled
+                    and consumed > 0
+                    and int(workflow_summary.get("tool_events") or 0) > 0
+                ):
+                    now_ts = _now()
+                    last_emit = float(workflow_last_emit_ts.get(session_id) or 0.0)
+                    if (now_ts - last_emit) >= float(workflow_summary_min_interval_s):
+                        path = _write_workflow_summary_report(
+                            report_dir=workflow_report_dir,
+                            summary=workflow_summary,
+                            verbose=args.verbose,
+                        )
+                        if path is not None:
+                            workflow_last_emit_ts[session_id] = now_ts
 
             runtime.prune_pending_calls()
             _write_telemetry_snapshot(
@@ -820,6 +1029,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--observe-path", default=str(DEFAULT_OBSERVE_PATH), help="Path to hooks/observe.py")
     ap.add_argument("--observe-timeout-s", type=float, default=8.0, help="observe.py timeout per event")
     ap.add_argument("--unknown-exit-policy", default="success", choices=["success", "failure", "skip"], help="How to classify outputs when exit code is unknown")
+    ap.add_argument("--workflow-report-dir", default=str(DEFAULT_WORKFLOW_REPORT_DIR), help="Directory for codex workflow summary reports")
+    ap.add_argument("--workflow-summary-min-interval-s", type=int, default=WORKFLOW_SUMMARY_MIN_INTERVAL_S, help="Min seconds between workflow summary emissions per session")
+    ap.add_argument("--no-workflow-summary", action="store_true", help="Disable workflow summary report emission")
     ap.add_argument("--environment", default=str(os.environ.get("SPARK_ENV") or "dev"), help="Bridge environment tag (dev/staging/prod)")
     ap.add_argument("--fail-on-shadow-prod", action="store_true", default=_env_bool("SPARK_CODEX_FAIL_ON_SHADOW_PROD", False), help="Exit if mode=shadow and environment is production")
     ap.add_argument("--lock-file", default=str(DEFAULT_LOCK_FILE), help="Singleton lock file path")

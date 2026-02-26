@@ -340,3 +340,94 @@ def test_map_truncation_metrics_increment(monkeypatch):
     )
     assert runtime.metrics.pre_input_truncated == 1
     assert runtime.metrics.post_output_truncated == 1
+
+
+def test_persist_tool_result_reference(tmp_path, monkeypatch):
+    monkeypatch.setattr(bridge, "TOOL_RESULT_REF_DIR", tmp_path / "refs")
+    out = bridge._persist_tool_result_reference("hello world")
+    assert out is not None
+    assert out["tool_result_hash"]
+    ref_path = Path(out["tool_result_ref"])
+    assert ref_path.exists()
+    assert ref_path.read_text(encoding="utf-8") == "hello world"
+
+
+def test_map_output_includes_truncation_metadata_and_ref(monkeypatch):
+    monkeypatch.setattr(bridge, "HOOK_OUTPUT_TEXT_LIMIT", 5)
+    monkeypatch.setattr(
+        bridge,
+        "_persist_tool_result_reference",
+        lambda text: {"tool_result_hash": "abc123", "tool_result_ref": "/tmp/out.txt"},
+    )
+    runtime = bridge.BridgeRuntime()
+    session_id = "2026:02:26:session-meta"
+    bridge.map_codex_row(
+        {
+            "timestamp": "2026-02-26T13:10:00.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "call_meta",
+                "arguments": json.dumps({"cmd": "echo hello"}),
+            },
+        },
+        session_id=session_id,
+        runtime=runtime,
+    )
+    events = bridge.map_codex_row(
+        {
+            "timestamp": "2026-02-26T13:10:01.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": "call_meta",
+                "output": "Process exited with code 0\nlong-output-value",
+            },
+        },
+        session_id=session_id,
+        runtime=runtime,
+    )
+    evt = events[0]
+    assert evt["hook_event_name"] == "PostToolUse"
+    assert evt["tool_result_truncated"] is True
+    assert evt["tool_result_hash"] == "abc123"
+    assert evt["tool_result_ref"] == "/tmp/out.txt"
+
+
+def test_workflow_summary_materializes_recovery_and_paths():
+    summary = bridge._new_workflow_summary("session-1", Path("s.jsonl"))
+    events = [
+        {
+            "hook_event_name": "PreToolUse",
+            "ts": 1.0,
+            "tool_name": "Read",
+            "tool_input": {"file_path": "README.md"},
+        },
+        {
+            "hook_event_name": "PostToolUseFailure",
+            "ts": 2.0,
+            "tool_name": "Bash",
+            "tool_input": {"cwd": "C:/repo"},
+            "tool_error": "failed",
+        },
+        {
+            "hook_event_name": "PostToolUse",
+            "ts": 3.0,
+            "tool_name": "Bash",
+            "tool_input": {"cwd": "C:/repo"},
+            "tool_result": "ok",
+        },
+    ]
+    bridge._accumulate_workflow_summary(summary, events)
+    summary["rows_processed"] = 3
+    out = bridge._materialize_workflow_summary(summary, ts=1234.0)
+    assert out is not None
+    assert out["provider"] == "codex"
+    assert out["tool_events"] == 3
+    assert out["tool_calls"] == 1
+    assert out["tool_results"] == 2
+    assert out["tool_failures"] == 1
+    assert out["tool_successes"] == 1
+    assert out["recovery_tools"] == ["Bash"]
+    assert "README.md" in out["files_touched"]

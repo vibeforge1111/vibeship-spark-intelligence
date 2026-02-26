@@ -63,6 +63,16 @@ Default payload capture limits (relaxed for context retention):
 - input/tool args: `6000` chars (`SPARK_CODEX_HOOK_INPUT_TEXT_LIMIT`)
 - tool output: `12000` chars (`SPARK_CODEX_HOOK_OUTPUT_TEXT_LIMIT`)
 
+Summary/reference lane:
+- truncated tool outputs persist full text refs under:
+  - `~/.spark/workflow_refs/codex_tool_results/<sha256>.txt`
+- compact workflow summaries are emitted to:
+  - `~/.spark/workflow_reports/codex/workflow_<ts>_<session-hash>.json`
+- summary controls:
+  - `--workflow-report-dir`
+  - `--workflow-summary-min-interval-s`
+  - `--no-workflow-summary`
+
 ## Hypothesis Gates
 
 Gate A (shadow stability), run across multiple sessions:
@@ -89,6 +99,12 @@ Generate Codex hook gate report + Obsidian page (`codex_hooks.md`):
 
 ```bash
 python3 scripts/codex_hooks_observatory.py --window-minutes 60
+```
+
+Generate cross-provider workflow fidelity report (`openclaw` + `claude` + `codex`):
+
+```bash
+python3 scripts/workflow_fidelity_observatory.py --window-minutes 60
 ```
 
 Stateful alerting (warning/critical across windows) uses:

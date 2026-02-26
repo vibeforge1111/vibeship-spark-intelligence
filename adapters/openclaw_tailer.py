@@ -62,6 +62,14 @@ HEARTBEAT_PATH = Path(
     os.environ.get("SPARK_OPENCLAW_HEARTBEAT_PATH")
     or (Path.home() / ".spark" / "logs" / "openclaw_tailer_heartbeat.jsonl")
 )
+TELEMETRY_PATH = Path(
+    os.environ.get("SPARK_OPENCLAW_TELEMETRY_PATH")
+    or (Path.home() / ".spark" / "logs" / "openclaw_tailer_telemetry.jsonl")
+)
+TELEMETRY_EVERY_SECONDS = max(
+    5,
+    int(float(os.environ.get("SPARK_OPENCLAW_TELEMETRY_SECONDS", "30"))),
+)
 
 
 def _as_bool(value, default: bool) -> bool:
@@ -165,6 +173,83 @@ def _append_jsonl(path: Path, row: dict):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _new_fidelity_metrics() -> dict:
+    return {
+        "rows_seen": 0,
+        "rows_skipped_filter": 0,
+        "json_decode_errors": 0,
+        "events_posted": 0,
+        "tool_events": 0,
+        "tool_calls": 0,
+        "tool_results": 0,
+        "tool_result_truncated": 0,
+        "hook_rows_seen": 0,
+        "hook_rows_ignored": 0,
+        "hook_json_decode_errors": 0,
+        "hook_events_posted": 0,
+        "report_files_seen": 0,
+        "report_json_decode_errors": 0,
+        "report_events_posted": 0,
+    }
+
+
+def _fidelity_derived(metrics: dict) -> dict:
+    rows_seen = max(1, int(metrics.get("rows_seen", 0)))
+    events_posted = max(1, int(metrics.get("events_posted", 0)))
+    tool_calls = max(1, int(metrics.get("tool_calls", 0)))
+    tool_results = max(1, int(metrics.get("tool_results", 0)))
+
+    return {
+        "workflow_event_ratio": round(int(metrics.get("tool_events", 0)) / float(events_posted), 4),
+        "tool_result_capture_rate": round(int(metrics.get("tool_results", 0)) / float(tool_calls), 4),
+        "truncated_tool_result_ratio": round(
+            int(metrics.get("tool_result_truncated", 0)) / float(tool_results), 4
+        ),
+        "skipped_by_filter_ratio": round(
+            int(metrics.get("rows_skipped_filter", 0)) / float(rows_seen), 4
+        ),
+        "mode_shadow_ratio": 0.0,
+    }
+
+
+def _track_posted_event(metrics: dict, evt: dict) -> None:
+    if not isinstance(metrics, dict) or not isinstance(evt, dict):
+        return
+    metrics["events_posted"] = int(metrics.get("events_posted", 0)) + 1
+    if str(evt.get("kind") or "") != "tool":
+        return
+    metrics["tool_events"] = int(metrics.get("tool_events", 0)) + 1
+    payload = evt.get("payload") if isinstance(evt.get("payload"), dict) else {}
+    is_result = ("tool_result" in payload) or ("is_error" in payload)
+    if is_result:
+        metrics["tool_results"] = int(metrics.get("tool_results", 0)) + 1
+        if payload.get("tool_result_truncated"):
+            metrics["tool_result_truncated"] = int(metrics.get("tool_result_truncated", 0)) + 1
+    else:
+        metrics["tool_calls"] = int(metrics.get("tool_calls", 0)) + 1
+
+
+def _write_fidelity_snapshot(
+    *,
+    telemetry_path: Path,
+    agent: str,
+    active_sessions: int,
+    metrics: dict,
+    include_subagents: bool,
+) -> None:
+    row = {
+        "ts": time.time(),
+        "adapter": "openclaw_tailer",
+        "agent": str(agent),
+        "include_subagents": bool(include_subagents),
+        "active_sessions": int(active_sessions),
+        "mode": "ingest",
+        "metrics": {k: int(v) for k, v in (metrics or {}).items()},
+        "derived": _fidelity_derived(metrics or {}),
+    }
+    _append_jsonl(telemetry_path, row)
 
 
 def _post_json(url: str, payload: dict, token: str = None):
@@ -646,7 +731,13 @@ def _find_latest_session(agent_dir: Path):
 # Self-report watcher
 # ---------------------------------------------------------------------------
 
-def _scan_reports(report_dir: Path, sparkd_url: str, token: str = None, verbose: bool = False):
+def _scan_reports(
+    report_dir: Path,
+    sparkd_url: str,
+    token: str = None,
+    verbose: bool = False,
+    telemetry: dict | None = None,
+):
     """Scan report_dir for new self-report JSON files, ingest them, then archive."""
     if not report_dir.exists():
         return 0
@@ -660,9 +751,15 @@ def _scan_reports(report_dir: Path, sparkd_url: str, token: str = None, verbose:
         report_files.append(f)
 
     for f in sorted(report_files):
+        if isinstance(telemetry, dict):
+            telemetry["report_files_seen"] = int(telemetry.get("report_files_seen", 0)) + 1
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
         except Exception as e:
+            if isinstance(telemetry, dict):
+                telemetry["report_json_decode_errors"] = int(
+                    telemetry.get("report_json_decode_errors", 0)
+                ) + 1
             if verbose:
                 print(f"[openclaw_tailer] bad report file {f.name}: {e}", flush=True)
             continue
@@ -704,6 +801,9 @@ def _scan_reports(report_dir: Path, sparkd_url: str, token: str = None, verbose:
                 pass
 
         count += 1
+        if isinstance(telemetry, dict):
+            telemetry["report_events_posted"] = int(telemetry.get("report_events_posted", 0)) + 1
+            _track_posted_event(telemetry, evt)
         if verbose:
             print(f"[openclaw_tailer] ingested report {f.name} ({report_kind})", flush=True)
 
@@ -830,6 +930,7 @@ def _scan_hook_events(
     max_per_tick: int = 50,
     backfill: bool = False,
     verbose: bool = False,
+    telemetry: dict | None = None,
 ):
     """Scan hook spool JSONL file and ingest mapped events."""
     if not hook_file.exists():
@@ -861,14 +962,22 @@ def _scan_hook_events(
     batch = new_lines[:batch_size]
     sent = 0
     for line in batch:
+        if isinstance(telemetry, dict):
+            telemetry["hook_rows_seen"] = int(telemetry.get("hook_rows_seen", 0)) + 1
         try:
             row = json.loads(line)
         except Exception:
+            if isinstance(telemetry, dict):
+                telemetry["hook_json_decode_errors"] = int(
+                    telemetry.get("hook_json_decode_errors", 0)
+                ) + 1
             sent += 1
             continue
 
         evt = _parse_hook_event_row(row)
         if evt is None:
+            if isinstance(telemetry, dict):
+                telemetry["hook_rows_ignored"] = int(telemetry.get("hook_rows_ignored", 0)) + 1
             sent += 1
             continue
 
@@ -878,6 +987,9 @@ def _scan_hook_events(
             if verbose:
                 print(f"[openclaw_tailer] hook POST error: {e}", flush=True)
             break
+        if isinstance(telemetry, dict):
+            telemetry["hook_events_posted"] = int(telemetry.get("hook_events_posted", 0)) + 1
+            _track_posted_event(telemetry, evt)
         sent += 1
 
     state.set_offset(file_key, off + sent)
@@ -979,7 +1091,9 @@ def main():
     last_send_ts = None
     last_session_file = None
     last_workflow_summary_emit = {}
+    fidelity_metrics = _new_fidelity_metrics()
     next_hb_ts = time.time() if HEARTBEAT_ENABLED else None
+    next_telemetry_ts = time.time() + TELEMETRY_EVERY_SECONDS
     if HEARTBEAT_ENABLED:
         _append_jsonl(HEARTBEAT_PATH, {
             "ts": time.time(),
@@ -1003,6 +1117,15 @@ def main():
             if not sessions:
                 if args.verbose:
                     print("[openclaw_tailer] no session files found", flush=True)
+                if time.time() >= next_telemetry_ts:
+                    _write_fidelity_snapshot(
+                        telemetry_path=TELEMETRY_PATH,
+                        agent=args.agent,
+                        active_sessions=0,
+                        metrics=fidelity_metrics,
+                        include_subagents=include_subagents,
+                    )
+                    next_telemetry_ts = time.time() + TELEMETRY_EVERY_SECONDS
                 time.sleep(args.poll)
                 continue
 
@@ -1032,6 +1155,7 @@ def main():
                     )
                     try:
                         _post_json(sparkd_url.rstrip("/") + "/ingest", boundary_evt, token=token)
+                        _track_posted_event(fidelity_metrics, boundary_evt)
                         if args.verbose:
                             print(f"[openclaw_tailer] new session detected: {session_key}", flush=True)
                     except Exception as e:
@@ -1057,9 +1181,13 @@ def main():
 
                 sent = 0
                 for line in batch:
+                    fidelity_metrics["rows_seen"] = int(fidelity_metrics.get("rows_seen", 0)) + 1
                     try:
                         obj = json.loads(line)
                     except Exception:
+                        fidelity_metrics["json_decode_errors"] = int(
+                            fidelity_metrics.get("json_decode_errors", 0)
+                        ) + 1
                         evt = _event(
                             trace_id=_hash(line),
                             session_id=session_key,
@@ -1070,6 +1198,7 @@ def main():
                         )
                         try:
                             _post_json(sparkd_url.rstrip("/") + "/ingest", evt, token=token)
+                            _track_posted_event(fidelity_metrics, evt)
                         except Exception as post_err:
                             if args.verbose:
                                 print(f"[openclaw_tailer] POST error: {post_err}", flush=True)
@@ -1078,6 +1207,9 @@ def main():
                         continue
 
                     if _should_skip_event(obj):
+                        fidelity_metrics["rows_skipped_filter"] = int(
+                            fidelity_metrics.get("rows_skipped_filter", 0)
+                        ) + 1
                         sent += 1
                         continue
 
@@ -1096,6 +1228,7 @@ def main():
                     for evt in events:
                         try:
                             _post_json(sparkd_url.rstrip("/") + "/ingest", evt, token=token)
+                            _track_posted_event(fidelity_metrics, evt)
                         except Exception as post_err:
                             if args.verbose:
                                 print(f"[openclaw_tailer] POST error: {post_err}", flush=True)
@@ -1143,16 +1276,33 @@ def main():
                 max_per_tick=args.max_per_tick,
                 backfill=args.backfill,
                 verbose=args.verbose,
+                telemetry=fidelity_metrics,
             )
 
             state.save()
 
             # --- Scan self-reports ---
             try:
-                _scan_reports(report_dir, sparkd_url, token=token, verbose=args.verbose)
+                _scan_reports(
+                    report_dir,
+                    sparkd_url,
+                    token=token,
+                    verbose=args.verbose,
+                    telemetry=fidelity_metrics,
+                )
             except Exception as e:
                 if args.verbose:
                     print(f"[openclaw_tailer] report scan error: {e}", flush=True)
+
+            if time.time() >= next_telemetry_ts:
+                _write_fidelity_snapshot(
+                    telemetry_path=TELEMETRY_PATH,
+                    agent=args.agent,
+                    active_sessions=len(sessions),
+                    metrics=fidelity_metrics,
+                    include_subagents=include_subagents,
+                )
+                next_telemetry_ts = time.time() + TELEMETRY_EVERY_SECONDS
 
             # --- Optional integration heartbeat ---
             if HEARTBEAT_ENABLED and next_hb_ts is not None and time.time() >= next_hb_ts:

@@ -72,6 +72,13 @@ File: `hooks/observe.py`
 Claude Code can call this hook on tool events.
 This is great for IDE-style tool telemetry.
 
+Telemetry + workflow lane surfaces:
+- `~/.spark/logs/observe_hook_telemetry.jsonl`
+- truncated tool output refs:
+  - `~/.spark/workflow_refs/claude_tool_results/<sha256>.txt`
+- workflow summaries on session end:
+  - `~/.spark/workflow_reports/claude/workflow_<ts>_<session-hash>.json`
+
 ### 3) Universal stdin adapter (local)
 
 File: `adapters/stdin_ingest.py`
@@ -116,6 +123,12 @@ python3 adapters/codex_hook_bridge.py --mode shadow --poll 2 --max-per-tick 200
 Telemetry is written to:
 - `~/.spark/logs/codex_hook_bridge_telemetry.jsonl`
 
+Summary/reference lane:
+- truncated tool output refs:
+  - `~/.spark/workflow_refs/codex_tool_results/<sha256>.txt`
+- workflow summaries:
+  - `~/.spark/workflow_reports/codex/workflow_<ts>_<session-hash>.json`
+
 ### 5) OpenClaw tailer capture policy + workflow summary lane
 
 File: `adapters/openclaw_tailer.py`
@@ -135,6 +148,8 @@ Additional behavior:
   - `~/.spark/workflow_refs/openclaw_tool_results/<sha256>.txt`
 - Workflow summaries are emitted as report artifacts under:
   - `<report_dir>/workflow/workflow_<ts>_<session-hash>.json`
+- Fidelity telemetry snapshots are written to:
+  - `~/.spark/logs/openclaw_tailer_telemetry.jsonl`
 - Report ingestion scans subdirectories recursively and archives processed reports into sibling `.processed/` folders.
 
 Runtime override example (`~/.spark/tuneables.json`):

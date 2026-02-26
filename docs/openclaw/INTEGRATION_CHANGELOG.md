@@ -26,6 +26,9 @@ This log tracks Spark x OpenClaw integration changes that should be easy to audi
   - `skip_successful_tool_results: false`
   - `max_tool_result_chars: 6000`
   - `keep_large_tool_results_on_error_only: false`
+- Added OpenClaw fidelity telemetry snapshots:
+  - `~/.spark/logs/openclaw_tailer_telemetry.jsonl`
+  - includes workflow/capture ratios and skip/truncation counters.
 - Added tests for recursive workflow report ingest, large-output references, and summary materialization.
 
 ## 2026-02-18

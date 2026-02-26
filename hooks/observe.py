@@ -92,6 +92,13 @@ ADVICE_FEEDBACK_MIN_S = int(_hook_cfg.get("advice_feedback_min_s", 600))
 PRETOOL_BUDGET_MS = float(_hook_cfg.get("pretool_budget_ms", 2500.0))
 EIDOS_ENFORCE_BLOCK = bool(_hook_cfg.get("eidos_enforce_block", False))
 HOOK_PAYLOAD_TEXT_LIMIT = int(_hook_cfg.get("hook_payload_text_limit", 6000))
+OBSERVE_TELEMETRY_FILE = Path(
+    os.environ.get("SPARK_OBSERVE_TELEMETRY_FILE")
+    or (Path.home() / ".spark" / "logs" / "observe_hook_telemetry.jsonl")
+)
+OBSERVE_TELEMETRY_ENABLED = str(
+    os.environ.get("SPARK_OBSERVE_TELEMETRY", "1")
+).strip().lower() not in ("0", "false", "no", "off")
 _OUTCOME_CHECKIN_ENABLED = bool(_hook_cfg.get("outcome_checkin_enabled", False))
 _OUTCOME_CHECKIN_PROMPT = bool(_hook_cfg.get("outcome_checkin_prompt", False))
 
@@ -99,6 +106,12 @@ _OUTCOME_CHECKIN_PROMPT = bool(_hook_cfg.get("outcome_checkin_prompt", False))
 # Track which tools failed in this session so we can detect recovery patterns.
 # Recovery = tool fails, then succeeds later = advice may have helped.
 FAILURE_TRACKING_FILE = Path.home() / ".spark" / "session_failures.json"
+CLAUDE_TOOL_RESULT_REF_DIR = Path.home() / ".spark" / "workflow_refs" / "claude_tool_results"
+CLAUDE_WORKFLOW_SUMMARY_DIR = Path.home() / ".spark" / "workflow_reports" / "claude"
+CLAUDE_WORKFLOW_SUMMARY_STATE_DIR = CLAUDE_WORKFLOW_SUMMARY_DIR / "_state"
+CLAUDE_WORKFLOW_SUMMARY_MIN_INTERVAL_S = max(
+    10, int(os.environ.get("SPARK_CLAUDE_WORKFLOW_SUMMARY_MIN_INTERVAL_S", "120"))
+)
 
 
 def record_session_failure(session_id: str, tool_name: str):
@@ -233,6 +246,193 @@ def _load_tool_success_rates() -> dict:
         pass
 
     return rates
+
+
+def _persist_tool_result_reference(text: str) -> Dict[str, Any] | None:
+    raw = str(text or "")
+    if not raw:
+        return None
+    try:
+        digest = hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()
+        CLAUDE_TOOL_RESULT_REF_DIR.mkdir(parents=True, exist_ok=True)
+        path = CLAUDE_TOOL_RESULT_REF_DIR / f"{digest}.txt"
+        if not path.exists():
+            path.write_text(raw, encoding="utf-8")
+        return {"tool_result_hash": digest, "tool_result_ref": str(path)}
+    except Exception:
+        return None
+
+
+def _summary_state_path(session_id: str) -> Path:
+    key = hashlib.sha1(str(session_id or "unknown").encode("utf-8", errors="replace")).hexdigest()[:16]
+    return CLAUDE_WORKFLOW_SUMMARY_STATE_DIR / f"{key}.json"
+
+
+def _load_summary_state(session_id: str) -> Dict[str, Any]:
+    path = _summary_state_path(session_id)
+    if not path.exists():
+        return {
+            "session_id": str(session_id or "unknown"),
+            "event_count": 0,
+            "tool_events": 0,
+            "tool_calls": 0,
+            "tool_results": 0,
+            "tool_successes": 0,
+            "tool_failures": 0,
+            "tools": {},
+            "files_touched": [],
+            "tool_failure_tools": [],
+            "tool_success_tools": [],
+            "window_start_ts": None,
+            "window_end_ts": None,
+            "last_emitted_ts": 0.0,
+        }
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            return payload
+    except Exception:
+        pass
+    return {
+        "session_id": str(session_id or "unknown"),
+        "event_count": 0,
+        "tool_events": 0,
+        "tool_calls": 0,
+        "tool_results": 0,
+        "tool_successes": 0,
+        "tool_failures": 0,
+        "tools": {},
+        "files_touched": [],
+        "tool_failure_tools": [],
+        "tool_success_tools": [],
+        "window_start_ts": None,
+        "window_end_ts": None,
+        "last_emitted_ts": 0.0,
+    }
+
+
+def _save_summary_state(session_id: str, state: Dict[str, Any]) -> None:
+    path = _summary_state_path(session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _append_unique(items: list, value: str) -> None:
+    if not isinstance(items, list):
+        return
+    v = str(value or "").strip()
+    if not v:
+        return
+    if v not in items:
+        items.append(v)
+
+
+def _extract_paths_from_tool_input(tool_input: Any) -> list:
+    if not isinstance(tool_input, dict):
+        return []
+    out = []
+    for key in ("file_path", "path", "cwd", "workdir", "directory", "target_path", "destination"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value.strip():
+            out.append(value.strip())
+    paths = tool_input.get("paths")
+    if isinstance(paths, list):
+        for row in paths:
+            if isinstance(row, str) and row.strip():
+                out.append(row.strip())
+    return out
+
+
+def _update_workflow_summary_state(
+    session_id: str,
+    *,
+    hook_event: str,
+    tool_name: str,
+    tool_input: Any,
+    ts: float | None = None,
+) -> Dict[str, Any]:
+    state = _load_summary_state(session_id)
+    now_ts = float(ts if ts is not None else time.time())
+    if state.get("window_start_ts") is None:
+        state["window_start_ts"] = now_ts
+    state["window_end_ts"] = now_ts
+    state["event_count"] = int(state.get("event_count", 0)) + 1
+
+    if hook_event not in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
+        _save_summary_state(session_id, state)
+        return state
+
+    state["tool_events"] = int(state.get("tool_events", 0)) + 1
+    name = str(tool_name or "unknown_tool")
+    tools = state.get("tools") if isinstance(state.get("tools"), dict) else {}
+    tools[name] = int(tools.get(name, 0)) + 1
+    state["tools"] = tools
+    for path in _extract_paths_from_tool_input(tool_input):
+        _append_unique(state.setdefault("files_touched", []), path)
+
+    if hook_event == "PreToolUse":
+        state["tool_calls"] = int(state.get("tool_calls", 0)) + 1
+    elif hook_event == "PostToolUse":
+        state["tool_results"] = int(state.get("tool_results", 0)) + 1
+        state["tool_successes"] = int(state.get("tool_successes", 0)) + 1
+        _append_unique(state.setdefault("tool_success_tools", []), name)
+    elif hook_event == "PostToolUseFailure":
+        state["tool_results"] = int(state.get("tool_results", 0)) + 1
+        state["tool_failures"] = int(state.get("tool_failures", 0)) + 1
+        _append_unique(state.setdefault("tool_failure_tools", []), name)
+
+    _save_summary_state(session_id, state)
+    return state
+
+
+def _write_workflow_summary_report_if_due(session_id: str) -> Path | None:
+    state = _load_summary_state(session_id)
+    tool_events = int(state.get("tool_events") or 0)
+    if tool_events <= 0:
+        return None
+    now_ts = time.time()
+    last_emitted = float(state.get("last_emitted_ts") or 0.0)
+    if (now_ts - last_emitted) < float(CLAUDE_WORKFLOW_SUMMARY_MIN_INTERVAL_S):
+        return None
+
+    tools = state.get("tools") if isinstance(state.get("tools"), dict) else {}
+    tool_results = int(state.get("tool_results") or 0)
+    tool_successes = int(state.get("tool_successes") or 0)
+    confidence = 0.0
+    if tool_results > 0:
+        confidence = round(tool_successes / float(tool_results), 3)
+    elif int(state.get("tool_calls") or 0) > 0:
+        confidence = 0.5
+    failures = set(state.get("tool_failure_tools") or [])
+    successes = set(state.get("tool_success_tools") or [])
+    payload = {
+        "kind": "workflow_summary",
+        "provider": "claude",
+        "ts": now_ts,
+        "session_id": str(state.get("session_id") or session_id),
+        "event_count": int(state.get("event_count") or 0),
+        "tool_events": tool_events,
+        "tool_calls": int(state.get("tool_calls") or 0),
+        "tool_results": tool_results,
+        "tool_successes": tool_successes,
+        "tool_failures": int(state.get("tool_failures") or 0),
+        "top_tools": [
+            {"tool_name": name, "count": int(count)}
+            for name, count in sorted(tools.items(), key=lambda row: (-int(row[1]), row[0]))[:10]
+        ],
+        "files_touched": list(state.get("files_touched") or [])[:50],
+        "recovery_tools": sorted(failures.intersection(successes)),
+        "outcome_confidence": confidence,
+        "window_start_ts": state.get("window_start_ts"),
+        "window_end_ts": state.get("window_end_ts"),
+    }
+    CLAUDE_WORKFLOW_SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = hashlib.sha1(str(session_id).encode("utf-8", errors="replace")).hexdigest()[:8]
+    out_path = CLAUDE_WORKFLOW_SUMMARY_DIR / f"workflow_{int(now_ts * 1000)}_{suffix}.json"
+    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    state["last_emitted_ts"] = now_ts
+    _save_summary_state(session_id, state)
+    return out_path
 
 
 def make_prediction(tool_name: str, tool_input: dict) -> dict:
@@ -438,6 +638,60 @@ def _normalize_source(raw_source: Any) -> str:
     return source[:80]
 
 
+def _append_jsonl(path: Path, row: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _has_truncated_tool_input_fields(tool_input_payload: Any) -> bool:
+    if not isinstance(tool_input_payload, dict):
+        return False
+    return any(str(k).endswith("_truncated") and bool(v) for k, v in tool_input_payload.items())
+
+
+def _build_observe_telemetry_row(
+    *,
+    session_id: str,
+    source: str,
+    hook_event: str,
+    event_type: EventType,
+    tool_name: str,
+    payload_truncated: bool,
+    tool_input_truncated: bool,
+    tool_result_captured: bool,
+    tool_result_truncated: bool,
+    captured: bool,
+) -> Dict[str, Any]:
+    hook = str(hook_event or "")
+    return {
+        "ts": time.time(),
+        "adapter": "observe_hook",
+        "session_id": str(session_id or "unknown"),
+        "source": str(source or "claude_code"),
+        "hook_event": hook,
+        "event_type": event_type.value if hasattr(event_type, "value") else str(event_type),
+        "tool_name": str(tool_name or ""),
+        "workflow_event": hook in ("PreToolUse", "PostToolUse", "PostToolUseFailure"),
+        "pre_event": hook == "PreToolUse",
+        "tool_result_event": hook in ("PostToolUse", "PostToolUseFailure"),
+        "payload_truncated": bool(payload_truncated),
+        "tool_input_truncated": bool(tool_input_truncated),
+        "tool_result_captured": bool(tool_result_captured),
+        "tool_result_truncated": bool(tool_result_truncated),
+        "capture_ok": bool(captured),
+    }
+
+
+def _emit_observe_telemetry(row: Dict[str, Any], telemetry_file: Path = OBSERVE_TELEMETRY_FILE) -> None:
+    if not OBSERVE_TELEMETRY_ENABLED:
+        return
+    try:
+        _append_jsonl(telemetry_file, row)
+    except Exception as e:
+        log_debug("observe", "observe telemetry write failed", e)
+
+
 # ===== Event Type Mapping =====
 
 def get_event_type(hook_event_name: str) -> EventType:
@@ -579,6 +833,7 @@ def main():
     
     event_type = get_event_type(hook_event)
     trace_id = input_data.get("trace_id")
+    telemetry_payload_truncated = False
     
     # ===== PreToolUse: Make prediction + Advisory Engine + EIDOS step creation =====
     if event_type == EventType.PRE_TOOL and tool_name:
@@ -840,6 +1095,19 @@ def main():
             update_skill_effectiveness(query, success=False, limit=2)
         except Exception:
             pass
+
+    # Keep a rolling per-session workflow summary state for later report emission.
+    if hook_event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
+        try:
+            _update_workflow_summary_state(
+                session_id,
+                hook_event=hook_event,
+                tool_name=str(tool_name or ""),
+                tool_input=tool_input,
+                ts=time.time(),
+            )
+        except Exception as e:
+            log_debug("observe", "workflow summary state update failed", e)
     
     # Queue the event
     data = {
@@ -873,6 +1141,7 @@ def main():
             if txt_meta["text_truncated"]:
                 data["payload"]["text_hash"] = txt_meta["text_hash"]
                 data["payload"]["text_truncated"] = True
+                telemetry_payload_truncated = True
             data["source"] = source_hint or "claude_code"
             data["kind"] = "message"
             data["advisory"] = _build_advisory_payload_hint(
@@ -883,6 +1152,7 @@ def main():
             if txt_meta["text_truncated"]:
                 data["advisory"]["content_hash"] = txt_meta["text_hash"]
                 data["advisory"]["truncated"] = True
+                telemetry_payload_truncated = True
 
             # Advisory Engine: capture user intent for contextual retrieval
             try:
@@ -932,6 +1202,7 @@ def main():
             if tool_payload_meta["text_truncated"]:
                 data["advisory"]["content_hash"] = tool_payload_meta["text_hash"]
                 data["advisory"]["truncated"] = True
+                telemetry_payload_truncated = True
 
     kwargs = {}
     if tool_name:
@@ -947,6 +1218,55 @@ def main():
         error = input_data.get("tool_error") or input_data.get("error") or ""
         if error:
             kwargs["error"] = str(error)[:500]
+
+    tool_result_raw = None
+    if event_type == EventType.POST_TOOL:
+        tool_result_raw = input_data.get("tool_result")
+    elif event_type == EventType.POST_TOOL_FAILURE:
+        tool_result_raw = (
+            input_data.get("tool_error")
+            or input_data.get("error")
+            or input_data.get("tool_result")
+        )
+    if isinstance(tool_result_raw, dict):
+        try:
+            tool_result_text = json.dumps(tool_result_raw, ensure_ascii=False)
+        except Exception:
+            tool_result_text = str(tool_result_raw)
+    elif tool_result_raw is None:
+        tool_result_text = ""
+    else:
+        tool_result_text = str(tool_result_raw)
+    tool_result_captured = bool(tool_result_text.strip())
+    tool_result_truncated = bool(
+        tool_result_captured and len(tool_result_text) > int(HOOK_PAYLOAD_TEXT_LIMIT)
+    )
+    tool_result_ref: Dict[str, Any] = {}
+    if tool_result_captured and tool_result_truncated:
+        persisted = _persist_tool_result_reference(tool_result_text)
+        if isinstance(persisted, dict):
+            tool_result_ref = persisted
+
+    if (
+        event_type in (EventType.POST_TOOL, EventType.POST_TOOL_FAILURE)
+        and tool_result_captured
+    ):
+        meta = {
+            "captured": True,
+            "truncated": bool(tool_result_truncated),
+            "len": len(tool_result_text),
+        }
+        if tool_result_truncated:
+            meta["hash"] = hashlib.sha256(
+                tool_result_text.encode("utf-8", errors="replace")
+            ).hexdigest()
+            if tool_result_ref:
+                meta.update(tool_result_ref)
+        data["tool_result_meta"] = meta
+
+    tool_input_truncated = _has_truncated_tool_input_fields(tool_input_payload)
+    if tool_input_truncated:
+        telemetry_payload_truncated = True
     
     captured = quick_capture(event_type, session_id, data, **kwargs)
     if not captured:
@@ -957,6 +1277,21 @@ def main():
         )
         # Keep this concise; stderr is operator-facing during live runs.
         sys.stderr.write("[SPARK] warning: event capture dropped (queue contention)\n")
+
+    _emit_observe_telemetry(
+        _build_observe_telemetry_row(
+            session_id=session_id,
+            source=data.get("source") or source_hint or "claude_code",
+            hook_event=hook_event,
+            event_type=event_type,
+            tool_name=str(tool_name or ""),
+            payload_truncated=telemetry_payload_truncated,
+            tool_input_truncated=tool_input_truncated,
+            tool_result_captured=tool_result_captured,
+            tool_result_truncated=tool_result_truncated,
+            captured=captured,
+        )
+    )
 
     # Pattern detection is handled by the background pipeline (lib/pipeline.py)
     # to keep the hook fast. Removed synchronous aggregator call.
@@ -991,6 +1326,13 @@ def main():
                 log_debug("observe", f"EIDOS episode {episode.episode_id} completed as {episode.outcome.value}", None)
         except Exception as e:
             log_debug("observe", "EIDOS episode completion failed", e)
+
+    # Auto-promote insights at session end (rate-limited to once per hour)
+    if hook_event in ("Stop", "SessionEnd"):
+        try:
+            _write_workflow_summary_report_if_due(session_id)
+        except Exception as e:
+            log_debug("observe", "workflow summary report write failed", e)
 
     # Auto-promote insights at session end (rate-limited to once per hour)
     if hook_event in ("Stop", "SessionEnd"):
