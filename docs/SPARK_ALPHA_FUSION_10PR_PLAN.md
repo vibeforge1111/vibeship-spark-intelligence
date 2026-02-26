@@ -1,6 +1,6 @@
 # Spark Alpha Fusion Plan (Status + V2 Destination)
 
-Date: 2026-02-26
+Date: 2026-02-27
 Branch: `feat/spark-alpha`
 
 ## Purpose
@@ -28,11 +28,16 @@ Completed commits:
 8. `(working tree)` PR-04 SQLite dual-write for cognitive insights (JSON still canonical)
 9. `(working tree)` PR-05 deterministic RRF retrieval fusion signal (runtime + AB harness)
 10. `23ef06a` PR-06 advisory alpha vertical slice route + canary orchestration
+11. `(working tree)` PR-07 deterministic replay arena + promotion ledger
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
 2. `memory_quality_observatory.py`: retrieval guardrails passing
 3. Key metrics: `context.p50=230`, `advisory.emit_rate=0.194`, `strict_trace_coverage=0.5985`
+4. Replay arena latest (`scripts/spark_alpha_replay_arena.py --episodes 5 --seed 42`):
+   - winner: `alpha`
+   - `promotion_gate_pass=true`
+   - `consecutive_pass_streak=4`
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial
@@ -81,10 +86,12 @@ Current measured state:
 4. Remaining: expand alpha ownership for post-tool and prompt paths (currently delegated) and validate via replay/canary.
 5. Deletion commitment: remove legacy advisory path files once replay arena + live canary pass.
 
-### PR-07 Replay Arena (Champion/Challenger)  (Pending, Required)
-1. Deterministic replay on identical episodes.
-2. Scores: utility, safety, trace integrity, latency.
-3. Promotion rule: alpha must win weighted score in 3 consecutive runs.
+### PR-07 Replay Arena (Champion/Challenger)  (Implemented)
+1. Added `scripts/spark_alpha_replay_arena.py` for deterministic replay on identical episodes.
+2. Added route scorecards (legacy champion vs alpha challenger) with utility/safety/trace integrity/latency metrics.
+3. Added weighted winner gate and promotion ledger with 3-consecutive-pass tracking.
+4. Added regression diff artifacts in `benchmarks/out/replay_arena/`.
+5. Remaining: run larger deterministic episode windows as ongoing evidence before irreversible deletions.
 
 ### PR-08 Reserved Risk Slot  (Pending, User-Defined)
 1. Reserved for the additional high-risk module the user wants to add at finalization.

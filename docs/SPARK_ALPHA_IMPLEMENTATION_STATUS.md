@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-26 (local branch snapshot, post PR-06 advisory alpha vertical slice routing)
+Last updated: 2026-02-27 (local branch snapshot, post PR-07 replay arena implementation)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -80,6 +80,18 @@ Branch: feat/spark-alpha
 - Added alpha-vs-engine comparison script (`scripts/advisory_alpha_quality_report.py`).
 - Added explicit legacy deletion candidate manifest for PR-10 (`docs/SPARK_ALPHA_PR06_LEGACY_DELETION_CANDIDATES.md`).
 
+11. `(working tree)` - `feat(alpha-replay): add deterministic replay arena with promotion ledger`
+- Added deterministic champion/challenger replay harness (`scripts/spark_alpha_replay_arena.py`):
+  - Same episode set for both routes (legacy vs alpha) from a fixed seed or explicit episode file.
+  - Per-route scorecards on utility, safety, trace integrity, and latency.
+  - Weighted winner computation with explicit coefficients.
+  - Regression diff artifact generation vs previous run.
+- Added promotion ledger (`~/.spark/alpha_replay_promotion_ledger.jsonl`) with:
+  - run-level alpha win status
+  - safety/trace gate pass flags
+  - consecutive pass streak tracking
+- Added replay arena unit tests (`tests/test_spark_alpha_replay_arena.py`).
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -98,6 +110,13 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisor.py -q` -> `97 passed`
 - `pytest tests/test_memory_retrieval_ab.py -q` -> `11 passed`
 - `pytest tests/test_advisory_orchestrator.py -q` -> `5 passed`
+- `pytest tests/test_spark_alpha_replay_arena.py -q` -> `4 passed`
+- `python scripts/spark_alpha_replay_arena.py --episodes 5 --seed 42` -> alpha winner, promotion gate pass, streak reached `4/3`
+- Replay artifacts:
+  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_011352.json`
+  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_011352.md`
+  - `benchmarks/out/replay_arena/spark_alpha_replay_scorecards_20260227_011352.json`
+  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_diff_20260227_011352.json`
 
 Notable metrics now:
 - `context.p50`: 230
@@ -121,7 +140,8 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 10. PR-04 deletion commitment is still pending (JSONL/legacy path retirement after parity criteria).
 11. PR-05 deletion commitment is still pending (retire superseded rank paths after replay/canary wins).
 12. PR-06 deletion commitment is still pending (remove legacy advisory path files after replay + live canary pass).
+13. PR-07 now exists, but its criteria still need repeated run evidence on larger episode sets before using it as sole cutover authority.
 
 ## In progress right now
 
-- No active in-progress patch; PR-06 is checkpointed and validated.
+- No active in-progress patch; PR-07 replay arena is checkpointed and awaiting commit plus extended-run evidence collection.
