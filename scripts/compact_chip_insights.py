@@ -85,6 +85,9 @@ def _filter_rows(rows: List[Dict[str, Any]], max_age_days: int) -> List[Dict[str
     for row in rows:
         ts = _parse_timestamp(row.get("timestamp"))
         if ts is None:
+            # No parseable timestamp — preserve the row rather than silently
+            # dropping data whose age we cannot determine.
+            kept.append(row)
             continue
         if ts >= cutoff:
             kept.append(row)
