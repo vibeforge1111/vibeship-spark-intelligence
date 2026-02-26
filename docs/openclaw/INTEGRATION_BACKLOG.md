@@ -24,7 +24,7 @@ Maintain an auditable backlog for Spark x OpenClaw integration changes, with:
 2. P1: Reliability and observability
 - [x] Make KPI auto-remediation resilient in all invocation contexts (module/script execution modes).
 - [x] Add schema-transition dashboards for advisory feedback (`legacy` vs `schema_version=2`).
-- [ ] Add weekly "strict quality" rollup report with source/tool/session lineage slices.
+- [x] Add weekly "strict quality" rollup report with source/tool/session lineage slices.
 - [x] Add redacted OpenClaw integration audit tooling (`scripts/openclaw_integration_audit.py`).
 - [x] Stabilize realtime benchmark advisory signal check for dedupe-heavy windows (`scripts/openclaw_realtime_e2e_benchmark.py`).
 

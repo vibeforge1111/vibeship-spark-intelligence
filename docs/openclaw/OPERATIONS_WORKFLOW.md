@@ -25,6 +25,8 @@ Do not batch unrelated changes into one commit.
 - Run targeted tests for touched areas.
 - Run audit:
   - `python scripts/openclaw_integration_audit.py`
+- Run strict-quality lineage rollup:
+  - `python scripts/openclaw_strict_quality_rollup.py --window-days 7`
 - Run realtime benchmark (live canary + strict loop checks):
   - `python scripts/openclaw_realtime_e2e_benchmark.py --window-minutes 90 --run-canary --canary-agent spark-speed`
 - Prompt template for running the same benchmark from OpenClaw:
