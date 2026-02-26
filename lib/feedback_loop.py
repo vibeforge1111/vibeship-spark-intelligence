@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -46,7 +47,10 @@ def _load_state() -> Dict[str, Any]:
 
 def _save_state(state: Dict[str, Any]) -> None:
     FEEDBACK_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    FEEDBACK_STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    fd, tmp_path = tempfile.mkstemp(dir=FEEDBACK_STATE_FILE.parent, suffix=".tmp")
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        json.dump(state, f, indent=2)
+    os.replace(tmp_path, FEEDBACK_STATE_FILE)
 
 
 def _log_feedback(entry: Dict[str, Any]) -> None:
