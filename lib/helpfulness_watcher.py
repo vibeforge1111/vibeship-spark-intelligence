@@ -113,7 +113,7 @@ def _norm_tool(value: Any) -> str:
 
 
 def _hash_id(blob: str) -> str:
-    return hashlib.sha1(blob.encode("utf-8", errors="ignore")).hexdigest()[:24]
+    return hashlib.sha256(blob.encode("utf-8", errors="ignore")).hexdigest()[:24]
 
 
 def _event_id_for_request(req: Dict[str, Any], advice_id: str, idx: int) -> str:
