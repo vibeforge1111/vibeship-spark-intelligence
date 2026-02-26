@@ -680,7 +680,7 @@ def run_bridge_cycle(
                 log_debug("bridge_worker", f"chip processing failed ({error})", None)
 
             # --- Engagement Pulse: check for pending snapshots ---
-            def _poll_engagement_pulse():
+            def _poll_engagement_pulse() -> Dict[str, Any]:
                 from lib.engagement_tracker import get_engagement_tracker
                 tracker = get_engagement_tracker()
                 pending = tracker.get_pending_snapshots()

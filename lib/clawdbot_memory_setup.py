@@ -36,7 +36,7 @@ def _load_config() -> Dict[str, Any]:
     return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 
 
-def _save_config(cfg: Dict[str, Any]):
+def _save_config(cfg: Dict[str, Any]) -> None:
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
 
 
@@ -49,7 +49,7 @@ def _ensure_path(cfg: Dict[str, Any], path: str) -> Dict[str, Any]:
     return cur
 
 
-def _restart_gateway():
+def _restart_gateway() -> None:
     if not CLAWDBOT_BIN.exists():
         return
     # Best-effort restart (emits SIGUSR1 to the service)

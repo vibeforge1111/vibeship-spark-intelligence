@@ -104,7 +104,7 @@ def get_prefetch_config() -> Dict[str, Any]:
     }
 
 
-def _worker_state_file():
+def _worker_state_file() -> Path:
     return packet_store.PACKET_DIR / "prefetch_worker_state.json"
 
 

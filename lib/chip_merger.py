@@ -161,7 +161,7 @@ def _load_merge_state() -> Dict[str, Any]:
         }
 
 
-def _save_merge_state(state: Dict[str, Any]):
+def _save_merge_state(state: Dict[str, Any]) -> None:
     """Save the merge state."""
     MERGE_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     MERGE_STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")

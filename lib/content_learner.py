@@ -26,7 +26,7 @@ STATE_FILE = Path.home() / ".spark" / "content_learning_state.json"
 class ContentLearner:
     """Learn patterns from code and project structure."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.state = self._load_state()
         self.cog = get_cognitive_learner()
 
