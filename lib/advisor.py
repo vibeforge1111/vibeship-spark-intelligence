@@ -115,6 +115,10 @@ MIND_RESERVE_SLOTS: int = 1
 MIND_RESERVE_MIN_RANK: float = 0.45
 RETRIEVAL_ROUTE_LOG = ADVISOR_DIR / "retrieval_router.jsonl"
 RETRIEVAL_ROUTE_LOG_MAX = 800
+COGNITIVE_KEYWORD_FALLBACK_ENABLED = (
+    str(os.getenv("SPARK_ADVISORY_COGNITIVE_KEYWORD_FALLBACK", "0")).strip().lower()
+    in {"1", "true", "yes", "on"}
+)
 
 DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
     "1": {
@@ -2742,25 +2746,17 @@ class SparkAdvisor:
         semantic_context: Optional[str] = None,
         trace_id: Optional[str] = None,
     ) -> List[Advice]:
-        """Get advice from cognitive insights (semantic-first with keyword fallback)."""
+        """Get advice from cognitive insights (semantic-first, keyword fallback optional)."""
         semantic = self._get_semantic_cognitive_advice(
             tool_name=tool_name,
             context=semantic_context or context,
             trace_id=trace_id,
         )
-        keyword = self._get_cognitive_advice_keyword(tool_name, context)
-
-        if not semantic:
-            return keyword
-
-        # Merge, preferring semantic results
-        seen = {a.insight_key for a in semantic if a.insight_key}
-        merged = list(semantic)
-        for a in keyword:
-            if a.insight_key and a.insight_key in seen:
-                continue
-            merged.append(a)
-        return merged
+        if semantic:
+            return semantic
+        if not COGNITIVE_KEYWORD_FALLBACK_ENABLED:
+            return []
+        return self._get_cognitive_advice_keyword(tool_name, context)
 
     # -- LLM area hooks (opt-in via llm_areas tuneable section) --
 

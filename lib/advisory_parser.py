@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -14,6 +15,10 @@ REQUESTS_FILE = Path.home() / ".spark" / "advice_feedback_requests.jsonl"
 SPARK_ADVISORY_FILE = Path.home() / ".openclaw" / "workspace" / "SPARK_ADVISORY.md"
 SPARK_ADVISORY_FALLBACK_FILE = Path.home() / ".spark" / "llm_advisory.md"
 ENGINE_FILE = Path.home() / ".spark" / "advisory_engine.jsonl"
+LEGACY_PATHS_ENABLED = (
+    str(os.getenv("SPARK_ADVISORY_PARSER_INCLUDE_LEGACY", "0")).strip().lower()
+    in {"1", "true", "yes", "on"}
+)
 
 _BULLET_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)(.+?)\s*$")
 _CHECKBOX_RE = re.compile(r"^\s*-\s*\[[ xX]\]\s+(.+?)\s*$")
@@ -184,13 +189,14 @@ def load_advisories(
     include_engine_fallback: bool = True,
 ) -> List[Dict[str, Any]]:
     advisories = parse_feedback_requests(request_file, limit=limit_requests)
-    if advisory_paths is None:
-        discovered = discover_openclaw_advisory_files()
-        advisory_paths = discovered or [SPARK_ADVISORY_FILE]
-        advisory_paths = [*advisory_paths, SPARK_ADVISORY_FALLBACK_FILE]
-    for p in advisory_paths:
-        advisories.extend(parse_advisory_markdown(Path(p)))
-    if include_engine_fallback and not advisories:
-        advisories.extend(parse_engine_previews(engine_file))
+    if LEGACY_PATHS_ENABLED:
+        if advisory_paths is None:
+            discovered = discover_openclaw_advisory_files()
+            advisory_paths = discovered or [SPARK_ADVISORY_FILE]
+            advisory_paths = [*advisory_paths, SPARK_ADVISORY_FALLBACK_FILE]
+        for p in advisory_paths:
+            advisories.extend(parse_advisory_markdown(Path(p)))
+        if include_engine_fallback and not advisories:
+            advisories.extend(parse_engine_previews(engine_file))
     advisories.sort(key=lambda x: float(x.get("created_at") or 0.0))
     return advisories
