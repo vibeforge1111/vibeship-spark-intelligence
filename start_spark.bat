@@ -45,6 +45,9 @@ if "%SPARK_ADVISORY_LIVE_QUICK_MIN_REMAINING_MS%"=="" set SPARK_ADVISORY_LIVE_QU
 
 REM Advisory: action-first formatting (put Next check command on first line)
 if "%SPARK_ADVISORY_ACTION_FIRST%"=="" set SPARK_ADVISORY_ACTION_FIRST=1
+REM Advisory route rollout: canary by default (80% alpha, 20% engine).
+if "%SPARK_ADVISORY_ROUTE%"=="" set SPARK_ADVISORY_ROUTE=canary
+if "%SPARK_ADVISORY_ALPHA_CANARY_PERCENT%"=="" set SPARK_ADVISORY_ALPHA_CANARY_PERCENT=80
 
 REM Mind is now managed by service_control.py (spark up/down).
 :start_spark
