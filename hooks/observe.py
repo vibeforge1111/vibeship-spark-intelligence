@@ -107,7 +107,7 @@ def record_session_failure(session_id: str, tool_name: str):
         FAILURE_TRACKING_FILE.parent.mkdir(parents=True, exist_ok=True)
         failures = {}
         if FAILURE_TRACKING_FILE.exists():
-            failures = json.loads(FAILURE_TRACKING_FILE.read_text())
+            failures = json.loads(FAILURE_TRACKING_FILE.read_text(encoding="utf-8"))
 
         key = f"{session_id}:{tool_name}"
         failures[key] = {"timestamp": time.time(), "tool": tool_name}
@@ -118,7 +118,7 @@ def record_session_failure(session_id: str, tool_name: str):
             k: v for k, v in failures.items()
             if v.get("timestamp", 0) > cutoff
         }
-        FAILURE_TRACKING_FILE.write_text(json.dumps(failures))
+        FAILURE_TRACKING_FILE.write_text(json.dumps(failures), encoding="utf-8")
     except Exception as e:
         log_debug("observe", "record_session_failure failed", e)
 
@@ -128,7 +128,7 @@ def had_prior_failure(session_id: str, tool_name: str) -> bool:
     try:
         if not FAILURE_TRACKING_FILE.exists():
             return False
-        failures = json.loads(FAILURE_TRACKING_FILE.read_text())
+        failures = json.loads(FAILURE_TRACKING_FILE.read_text(encoding="utf-8"))
         key = f"{session_id}:{tool_name}"
         entry = failures.get(key)
         if not entry:
@@ -138,7 +138,7 @@ def had_prior_failure(session_id: str, tool_name: str) -> bool:
             return False
         # Clear the failure record (one-shot recovery detection)
         del failures[key]
-        FAILURE_TRACKING_FILE.write_text(json.dumps(failures))
+        FAILURE_TRACKING_FILE.write_text(json.dumps(failures), encoding="utf-8")
         return True
     except Exception:
         return False
@@ -151,7 +151,7 @@ def save_prediction(session_id: str, tool_name: str, prediction: dict):
         
         predictions = {}
         if PREDICTION_FILE.exists():
-            predictions = json.loads(PREDICTION_FILE.read_text())
+            predictions = json.loads(PREDICTION_FILE.read_text(encoding="utf-8"))
         
         # Key by session + tool
         key = f"{session_id}:{tool_name}"
@@ -167,7 +167,7 @@ def save_prediction(session_id: str, tool_name: str, prediction: dict):
             if v.get("timestamp", 0) > cutoff
         }
         
-        PREDICTION_FILE.write_text(json.dumps(predictions))
+        PREDICTION_FILE.write_text(json.dumps(predictions), encoding="utf-8")
     except Exception as e:
         log_debug("observe", "save_prediction failed", e)
         pass
@@ -179,12 +179,12 @@ def get_prediction(session_id: str, tool_name: str) -> dict:
         if not PREDICTION_FILE.exists():
             return {}
         
-        predictions = json.loads(PREDICTION_FILE.read_text())
+        predictions = json.loads(PREDICTION_FILE.read_text(encoding="utf-8"))
         key = f"{session_id}:{tool_name}"
         pred = predictions.pop(key, {})
         
         # Save without this prediction
-        PREDICTION_FILE.write_text(json.dumps(predictions))
+        PREDICTION_FILE.write_text(json.dumps(predictions), encoding="utf-8")
         
         return pred
     except Exception as e:
@@ -201,7 +201,7 @@ def _load_tool_success_rates() -> dict:
     cache_file = Path.home() / ".spark" / "tool_success_cache.json"
     try:
         if cache_file.exists():
-            data = json.loads(cache_file.read_text())
+            data = json.loads(cache_file.read_text(encoding="utf-8"))
             if time.time() - data.get("ts", 0) < 300:  # 5 min TTL
                 return data.get("rates", {})
     except Exception:
@@ -228,7 +228,7 @@ def _load_tool_success_rates() -> dict:
                     rates[tool] = round(counts["pass"] / counts["total"], 3)
 
             cache_file.parent.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(json.dumps({"ts": time.time(), "rates": rates}))
+            cache_file.write_text(json.dumps({"ts": time.time(), "rates": rates}), encoding="utf-8")
     except Exception:
         pass
 
