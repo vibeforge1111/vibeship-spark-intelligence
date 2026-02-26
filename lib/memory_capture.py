@@ -253,6 +253,41 @@ def infer_category(text: str) -> CognitiveCategory:
     return CognitiveCategory.META_LEARNING
 
 
+def _llm_area_novelty_score(text: str) -> float:
+    """LLM area: score semantic novelty of a memory candidate.
+
+    Returns a boost value (0.0-0.2) if the content is genuinely novel.
+    When disabled (default), returns 0.0 (no-op).
+    """
+    try:
+        from .llm_dispatch import llm_area_call
+        from .llm_area_prompts import format_prompt
+
+        prompt = format_prompt(
+            "novelty_score",
+            statement=text[:500],
+        )
+        result = llm_area_call("novelty_score", prompt, fallback="0.0")
+        if result.used_llm and result.text:
+            import json as _json
+            try:
+                data = _json.loads(result.text)
+                if isinstance(data, dict):
+                    score = float(data.get("novelty", 0.0))
+                    return max(0.0, min(0.2, score))
+            except (ValueError, TypeError):
+                pass
+            # Try extracting a bare float
+            try:
+                val = float(result.text.strip())
+                return max(0.0, min(0.2, val))
+            except (ValueError, TypeError):
+                pass
+        return 0.0
+    except Exception:
+        return 0.0
+
+
 def importance_score(text: str) -> Tuple[float, Dict[str, float]]:
     """Return (score 0..1, breakdown)."""
     t = _norm(text)
@@ -372,6 +407,12 @@ def importance_score(text: str) -> Tuple[float, Dict[str, float]]:
     # Apply semantic sum (signals stack additively)
     if semantic_sum > 0:
         score = max(score, min(1.0, semantic_sum))
+
+    # LLM area: novelty_score — boost score for genuinely novel content
+    novelty_boost = _llm_area_novelty_score(text)
+    if novelty_boost > 0:
+        breakdown["novelty"] = novelty_boost
+        score = min(1.0, score + novelty_boost)
 
     return float(min(1.0, score)), breakdown
 

@@ -225,6 +225,51 @@ def _clip_evidence(text: str) -> str:
     return t
 
 
+def _backfill_actionable_context(
+    context: str,
+    insight: str,
+    advisory_quality: Dict[str, Any],
+) -> str:
+    """Backfill short contexts with actionable structure for future retrieval."""
+    base = _clip_context(context)
+    parts: List[str] = []
+    if base:
+        parts.append(base)
+
+    structure = advisory_quality.get("structure") if isinstance(advisory_quality, dict) else {}
+    if isinstance(structure, dict):
+        condition = str(structure.get("condition") or "").strip()
+        action = str(structure.get("action") or "").strip()
+        reasoning = str(structure.get("reasoning") or "").strip()
+        outcome = str(structure.get("outcome") or "").strip()
+
+        if action:
+            if condition:
+                parts.append(f"When {condition}")
+            parts.append(f"Action: {action}")
+            if reasoning:
+                parts.append(f"Reason: {reasoning}")
+            elif outcome:
+                parts.append(f"Outcome: {outcome}")
+
+    merged = " | ".join([p for p in parts if p]).strip(" |")
+    if merged and len(merged) >= 80:
+        return _clip_context(merged)
+
+    if merged:
+        seed = merged
+    else:
+        seed = re.sub(r"\s+", " ", str(insight or "")).strip()
+    if not seed:
+        return base
+
+    # Fallback: keep a semantic sentence window from the insight itself.
+    segments = [s.strip() for s in re.split(r"(?<=[.!?])\s+|\s*[;|]\s+", seed) if s.strip()]
+    if segments:
+        seed = " ".join(segments[:3])
+    return _clip_context(seed)
+
+
 def _coerce_int(value: Any, default: int = 0) -> int:
     try:
         if value is None:
@@ -1489,6 +1534,9 @@ class CognitiveLearner:
                 continue
             if self._is_noise_insight(ii_text):
                 continue
+            # LLM area: generic_demotion — skip generic platitudes during retrieval
+            if self._llm_area_generic_demotion(ii_text, context_lower):
+                continue
 
             ic = (insight.context or "").lower()
             ii = ii_text.lower()
@@ -1549,6 +1597,54 @@ class CognitiveLearner:
             return [(k, i) for _, k, i in top]
         return [i for _, _, i in top]
 
+    # -- LLM area hooks (opt-in via llm_areas tuneable section) --
+
+    @staticmethod
+    def _llm_area_evidence_compress(evidence: str) -> str:
+        """LLM area: compress verbose evidence text before storage."""
+        if not evidence or len(evidence) < 120:
+            return evidence
+        try:
+            from .llm_dispatch import llm_area_call
+            from .llm_area_prompts import format_prompt
+
+            prompt = format_prompt(
+                "evidence_compress",
+                evidence=evidence[:500],
+                char_limit="250",
+            )
+            result = llm_area_call("evidence_compress", prompt, fallback=evidence)
+            if result.used_llm and result.text and len(result.text) < len(evidence):
+                return result.text
+            return evidence
+        except Exception:
+            return evidence
+
+    @staticmethod
+    def _llm_area_generic_demotion(insight_text: str, query: str) -> bool:
+        """LLM area: check if insight is too generic for the given query context.
+
+        Returns True if the insight should be demoted (skipped), False to keep.
+        When disabled (default), always returns False (no-op).
+        """
+        try:
+            from .llm_dispatch import llm_area_call
+            from .llm_area_prompts import format_prompt
+
+            prompt = format_prompt(
+                "generic_demotion",
+                insight=insight_text[:300],
+                query=query[:200],
+            )
+            result = llm_area_call("generic_demotion", prompt, fallback="keep")
+            if result.used_llm and result.text:
+                lower = result.text.strip().lower()
+                if "demote" in lower or "generic" in lower or "skip" in lower:
+                    return True
+            return False
+        except Exception:
+            return False
+
     def add_insight(self, category: CognitiveCategory, insight: str,
                     context: str = "", confidence: float = 0.7,
                     record_exposure: bool = True,
@@ -1585,8 +1681,11 @@ class CognitiveLearner:
         key_part = insight[:40].replace(" ", "_").lower()
         key = self._generate_key(category, key_part)
         emotion_state = _capture_emotion_state_snapshot()
-        normalized_context = _clip_context(context)
-        context_evidence = _clip_evidence(normalized_context or context)
+        normalized_context = _backfill_actionable_context(context, insight, adv_quality_dict)
+        context_evidence = _clip_evidence(normalized_context or context or insight)
+
+        # LLM area: evidence_compress — compress verbose evidence before storage
+        context_evidence = self._llm_area_evidence_compress(context_evidence)
 
         if key in self.insights:
             # Update existing - boost confidence!
@@ -1596,6 +1695,8 @@ class CognitiveLearner:
             if context_evidence and context_evidence not in existing.evidence:
                 existing.evidence.append(context_evidence)
                 existing.evidence = existing.evidence[-10:]
+            if normalized_context and len(normalized_context) > len(str(existing.context or "")):
+                existing.context = normalized_context
             if emotion_state:
                 existing.emotion_state = emotion_state
             # Refresh advisory quality on validation
