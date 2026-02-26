@@ -90,7 +90,7 @@ def main() -> int:
         print((p.stderr or p.stdout).strip(), file=sys.stderr)
         return p.returncode
 
-    print(f"✅ Branch protection applied to {args.repo}:{args.branch}")
+    print(f"Branch protection applied to {args.repo}:{args.branch}")
     print("Required checks:")
     for c in checks:
         print(f"- {c}")
