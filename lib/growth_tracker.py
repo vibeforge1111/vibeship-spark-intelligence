@@ -8,6 +8,8 @@ Day 1: "Learning your codebase..."
 Day 7: "40% more accurate on your preferences"
 """
 
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
@@ -92,13 +94,13 @@ class GrowthTracker:
     
     GROWTH_FILE = Path(__file__).parent.parent / ".spark" / "growth.json"
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.snapshots: List[GrowthSnapshot] = []
         self.milestones: Dict[str, MilestoneRecord] = {}
         self.started_at: Optional[str] = None
         self._load()
-    
-    def _load(self):
+
+    def _load(self) -> None:
         """Load growth data from disk."""
         if self.GROWTH_FILE.exists():
             try:
@@ -116,7 +118,7 @@ class GrowthTracker:
             self.started_at = datetime.now().isoformat()
             self._save()
     
-    def _save(self):
+    def _save(self) -> None:
         """Save growth data to disk."""
         self.GROWTH_FILE.parent.mkdir(parents=True, exist_ok=True)
         data = {

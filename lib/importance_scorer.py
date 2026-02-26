@@ -26,6 +26,8 @@ Importance Tiers:
 - IGNORE (<0.3): Don't store (primitive, operational, trivial)
 """
 
+from __future__ import annotations
+
 import re
 import math
 from dataclasses import dataclass, field
@@ -334,12 +336,12 @@ class ImportanceScorer:
     at INGESTION time, not at PROMOTION time.
     """
 
-    def __init__(self, active_domain: Optional[str] = None):
+    def __init__(self, active_domain: Optional[str] = None) -> None:
         self.active_domain = active_domain
         self.seen_signals: Set[str] = set()  # Track first-mention
         self._load_question_context()
 
-    def _load_question_context(self):
+    def _load_question_context(self) -> None:
         """Load answered onboarding questions for guidance."""
         self.question_answers: Dict[str, str] = {}
         answers_file = Path.home() / ".spark" / "project_answers.json"
@@ -549,7 +551,7 @@ class ImportanceScorer:
     # SEMANTIC INTELLIGENCE LAYER
     # =========================================================================
 
-    def _init_semantic_intelligence(self):
+    def _init_semantic_intelligence(self) -> None:
         """Initialize semantic intelligence (embeddings + known-valuable insights)."""
         if hasattr(self, "_semantic_initialized"):
             return
@@ -668,7 +670,7 @@ class ImportanceScorer:
 
         return base_result
 
-    def record_feedback(self, text: str, predicted_tier: str, actual_valuable: bool, reason: str = ""):
+    def record_feedback(self, text: str, predicted_tier: str, actual_valuable: bool, reason: str = "") -> None:
         """
         Record feedback on an importance prediction.
 

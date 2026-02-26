@@ -11,6 +11,8 @@ States:
   ☀ Radiant (75-100%) - Full sync. Deep partnership.
 """
 
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -111,7 +113,7 @@ class ResonanceCalculator:
         "validation": 30,      # 30 validated insights = max score
     }
     
-    def __init__(self):
+    def __init__(self) -> None:
         pass
     
     def _score_component(self, value: int, threshold: int, weight: int) -> float:

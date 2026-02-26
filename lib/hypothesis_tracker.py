@@ -22,13 +22,15 @@ Hypothesis Lifecycle:
 6. BELIEF: Promoted to cognitive insight (validated)
 """
 
+from __future__ import annotations
+
 import json
 import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class HypothesisState(Enum):
@@ -95,7 +97,7 @@ class Hypothesis:
     @property
     def accuracy(self) -> float:
         """Calculate prediction accuracy."""
-        outcomes = [p.outcome for p in self.predictions if p.outcome is not None]
+        outcomes: List[bool] = [p.outcome for p in self.predictions if p.outcome is not None]
         if not outcomes:
             return 0.5  # Unknown
         return sum(outcomes) / len(outcomes)
@@ -146,12 +148,12 @@ class HypothesisTracker:
 
     HYPOTHESES_FILE = Path.home() / ".spark" / "hypotheses.json"
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.hypotheses: Dict[str, Hypothesis] = {}  # id -> hypothesis
         self._observation_buffer: Dict[str, List[str]] = {}  # pattern -> observations
         self._load_hypotheses()
 
-    def _load_hypotheses(self):
+    def _load_hypotheses(self) -> None:
         """Load existing hypotheses."""
         if self.HYPOTHESES_FILE.exists():
             try:
@@ -163,7 +165,7 @@ class HypothesisTracker:
             except Exception:
                 pass
 
-    def _save_hypotheses(self):
+    def _save_hypotheses(self) -> None:
         """Save hypotheses to disk."""
         self.HYPOTHESES_FILE.parent.mkdir(parents=True, exist_ok=True)
         data = {
@@ -275,7 +277,7 @@ class HypothesisTracker:
 
         return prediction
 
-    def record_outcome(self, hypothesis_id: str, prediction_index: int, correct: bool, notes: str = ""):
+    def record_outcome(self, hypothesis_id: str, prediction_index: int, correct: bool, notes: str = "") -> None:
         """
         Record the outcome of a prediction.
 
@@ -297,7 +299,7 @@ class HypothesisTracker:
         self._update_hypothesis_state(hypothesis)
         self._save_hypotheses()
 
-    def _update_hypothesis_state(self, hypothesis: Hypothesis):
+    def _update_hypothesis_state(self, hypothesis: Hypothesis) -> None:
         """Update hypothesis state based on prediction outcomes."""
         if hypothesis.sample_size < 3:
             return  # Need at least 3 outcomes
@@ -322,7 +324,7 @@ class HypothesisTracker:
 
         hypothesis.last_updated = datetime.now().isoformat()
 
-    def _promote_to_belief(self, hypothesis: Hypothesis):
+    def _promote_to_belief(self, hypothesis: Hypothesis) -> None:
         """Promote a validated hypothesis to a cognitive insight."""
         if hypothesis.promoted_to_insight:
             return  # Already promoted
@@ -344,7 +346,7 @@ class HypothesisTracker:
         except Exception:
             pass
 
-    def add_counter_evidence(self, hypothesis_id: str, counter_observation: str):
+    def add_counter_evidence(self, hypothesis_id: str, counter_observation: str) -> None:
         """Add counter-evidence to a hypothesis."""
         if hypothesis_id not in self.hypotheses:
             return
@@ -369,7 +371,7 @@ class HypothesisTracker:
         testable.sort(key=lambda h: h.confidence, reverse=True)
         return testable[:limit]
 
-    def get_pending_predictions(self) -> List[tuple]:
+    def get_pending_predictions(self) -> List[Tuple[str, int, Hypothesis, Prediction]]:
         """Get predictions awaiting outcomes."""
         pending = []
         for h in self.hypotheses.values():
