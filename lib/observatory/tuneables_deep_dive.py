@@ -9,12 +9,18 @@ from __future__ import annotations
 
 import json
 import time
-from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from .config import spark_dir
+
+try:
+    from ..tuneables_schema import SCHEMA as _TUNEABLES_SCHEMA
+    from ..tuneables_schema import SECTION_CONSUMERS as _SCHEMA_SECTION_CONSUMERS
+except Exception:
+    _TUNEABLES_SCHEMA = {}
+    _SCHEMA_SECTION_CONSUMERS = {}
 
 _SPARK_DIR = spark_dir()
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -85,13 +91,15 @@ KNOWN_RELOAD_SECTIONS = {
     "auto_tuner": ["lib/advisor.py"],
     "bridge_worker": ["lib/bridge_cycle.py"],
     "chip_merge": ["lib/chip_merger.py"],
-    "eidos": ["lib/eidos/models.py"],
+    "eidos": ["lib/eidos/models.py", "lib/distillation_refiner.py"],
     "memory_capture": ["lib/memory_capture.py"],
+    "memory_deltas": ["lib/memory_store.py"],
     "memory_emotion": ["lib/memory_store.py", "lib/memory_banks.py"],
     "memory_learning": ["lib/memory_store.py"],
     "memory_retrieval_guard": ["lib/memory_store.py"],
     "meta_ralph": ["lib/meta_ralph.py"],
     "observatory": ["lib/observatory/config.py"],
+    "opportunity_scanner": ["lib/opportunity_scanner.py"],
     "pipeline": ["lib/pipeline.py"],
     "production_gates": ["lib/production_gates.py"],
     "promotion": ["lib/promoter.py", "lib/auto_promote.py"],
@@ -102,19 +110,22 @@ KNOWN_RELOAD_SECTIONS = {
     "synthesizer": ["lib/advisory_synthesizer.py"],
     "triggers": ["lib/semantic_retriever.py"],
     "values": ["lib/pipeline.py", "lib/eidos/models.py"],
+    "llm_areas": ["lib/llm_dispatch.py"],
 }
 
-# Schema sections from tuneables_schema.py
-SCHEMA_SECTIONS = [
-    "values", "pipeline", "semantic", "triggers", "promotion", "synthesizer",
-    "flow", "advisory_engine", "advisory_gate", "advisory_packet_store",
-    "advisory_prefetch", "advisor", "retrieval", "meta_ralph", "eidos",
-    "auto_tuner", "chip_merge",
-    "advisory_quality", "advisory_preferences", "memory_emotion",
-    "memory_learning", "memory_retrieval_guard", "bridge_worker",
-    "memory_capture", "observatory", "production_gates",
-    "sync", "queue", "request_tracker",
-]
+# Schema sections from tuneables_schema.py (single source of truth).
+SCHEMA_SECTIONS = (
+    list(_TUNEABLES_SCHEMA.keys())
+    if isinstance(_TUNEABLES_SCHEMA, dict) and _TUNEABLES_SCHEMA
+    else [
+        "values",
+        "pipeline",
+        "semantic",
+        "triggers",
+        "promotion",
+        "synthesizer",
+    ]
+)
 
 # Impact rating for each section
 SECTION_IMPACT = {
@@ -143,43 +154,30 @@ SECTION_IMPACT = {
     "memory_learning": "LOW",
     "memory_retrieval_guard": "LOW",
     "memory_capture": "LOW",
+    "memory_deltas": "LOW",
     "observatory": "LOW",
+    "feature_flags": "HIGH",
+    "observe_hook": "MEDIUM",
+    "chips_runtime": "MEDIUM",
+    "opportunity_scanner": "MEDIUM",
+    "prediction": "MEDIUM",
+    "orchestration": "MEDIUM",
+    "feature_gates": "LOW",
     "sync": "MEDIUM",
     "queue": "MEDIUM",
     "request_tracker": "LOW",
+    "llm_areas": "HIGH",
 }
 
-# Consumer map (from tuneables_schema.py SECTION_CONSUMERS)
-SECTION_CONSUMERS = {
-    "values": ["lib/pipeline.py", "lib/advisor.py", "lib/eidos/models.py"],
-    "semantic": ["lib/semantic_retriever.py", "lib/advisor.py"],
-    "triggers": ["lib/advisor.py"],
-    "promotion": ["lib/promoter.py", "lib/auto_promote.py"],
-    "synthesizer": ["lib/advisory_synthesizer.py"],
-    "advisory_engine": ["lib/advisory_engine.py"],
-    "advisory_gate": ["lib/advisory_gate.py", "lib/advisory_state.py"],
-    "advisory_packet_store": ["lib/advisory_packet_store.py"],
-    "advisory_prefetch": ["lib/advisory_prefetch_worker.py"],
-    "advisor": ["lib/advisor.py"],
-    "retrieval": ["lib/advisor.py", "lib/semantic_retriever.py"],
-    "meta_ralph": ["lib/meta_ralph.py"],
-    "eidos": ["lib/eidos/models.py"],
-    "pipeline": ["lib/pipeline.py"],
-    "auto_tuner": ["lib/auto_tuner.py"],
-    "chip_merge": ["lib/chips/runtime.py", "lib/chip_merger.py"],
-    "advisory_quality": ["lib/advisory_synthesizer.py"],
-    "advisory_preferences": ["lib/advisory_preferences.py"],
-    "memory_emotion": ["lib/memory_store.py", "lib/memory_banks.py"],
-    "memory_learning": ["lib/memory_store.py"],
-    "memory_retrieval_guard": ["lib/memory_store.py"],
-    "bridge_worker": ["lib/bridge_cycle.py"],
-    "memory_capture": ["lib/memory_capture.py"],
-    "production_gates": ["lib/production_gates.py"],
-    "observatory": ["lib/observatory/config.py"],
-    "sync": ["lib/context_sync.py"],
-    "queue": ["lib/queue.py"],
-    "request_tracker": ["lib/pattern_detection/request_tracker.py"],
-}
+# Consumer map (from tuneables_schema.py SECTION_CONSUMERS).
+SECTION_CONSUMERS = (
+    dict(_SCHEMA_SECTION_CONSUMERS)
+    if isinstance(_SCHEMA_SECTION_CONSUMERS, dict) and _SCHEMA_SECTION_CONSUMERS
+    else {
+        "values": ["lib/pipeline.py", "lib/advisor.py", "lib/eidos/models.py"],
+        "semantic": ["lib/semantic_retriever.py", "lib/advisor.py"],
+    }
+)
 
 
 def _load_configs() -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -328,12 +326,39 @@ def _auto_tuner_analysis(live: Dict[str, Any]) -> Dict[str, Any]:
 
 # ── Page Generator ───────────────────────────────────────────────────
 
+def _llm_area_config_advise(drifts: list, anomalies: list) -> str:
+    """LLM area: generate config recommendations from drift and anomaly data.
+
+    When disabled (default), returns empty string.
+    """
+    try:
+        from ..llm_area_prompts import format_prompt
+        from ..llm_dispatch import llm_area_call
+
+        prompt = format_prompt(
+            "config_advise",
+            drift_count=str(len(drifts)),
+            anomaly_count=str(len(anomalies)),
+            top_drifts=str(drifts[:5]) if drifts else "none",
+            top_anomalies=str(anomalies[:5]) if anomalies else "none",
+        )
+        result = llm_area_call("config_advise", prompt, fallback="")
+        if result.used_llm and result.text:
+            return result.text
+        return ""
+    except Exception:
+        return ""
+
+
 def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     """Build the comprehensive tuneables deep-dive page for Obsidian."""
     live, versioned = _load_configs()
     drifts = _compute_drift(live, versioned)
     anomalies = _detect_anomalies(live)
     tuner = _auto_tuner_analysis(live)
+
+    # LLM area: config_advise — generate config recommendations
+    config_advice = _llm_area_config_advise(drifts, anomalies)
 
     lines: List[str] = []
 
@@ -756,5 +781,12 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     lines.append("- [[System Flow Comprehensive]] — Full pipeline reverse engineering")
     lines.append("- [[System Flow Operator Playbook]] — Operational procedures")
     lines.append("")
+
+    # Inject LLM config advice section if available
+    if config_advice:
+        lines.append("## LLM Config Recommendations")
+        lines.append("")
+        lines.append(config_advice)
+        lines.append("")
 
     return "\n".join(lines)
