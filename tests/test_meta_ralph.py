@@ -142,61 +142,9 @@ def test_context_boost():
     print("Context boost: PASSED")
 
 
-def test_dual_score_shadow_keeps_legacy_primary(monkeypatch):
-    """Shadow mode should log challenger but keep legacy scorer authoritative."""
+def test_alpha_scorer_is_primary(monkeypatch):
+    """Alpha scorer is the primary Meta-Ralph scorer."""
     import lib.meta_ralph as mr
-
-    monkeypatch.setenv("SPARK_META_DUAL_SCORE_SHADOW", "1")
-    monkeypatch.setenv("SPARK_META_DUAL_SCORE_ENFORCE", "0")
-
-    def _legacy_low(_self, _learning, _context):
-        return mr.QualityScore(
-            actionability=0,
-            novelty=0,
-            reasoning=0,
-            specificity=0,
-            outcome_linked=0,
-            ethics=0,
-        )
-
-    monkeypatch.setattr(mr.MetaRalph, "_score_learning", _legacy_low)
-    monkeypatch.setattr(
-        mr,
-        "score_alpha_learning",
-        lambda _learning, _context: {
-            "actionability": 2,
-            "novelty": 2,
-            "reasoning": 2,
-            "specificity": 2,
-            "outcome_linked": 2,
-            "ethics": 1,
-        },
-    )
-
-    captured = []
-    monkeypatch.setattr(
-        mr,
-        "record_meta_score_shadow",
-        lambda **kwargs: captured.append(kwargs),
-    )
-
-    ralph = mr.MetaRalph()
-    result = ralph.roast("User chose strict schema validation because malformed payloads broke deploys")
-
-    assert result.verdict == mr.RoastVerdict.PRIMITIVE
-    assert isinstance(result.scoring, dict)
-    assert result.scoring["primary"] == "legacy"
-    assert isinstance(result.scoring.get("challenger"), dict)
-    assert result.scoring.get("disagree") is True
-    assert len(captured) >= 1
-
-
-def test_dual_score_enforce_switches_primary(monkeypatch):
-    """Enforce mode should let challenger drive verdict selection."""
-    import lib.meta_ralph as mr
-
-    monkeypatch.setenv("SPARK_META_DUAL_SCORE_SHADOW", "1")
-    monkeypatch.setenv("SPARK_META_DUAL_SCORE_ENFORCE", "1")
 
     def _legacy_low(_self, _learning, _context):
         return mr.QualityScore(
@@ -227,11 +175,42 @@ def test_dual_score_enforce_switches_primary(monkeypatch):
 
     assert result.verdict == mr.RoastVerdict.QUALITY
     assert isinstance(result.scoring, dict)
-    assert result.scoring["primary"] == "challenger"
-    assert isinstance(result.scoring.get("challenger"), dict)
+    assert result.scoring["primary"] == "alpha"
+    assert isinstance(result.scoring.get("alpha"), dict)
     stats = ralph.get_stats()
-    assert stats["dual_scoring_runs"] >= 1
-    assert stats["dual_scoring_challenger_selected"] >= 1
+    assert stats["alpha_scoring_runs"] >= 1
+
+
+def test_alpha_scorer_uses_legacy_fallback_on_error(monkeypatch):
+    """If alpha scorer errors, Meta-Ralph falls back to legacy scorer."""
+    import lib.meta_ralph as mr
+
+    def _legacy_low(_self, _learning, _context):
+        return mr.QualityScore(
+            actionability=0,
+            novelty=0,
+            reasoning=0,
+            specificity=0,
+            outcome_linked=0,
+            ethics=0,
+        )
+
+    monkeypatch.setattr(mr.MetaRalph, "_score_learning", _legacy_low)
+    monkeypatch.setattr(
+        mr,
+        "score_alpha_learning",
+        lambda _learning, _context: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    ralph = mr.MetaRalph()
+    result = ralph.roast("User chose strict schema validation because malformed payloads broke deploys")
+
+    assert result.verdict == mr.RoastVerdict.PRIMITIVE
+    assert isinstance(result.scoring, dict)
+    assert result.scoring["primary"] == "legacy_fallback"
+    assert isinstance(result.scoring.get("alpha"), dict)
+    stats = ralph.get_stats()
+    assert stats["legacy_fallback_runs"] >= 1
 
 
 def test_stats():
