@@ -115,10 +115,6 @@ MIND_RESERVE_SLOTS: int = 1
 MIND_RESERVE_MIN_RANK: float = 0.45
 RETRIEVAL_ROUTE_LOG = ADVISOR_DIR / "retrieval_router.jsonl"
 RETRIEVAL_ROUTE_LOG_MAX = 800
-COGNITIVE_KEYWORD_FALLBACK_ENABLED = (
-    str(os.getenv("SPARK_ADVISORY_COGNITIVE_KEYWORD_FALLBACK", "0")).strip().lower()
-    in {"1", "true", "yes", "on"}
-)
 
 DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
     "1": {
@@ -2561,7 +2557,7 @@ class SparkAdvisor:
         # 1. Query memory banks (fast local)
         advice_list.extend(self._get_bank_advice(context))
 
-        # 2. Query cognitive insights (semantic + keyword fallback)
+        # 2. Query cognitive insights (semantic-first path)
         try:
             cognitive_advice = self._get_cognitive_advice(
                 tool_name,
@@ -2743,17 +2739,13 @@ class SparkAdvisor:
         semantic_context: Optional[str] = None,
         trace_id: Optional[str] = None,
     ) -> List[Advice]:
-        """Get advice from cognitive insights (semantic-first, keyword fallback optional)."""
+        """Get advice from cognitive insights (semantic-first only)."""
         semantic = self._get_semantic_cognitive_advice(
             tool_name=tool_name,
             context=semantic_context or context,
             trace_id=trace_id,
         )
-        if semantic:
-            return semantic
-        if not COGNITIVE_KEYWORD_FALLBACK_ENABLED:
-            return []
-        return self._get_cognitive_advice_keyword(tool_name, context)
+        return semantic if semantic else []
 
     # -- LLM area hooks (opt-in via llm_areas tuneable section) --
 
@@ -3454,54 +3446,6 @@ class SparkAdvisor:
         if best <= 0.0:
             return [0.0 for _ in range(count)]
         return [float(v / best) for v in raw]
-
-    def _get_cognitive_advice_keyword(self, tool_name: str, context: str) -> List[Advice]:
-        """Get advice from cognitive insights using keyword matching."""
-        advice = []
-
-        # Query insights relevant to this context
-        insights = self.cognitive.get_insights_for_context(context, limit=30, with_keys=True)
-
-        # Also get tool-specific insights
-        tool_insights = self.cognitive.get_insights_for_context(tool_name, limit=5, with_keys=True)
-
-        # Combine and dedupe
-        seen = set()
-        for insight_key, insight in insights + tool_insights:
-            key = insight_key or insight.insight[:50]
-            if key in seen:
-                continue
-            seen.add(key)
-
-            if insight.reliability < MIN_RELIABILITY_FOR_ADVICE:
-                continue
-            if hasattr(self.cognitive, "is_noise_insight") and self.cognitive.is_noise_insight(insight.insight):
-                continue
-
-            # Calculate context match
-            context_match = self._calculate_context_match(insight.context, context)
-
-            # Task #13: Extract reason from evidence
-            reason = ""
-            if hasattr(insight, 'evidence') and insight.evidence:
-                reason = insight.evidence[0][:100] if insight.evidence[0] else ""
-            elif hasattr(insight, 'context') and insight.context:
-                reason = f"From context: {insight.context[:80]}"
-
-            advice.append(Advice(
-                advice_id=self._generate_advice_id(
-                    insight.insight, insight_key=insight_key, source="cognitive"
-                ),
-                insight_key=insight_key,
-                text=insight.insight,
-                confidence=insight.reliability,
-                source="cognitive",
-                context_match=context_match,
-                reason=reason,
-                advisory_quality=getattr(insight, "advisory_quality", None) or {},
-            ))
-
-        return advice
 
     def _get_bank_advice(self, context: str) -> List[Advice]:
         """Get advice from memory banks (project/global)."""
