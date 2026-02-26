@@ -56,7 +56,6 @@ Spark-Intelligence-Observatory/
       verdicts/                     # Individual Meta-Ralph verdicts (with detail pages)
       promotions/                   # Promotion log entries (index only)
       advisory/                     # Advisory effectiveness breakdown (index only)
-      helpfulness/                  # Helpfulness calibration progress + LLM review queue health
       routing/                      # Retrieval router decisions (index only)
       tuning/                       # Tuneable evolution history + impact analysis (index only)
       decisions/                    # Advisory decision ledger - emit/suppress/block (index only)
@@ -146,7 +145,6 @@ Open `_observatory/explore/_index.md` to see all browsable data stores.
 | **Meta-Ralph Verdicts** | `~/.spark/meta_ralph/roast_history.json` | Yes (per verdict) | Score breakdown, input text, issues found |
 | **Promotion Log** | `~/.spark/promotion_log.jsonl` | No (index table) | Target distribution, recent activity |
 | **Advisory** | `~/.spark/advisor/effectiveness.json` | No (index table) | Source effectiveness, follow rate, recent advice |
-| **Helpfulness Calibration** | `~/.spark/advisor/helpfulness_*.json*` | No (index table) | Event label quality, conflicts, queue burn-down, LLM review outcomes |
 | **Retrieval Routing** | `~/.spark/advisor/retrieval_router.jsonl` | No (index table) | Route distribution, reasons, complexity scores |
 | **Tuneable Evolution** | `~/.spark/auto_tune_log.jsonl` | No (index table) | Parameter changes, impact analysis (before/after follow rate) |
 | **Advisory Decisions** | `~/.spark/advisory_decision_ledger.jsonl` | No (index table) | Emit/suppress/block decisions, suppression reasons, source counts |
@@ -202,26 +200,6 @@ except Exception:
     pass
 ```
 
-### Helpfulness Calibration Loop (Watcher + LLM)
-
-```bash
-# 1) Rebuild deterministic helpfulness events + summary
-python scripts/helpfulness_watcher.py --once
-
-# 2) Let Minimax/Kimi adjudicate queued ambiguous events (if keys are available)
-python scripts/helpfulness_llm_adjudicator.py --provider auto --max-events 120
-
-# 3) Re-apply watcher so accepted LLM reviews are folded into events/summary
-python scripts/helpfulness_watcher.py --once
-
-# 4) Regenerate Observatory to refresh explore/helpfulness
-python scripts/generate_observatory.py --force --verbose
-```
-
-Environment variables supported by the adjudicator:
-- `SPARK_MINIMAX_API_KEY` (or `MINIMAX_API_KEY`)
-- `SPARK_KIMI_API_KEY` (or `KIMI_API_KEY`)
-
 ## Configuration & Fine-Tuning
 
 All observatory settings live in the `observatory` section of tuneables.
@@ -255,8 +233,6 @@ Edit either file's `observatory` section. Runtime config takes priority.
 | `explore_tuning_max` | int | `200` | 1–5000 | Max tuneable evolution entries exported |
 | `explore_decisions_max` | int | `200` | 1–5000 | Max advisory decision ledger entries exported |
 | `explore_feedback_max` | int | `200` | 1–5000 | Max implicit feedback entries exported |
-
-`explore_feedback_max` is also used for the **Helpfulness Calibration** explorer page (`explore/helpfulness/_index.md`) event window.
 
 ### Example: Increase explorer limits
 

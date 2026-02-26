@@ -177,3 +177,12 @@ SPARK_ADVISORY_PAYLOAD.json
 bandit_report.json
 scripts/.spark_openclaw_pids.json
 spark-alive/
+
+# Internal-only planning/ops docs (keep out of public PRs)
+docs/NO_BS_*.md
+docs/COMBAT_BOARD_MASTER.md
+docs/observability/*SELF_INTERROGATION*.md
+docs/reports/SELF_INTERROGATION_TRIPLE_TEMPLATE.md
+
+# Internal-only local automation script
+scripts/nightly_self_interrogation.py
