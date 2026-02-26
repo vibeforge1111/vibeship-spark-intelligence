@@ -226,7 +226,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 1. Full advisory collapse (17 modules -> compact 3-module architecture) is not implemented.
 2. Storage consolidation to single SQLite-first memory/advisory store is not implemented.
 3. Memory compaction engine (ACT-R decay + Mem0-style add/update/delete/noop) is not implemented.
-4. Thompson-sampling source selector is not implemented.
+4. VibeForge goal-directed self-improvement loop is not implemented yet (replaces Thompson-only self-tuning for alpha).
 5. Large config surface reduction (hard pruning to minimal knobs) is not implemented.
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
 7. Broad file/function deletion pass to reach Carmack-size target is not done.

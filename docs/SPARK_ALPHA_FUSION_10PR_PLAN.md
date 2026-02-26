@@ -13,7 +13,7 @@ Merge three things into one executable plan:
 1. No big-bang rewrite.
 2. Every new alpha path must have a paired deletion path.
 3. Measurement contract remains authoritative before and after cutovers.
-4. Prefer simple self-tuning first (EMA/Thompson). RL governor is optional, not on critical path.
+4. Use the VibeForge goal-directed self-improvement loop for tuning/evolution; RL governor remains optional and off critical path.
 5. Cutover only with replay wins + live gate pass.
 
 ## Current Reality (Already Completed)
@@ -59,7 +59,7 @@ Current measured state:
 3. Advisory collapse (17 files -> 3): partial
 4. Memory compaction (ACT-R + Mem0 protocol): pending
 5. Delivery-time retrieval improvement: partial
-6. Thompson sampling self-tuning: pending
+6. VibeForge self-improvement loop (goal + oracle + propose/test/promote ledger): pending
 7. Config reduction (576 -> ~70): pending
 8. Distillation pipeline collapse: pending
 9. Test overhaul (behavioral/replay dominant): partial
@@ -112,10 +112,11 @@ Current measured state:
 4. Added regression diff artifacts in `benchmarks/out/replay_arena/`.
 5. Remaining: run larger deterministic episode windows as ongoing evidence before irreversible deletions.
 
-### PR-08 Reserved Risk Slot  (Pending, User-Defined)
-1. Reserved for the additional high-risk module the user wants to add at finalization.
-2. Constraint: must be behind route flag and reversible in one commit.
-3. Not required for baseline alpha cutover.
+### PR-08 VibeForge Loop (Pending)
+1. Implement single-script goal-directed improvement loop from [`VIBEFORGE_LOOP.md`](./VIBEFORGE_LOOP.md).
+2. Loop contract: measure -> diagnose -> propose one change -> oracle test -> promote/rollback -> ledger.
+3. Scope replaces Thompson source-selector lane for alpha.
+4. Constraint: keep proposer bounded to EVOLVE-BLOCKs + tuneable schema validation.
 
 ### PR-09 Config Reduction + Utility Dedup  (Partial)
 1. Consolidated duplicated JSONL helpers into shared `lib/jsonl_utils.py`.
@@ -135,14 +136,14 @@ Current measured state:
    - Legacy storage write paths replaced by SQLite spine
 7. Output required: explicit deleted file list + LOC removed + rollback tag.
 
-## Methods Decision (RL Governor vs Thompson)
+## Methods Decision (RL Governor vs VibeForge Loop)
 Default path for alpha:
-1. Use Thompson Sampling + EMA for lightweight online self-tuning.
+1. Use VibeForge loop as the primary self-improvement mechanism (code+tuneables, oracle-gated).
 2. Keep Daily Governor/RL as optional experiment lane only after alpha is stable.
 
 Reason:
-1. Matches current scale and structured event regime.
-2. Avoids adding a new control system before deletion milestones are complete.
+1. Higher leverage than Thompson-only tuning because it can evolve both code and tuneables.
+2. Maintains Carmack discipline via bounded change surface, deterministic gates, and explicit rollback.
 
 ## Anti Dual-Path Trap Rules
 1. Any PR that adds an alpha path must specify the exact legacy path scheduled for removal.
