@@ -106,6 +106,13 @@ def _file_size(path: Path) -> int:
         return 0
 
 
+def _as_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return int(default)
+
+
 # ── Stage 1: Event Capture ──────────────────────────────────────────
 
 def read_event_capture() -> dict[str, Any]:
@@ -442,6 +449,30 @@ def read_eidos() -> dict[str, Any]:
     d["active_episodes"] = len(ae) if isinstance(ae, dict) else 0
     ast = _load_json(_SD / "eidos_active_steps.json") or {}
     d["active_steps"] = len(ast) if isinstance(ast, dict) else 0
+
+    # Distillation curriculum snapshot metrics.
+    curriculum_latest = _load_json(_SD / "eidos_curriculum_latest.json")
+    curriculum_stats = {}
+    if isinstance(curriculum_latest, dict):
+        stats = curriculum_latest.get("stats")
+        if isinstance(stats, dict):
+            curriculum_stats = stats
+
+    severity = curriculum_stats.get("severity", {}) if isinstance(curriculum_stats.get("severity"), dict) else {}
+    d["curriculum_rows_scanned"] = _as_int(curriculum_stats.get("rows_scanned"), 0)
+    d["curriculum_cards_generated"] = _as_int(curriculum_stats.get("cards_generated"), 0)
+    d["curriculum_high"] = _as_int(severity.get("high"), 0)
+    d["curriculum_medium"] = _as_int(severity.get("medium"), 0)
+    d["curriculum_low"] = _as_int(severity.get("low"), 0)
+    d["curriculum_gaps"] = curriculum_stats.get("gaps", {}) if isinstance(curriculum_stats.get("gaps"), dict) else {}
+
+    history_rows = _tail_jsonl(_SD / "eidos_curriculum_history.jsonl", 60)
+    d["curriculum_history_points"] = len(history_rows)
+    if history_rows:
+        first_high = _as_int(history_rows[0].get("high"), d["curriculum_high"])
+        d["curriculum_high_delta"] = d["curriculum_high"] - first_high
+    else:
+        d["curriculum_high_delta"] = 0
     return d
 
 
@@ -481,26 +512,50 @@ def read_advisory(max_recent: int = 15) -> dict[str, Any]:
     # Implicit feedback summary
     feedback_path = _SD / "advisor" / "implicit_feedback.jsonl"
     fb_entries = _tail_jsonl(feedback_path, 200)
-    fb_followed = sum(1 for e in fb_entries if e.get("signal") == "followed")
+    fb_followed = sum(1 for e in fb_entries if e.get("signal") in {"followed", "helpful"})
     fb_ignored = sum(1 for e in fb_entries if e.get("signal") == "ignored")
+    fb_unhelpful = sum(1 for e in fb_entries if e.get("signal") == "unhelpful")
+    fb_not_followed = sum(1 for e in fb_entries if e.get("signal") == "not_followed")
+    fb_eval_total = fb_followed + fb_ignored + fb_unhelpful + fb_not_followed
     d["feedback_total"] = len(fb_entries)
     d["feedback_followed"] = fb_followed
     d["feedback_ignored"] = fb_ignored
+    d["feedback_unhelpful"] = fb_unhelpful
+    d["feedback_not_followed"] = fb_not_followed
+    d["feedback_eval_total"] = fb_eval_total
     d["feedback_follow_rate"] = round(
-        fb_followed / max(fb_followed + fb_ignored, 1) * 100, 1
+        fb_followed / max(fb_eval_total, 1) * 100, 1
     )
     # Per-tool follow rates
     tool_fb: dict[str, dict[str, int]] = {}
     for e in fb_entries:
         tool = e.get("tool", "?")
         if tool not in tool_fb:
-            tool_fb[tool] = {"followed": 0, "ignored": 0, "total": 0}
+            tool_fb[tool] = {
+                "followed": 0,
+                "ignored": 0,
+                "unhelpful": 0,
+                "not_followed": 0,
+                "total": 0,
+            }
         tool_fb[tool]["total"] += 1
-        if e.get("signal") == "followed":
+        signal = e.get("signal")
+        if signal in {"followed", "helpful"}:
             tool_fb[tool]["followed"] += 1
-        elif e.get("signal") == "ignored":
+        elif signal == "ignored":
             tool_fb[tool]["ignored"] += 1
+        elif signal == "unhelpful":
+            tool_fb[tool]["unhelpful"] += 1
+        elif signal == "not_followed":
+            tool_fb[tool]["not_followed"] += 1
     d["feedback_by_tool"] = tool_fb
+
+    # Calibrated helpfulness stream from deterministic watcher.
+    helpfulness_summary = _load_json(_SD / "advisor" / "helpfulness_summary.json") or {}
+    d["helpfulness_summary"] = helpfulness_summary if isinstance(helpfulness_summary, dict) else {}
+    d["recent_helpfulness_events"] = _tail_jsonl(
+        _SD / "advisor" / "helpfulness_events.jsonl", max_recent
+    )
     return d
 
 

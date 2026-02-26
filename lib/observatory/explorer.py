@@ -6,6 +6,7 @@ Generates:
     distillations/ _index.md + per-distillation pages
     episodes/      _index.md + per-episode pages (with steps)
     advisory/      _index.md (source breakdown + recent advice)
+    helpfulness/   _index.md (calibrated helpfulness progress tracking)
     promotions/    _index.md + per-batch pages
     verdicts/      _index.md + per-verdict pages
 """
@@ -16,6 +17,7 @@ import json
 import re
 import sqlite3
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -601,6 +603,7 @@ def _export_advisory(explore_dir: Path, advice_limit: int) -> int:
 
     eff = _load_json(_SD / "advisor" / "effectiveness.json") or {}
     metrics = _load_json(_SD / "advisor" / "metrics.json") or {}
+    helpfulness_summary = _load_json(_SD / "advisor" / "helpfulness_summary.json") or {}
     recent = _tail_jsonl(_SD / "advisor" / "advice_log.jsonl", advice_limit)
 
     total_given = eff.get("total_advice_given", 0)
@@ -616,6 +619,7 @@ def _export_advisory(explore_dir: Path, advice_limit: int) -> int:
     })]
     index.append(f"# Advisory Effectiveness\n")
     index.append(f"> {flow_link()} | [[../stages/08-advisory|Stage 8: Advisory]]\n")
+    index.append("> For calibrated event-level progress tracking: [[../helpfulness/_index|Helpfulness Calibration]].\n")
 
     index.append("## Overall\n")
     index.append("| Metric | Value |")
@@ -630,6 +634,27 @@ def _export_advisory(explore_dir: Path, advice_limit: int) -> int:
         cognitive_helpful_rate = 0.0
     index.append(f"| Cognitive helpful rate | {cognitive_helpful_rate:.1%} |")
     index.append("")
+
+    if isinstance(helpfulness_summary, dict) and helpfulness_summary:
+        labels = helpfulness_summary.get("labels", {}) if isinstance(helpfulness_summary.get("labels"), dict) else {}
+        index.append("## Calibrated Helpfulness (Watcher)\n")
+        index.append("| Metric | Value |")
+        index.append("|--------|-------|")
+        index.append(f"| Total events | {fmt_num(helpfulness_summary.get('total_events', 0))} |")
+        index.append(f"| Known helpfulness events | {fmt_num(helpfulness_summary.get('known_helpfulness_total', 0))} |")
+        index.append(f"| Helpful rate | {helpfulness_summary.get('helpful_rate_pct', 0.0)}% |")
+        index.append(f"| Unknown rate | {helpfulness_summary.get('unknown_rate_pct', 0.0)}% |")
+        index.append(f"| Conflict rate | {helpfulness_summary.get('conflict_rate_pct', 0.0)}% |")
+        index.append(f"| LLM review queue | {fmt_num(helpfulness_summary.get('llm_review_queue_count', 0))} |")
+        index.append(f"| LLM review applied | {fmt_num(helpfulness_summary.get('llm_review_applied_count', 0))} |")
+        index.append("")
+        if labels:
+            index.append("### Label Distribution\n")
+            index.append("| Label | Count |")
+            index.append("|-------|-------|")
+            for label, count in sorted(labels.items(), key=lambda x: -x[1]):
+                index.append(f"| {label} | {fmt_num(count)} |")
+            index.append("")
 
     by_source = eff.get("by_source", {})
     if by_source:
@@ -1054,6 +1079,265 @@ def _export_decisions(explore_dir: Path, limit: int) -> int:
 #  IMPLICIT FEEDBACK LOOP
 # ═══════════════════════════════════════════════════════════════════════
 
+def _event_ts(event: dict[str, Any]) -> float:
+    """Best-effort event timestamp for sorting/trends."""
+    try:
+        ts = float(event.get("request_ts") or 0.0)
+        if ts > 0:
+            return ts
+    except Exception:
+        pass
+    try:
+        ts = float(event.get("resolved_at") or 0.0)
+        if ts > 0:
+            return ts
+    except Exception:
+        pass
+    return 0.0
+
+
+def _latest_reviews_by_event(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        event_id = str(row.get("event_id") or "").strip()
+        if not event_id:
+            continue
+        prior = latest.get(event_id)
+        try:
+            ts = float(row.get("reviewed_at") or 0.0)
+        except Exception:
+            ts = 0.0
+        if prior is None:
+            latest[event_id] = row
+            continue
+        try:
+            prior_ts = float(prior.get("reviewed_at") or 0.0)
+        except Exception:
+            prior_ts = 0.0
+        if ts >= prior_ts:
+            latest[event_id] = row
+    return latest
+
+
+def _export_helpfulness(explore_dir: Path, limit: int) -> int:
+    """Export a human-readable helpfulness calibration progress page."""
+    out = explore_dir / "helpfulness"
+    out.mkdir(parents=True, exist_ok=True)
+
+    summary = _load_json(_SD / "advisor" / "helpfulness_summary.json") or {}
+    events = _tail_jsonl(_SD / "advisor" / "helpfulness_events.jsonl", limit)
+    queue = _tail_jsonl(_SD / "advisor" / "helpfulness_llm_queue.jsonl", limit)
+    reviews = _tail_jsonl(_SD / "advisor" / "helpfulness_llm_reviews.jsonl", max(limit * 4, limit))
+
+    # Derived fallback metrics when summary is missing or partial.
+    labels: dict[str, int] = {}
+    judge_sources: dict[str, int] = {}
+    conflicts = 0
+    llm_applied = 0
+    for row in events:
+        label = str(row.get("helpful_label") or "unknown").strip().lower()
+        labels[label] = labels.get(label, 0) + 1
+        judge = str(row.get("judge_source") or "unknown").strip() or "unknown"
+        judge_sources[judge] = judge_sources.get(judge, 0) + 1
+        if bool(row.get("conflict")):
+            conflicts += 1
+        if bool(row.get("llm_review_applied")):
+            llm_applied += 1
+
+    total_events = int(summary.get("total_events", len(events)) or len(events))
+    known_helpfulness = int(
+        summary.get(
+            "known_helpfulness_total",
+            labels.get("helpful", 0) + labels.get("unhelpful", 0) + labels.get("harmful", 0),
+        ) or 0
+    )
+    helpful_rate = float(
+        summary.get(
+            "helpful_rate_pct",
+            round((100.0 * labels.get("helpful", 0) / max(known_helpfulness, 1)), 2) if known_helpfulness > 0 else 0.0,
+        ) or 0.0
+    )
+    unknown_rate = float(
+        summary.get(
+            "unknown_rate_pct",
+            round((100.0 * labels.get("unknown", 0) / max(total_events, 1)), 2) if total_events > 0 else 0.0,
+        ) or 0.0
+    )
+    conflict_count = int(summary.get("conflict_count", conflicts) or conflicts)
+    conflict_rate = float(
+        summary.get(
+            "conflict_rate_pct",
+            round((100.0 * conflict_count / max(total_events, 1)), 2) if total_events > 0 else 0.0,
+        ) or 0.0
+    )
+    queue_count = int(summary.get("llm_review_queue_count", len(queue)) or len(queue))
+    llm_applied_count = int(summary.get("llm_review_applied_count", llm_applied) or llm_applied)
+    follow_rate = float(summary.get("follow_rate_pct", 0.0) or 0.0)
+
+    if isinstance(summary.get("labels"), dict):
+        labels = dict(summary.get("labels", {}))
+    if isinstance(summary.get("judge_source"), dict):
+        judge_sources = dict(summary.get("judge_source", {}))
+
+    # LLM review queue status.
+    reviews_by_event = _latest_reviews_by_event(reviews)
+    queue_ids = {str(r.get("event_id") or "").strip() for r in queue}
+    queue_ids.discard("")
+    review_status_counts: dict[str, int] = {}
+    unresolved_queue = 0
+    for event_id in queue_ids:
+        status = str((reviews_by_event.get(event_id) or {}).get("status") or "").strip().lower()
+        if status:
+            review_status_counts[status] = review_status_counts.get(status, 0) + 1
+        if status not in {"ok", "abstain"}:
+            unresolved_queue += 1
+
+    # Trend: last 7 calendar days in local timezone.
+    daily: dict[str, dict[str, int]] = defaultdict(
+        lambda: {
+            "total": 0,
+            "known": 0,
+            "helpful": 0,
+            "unknown": 0,
+            "conflicts": 0,
+            "queued": 0,
+            "llm_applied": 0,
+        }
+    )
+    for row in events:
+        ts = _event_ts(row)
+        if ts <= 0:
+            continue
+        day = time.strftime("%Y-%m-%d", time.localtime(ts))
+        slot = daily[day]
+        slot["total"] += 1
+        label = str(row.get("helpful_label") or "unknown").strip().lower()
+        if label in {"helpful", "unhelpful", "harmful"}:
+            slot["known"] += 1
+        if label == "helpful":
+            slot["helpful"] += 1
+        if label == "unknown":
+            slot["unknown"] += 1
+        if bool(row.get("conflict")):
+            slot["conflicts"] += 1
+        if bool(row.get("llm_review_required")):
+            slot["queued"] += 1
+        if bool(row.get("llm_review_applied")):
+            slot["llm_applied"] += 1
+
+    conflict_events = [r for r in events if bool(r.get("conflict"))]
+    conflict_events.sort(key=_event_ts)
+    recent_conflicts = conflict_events[-20:]
+
+    latest_reviews = sorted(reviews, key=lambda r: float(r.get("reviewed_at") or 0.0))
+    recent_reviews = latest_reviews[-40:]
+
+    index = [_frontmatter({
+        "type": "spark-helpfulness-index",
+        "events": len(events),
+        "queue": queue_count,
+        "reviews": len(reviews),
+        "helpful_rate_pct": round(helpful_rate, 2),
+        "unknown_rate_pct": round(unknown_rate, 2),
+        "conflict_rate_pct": round(conflict_rate, 2),
+    })]
+    index.append("# Helpfulness Calibration\n")
+    index.append(f"> {flow_link()} | [[../stages/08-advisory|Stage 8: Advisory]] | [[../advisory/_index|Advisory Effectiveness]]\n")
+    index.append(f"**Event window:** latest {len(events)} events (limit: {limit})\n")
+    index.append("")
+
+    index.append("## Current Scoreboard\n")
+    index.append("| Metric | Value |")
+    index.append("|--------|-------|")
+    index.append(f"| Total events | {fmt_num(total_events)} |")
+    index.append(f"| Known helpfulness events | {fmt_num(known_helpfulness)} |")
+    index.append(f"| Helpful rate | {helpful_rate:.2f}% |")
+    index.append(f"| Unknown rate | {unknown_rate:.2f}% |")
+    index.append(f"| Conflict count | {fmt_num(conflict_count)} ({conflict_rate:.2f}%) |")
+    index.append(f"| LLM review queue | {fmt_num(queue_count)} |")
+    index.append(f"| LLM review applied | {fmt_num(llm_applied_count)} |")
+    index.append(f"| Follow rate (explicit/implicit where known) | {follow_rate:.2f}% |")
+    index.append("")
+
+    index.append("## LLM Queue Health\n")
+    index.append("| Metric | Value |")
+    index.append("|--------|-------|")
+    index.append(f"| Queue items in current window | {fmt_num(len(queue_ids))} |")
+    index.append(f"| Unresolved queue items | {fmt_num(unresolved_queue)} |")
+    index.append(f"| Total review records in window | {fmt_num(len(reviews))} |")
+    index.append("")
+    if review_status_counts:
+        index.append("| Review status | Count |")
+        index.append("|--------------|-------|")
+        for status, count in sorted(review_status_counts.items(), key=lambda x: (-x[1], x[0])):
+            index.append(f"| {status} | {fmt_num(count)} |")
+        index.append("")
+
+    day_keys = sorted(daily.keys())[-7:]
+    if day_keys:
+        index.append("## 7-Day Trend\n")
+        index.append("| Day | Events | Known | Helpful | Helpful Rate | Unknown | Conflicts | Queued | LLM Applied |")
+        index.append("|-----|--------|-------|---------|--------------|---------|-----------|--------|-------------|")
+        for day in day_keys:
+            row = daily[day]
+            helpful_pct = round((100.0 * row["helpful"] / max(row["known"], 1)), 1) if row["known"] > 0 else 0.0
+            index.append(
+                f"| {day} | {row['total']} | {row['known']} | {row['helpful']} | {helpful_pct}% | "
+                f"{row['unknown']} | {row['conflicts']} | {row['queued']} | {row['llm_applied']} |"
+            )
+        index.append("")
+
+    if labels:
+        index.append("## Label Distribution\n")
+        index.append("| Label | Count |")
+        index.append("|-------|-------|")
+        for label, count in sorted(labels.items(), key=lambda x: (-x[1], x[0])):
+            index.append(f"| {label} | {fmt_num(count)} |")
+        index.append("")
+
+    if judge_sources:
+        index.append("## Judge Sources\n")
+        index.append("| Judge source | Count |")
+        index.append("|--------------|-------|")
+        for source, count in sorted(judge_sources.items(), key=lambda x: (-x[1], x[0])):
+            index.append(f"| {source} | {fmt_num(count)} |")
+        index.append("")
+
+    if recent_conflicts:
+        index.append("## Recent Conflict Events\n")
+        index.append("| Time | Tool | Label | Confidence | Needs Review | Judge Source |")
+        index.append("|------|------|-------|------------|--------------|--------------|")
+        for row in reversed(recent_conflicts):
+            ts = _event_ts(row)
+            tool = str(row.get("tool") or "?")
+            label = str(row.get("helpful_label") or "unknown")
+            confidence = float(row.get("confidence") or 0.0)
+            need_review = "yes" if bool(row.get("llm_review_required")) else "no"
+            judge = str(row.get("judge_source") or "?")
+            index.append(f"| {fmt_ts(ts) if ts > 0 else '?'} | {tool} | {label} | {confidence:.3f} | {need_review} | {judge} |")
+        index.append("")
+
+    if recent_reviews:
+        index.append("## Recent LLM Reviews\n")
+        index.append("| Reviewed | Event ID | Provider | Status | Label | Confidence |")
+        index.append("|----------|----------|----------|--------|-------|------------|")
+        for row in reversed(recent_reviews):
+            reviewed_ts = float(row.get("reviewed_at") or 0.0)
+            event_id = str(row.get("event_id") or "")[:14]
+            provider = str(row.get("provider") or "?")
+            status = str(row.get("status") or "?")
+            label = str(row.get("label") or "-")
+            confidence = float(row.get("confidence") or 0.0)
+            index.append(
+                f"| {fmt_ts(reviewed_ts) if reviewed_ts > 0 else '?'} | `{event_id}` | "
+                f"{provider} | {status} | {label} | {confidence:.3f} |"
+            )
+        index.append("")
+
+    (out / "_index.md").write_text("\n".join(index), encoding="utf-8")
+    return 1
+
+
 def _export_feedback(explore_dir: Path, limit: int) -> int:
     """Export implicit feedback showing whether advice was followed/ignored."""
     out = explore_dir / "feedback"
@@ -1203,6 +1487,7 @@ def generate_explorer(cfg: ObservatoryConfig) -> dict[str, int]:
     counts["routing"] = _export_routing(explore_dir, cfg.explore_routing_max)
     counts["tuning"] = _export_tuning(explore_dir, cfg.explore_tuning_max)
     counts["decisions"] = _export_decisions(explore_dir, cfg.explore_decisions_max)
+    counts["helpfulness"] = _export_helpfulness(explore_dir, cfg.explore_feedback_max)
     counts["feedback"] = _export_feedback(explore_dir, cfg.explore_feedback_max)
 
     # Generate master explore index
@@ -1228,6 +1513,7 @@ def _generate_explore_index(explore_dir: Path, counts: dict[str, int], cfg: Obse
         ("routing", "Retrieval Routing", cfg.explore_routing_max, "explore_routing_max"),
         ("tuning", "Tuneable Evolution", cfg.explore_tuning_max, "explore_tuning_max"),
         ("decisions", "Advisory Decisions", cfg.explore_decisions_max, "explore_decisions_max"),
+        ("helpfulness", "Helpfulness Calibration", cfg.explore_feedback_max, "explore_feedback_max"),
         ("feedback", "Implicit Feedback", cfg.explore_feedback_max, "explore_feedback_max"),
     ]
     for key, label, max_val, tuneable in sections:
