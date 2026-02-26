@@ -520,19 +520,104 @@ def _attempted_proposals(ledger_rows: List[Dict[str, Any]]) -> set[Tuple[str, st
     return seen
 
 
-def _default_for_key(section: str, key: str) -> Any:
+def _spec_for(section: str, key: str) -> Optional[Any]:
     sec = SCHEMA.get(section) or {}
-    spec = sec.get(key)
+    return sec.get(key)
+
+
+def _default_for_key(section: str, key: str) -> Any:
+    spec = _spec_for(section, key)
     if spec is not None:
         return spec.default
     return None
+
+
+def _apply_schema_bounds(section: str, key: str, value: Any) -> Any:
+    spec = _spec_for(section, key)
+    if spec is None:
+        return value
+    if spec.type == "int":
+        try:
+            v = int(value)
+        except Exception:
+            return value
+        if spec.min_val is not None:
+            v = max(int(spec.min_val), v)
+        if spec.max_val is not None:
+            v = min(int(spec.max_val), v)
+        return v
+    if spec.type == "float":
+        try:
+            v = float(value)
+        except Exception:
+            return value
+        if spec.min_val is not None:
+            v = max(float(spec.min_val), v)
+        if spec.max_val is not None:
+            v = min(float(spec.max_val), v)
+        return v
+    return value
+
+
+def _momentum_candidates(ledger_rows: List[Dict[str, Any]], tuneables: Dict[str, Any]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for row in reversed(ledger_rows[-120:]):
+        if str(row.get("outcome")) != "promoted":
+            continue
+        proposal = row.get("proposal")
+        if not isinstance(proposal, dict) or str(proposal.get("type")) != "tuneable":
+            continue
+        section = str(proposal.get("section", ""))
+        key = str(proposal.get("key", ""))
+        from_value = proposal.get("from")
+        to_value = proposal.get("to")
+        if not section or not key:
+            continue
+        if not (isinstance(from_value, (int, float)) and isinstance(to_value, (int, float))):
+            continue
+        delta = float(to_value) - float(from_value)
+        if abs(delta) <= EPSILON:
+            continue
+        section_dict = tuneables.get(section)
+        if not isinstance(section_dict, dict):
+            continue
+        current = section_dict.get(key, _default_for_key(section, key))
+        if current is None or not isinstance(current, (int, float)):
+            continue
+        spec = _spec_for(section, key)
+        if spec is None or spec.type not in {"int", "float"}:
+            continue
+        candidate_delta = delta
+        if spec.type == "int":
+            candidate_delta = int(round(delta))
+            if candidate_delta == 0:
+                candidate_delta = 1 if delta > 0 else -1
+        identity = (section, key, float(candidate_delta))
+        if identity in seen:
+            continue
+        seen.add(identity)
+        out.append(
+            {
+                "section": section,
+                "key": key,
+                "op": "add",
+                "delta": candidate_delta,
+                "reason": "Momentum: continue previously promoted direction.",
+            }
+        )
+        if len(out) >= 6:
+            break
+    return out
 
 
 def _propose_tuneable(goal: Dict[str, Any], ledger_rows: List[Dict[str, Any]], tuneables: Dict[str, Any]) -> Optional[TuneableProposal]:
     metric_name = str((goal.get("metric") or {}).get("name", ""))
     optimize = _infer_optimize(goal)
     attempted = _attempted_proposals(ledger_rows[-40:])
-    candidates = _rank_candidates(_candidate_pool(metric_name, optimize), ledger_rows)
+    candidates = _candidate_pool(metric_name, optimize)
+    candidates.extend(_momentum_candidates(ledger_rows, tuneables))
+    candidates = _rank_candidates(candidates, ledger_rows)
 
     for c in candidates:
         section = str(c.get("section", ""))
@@ -564,6 +649,7 @@ def _propose_tuneable(goal: Dict[str, Any], ledger_rows: List[Dict[str, Any]], t
         else:
             continue
 
+        proposal_value = _apply_schema_bounds(section, key, proposal_value)
         sig = (section, key, json.dumps(proposal_value, sort_keys=True))
         if sig in attempted:
             continue

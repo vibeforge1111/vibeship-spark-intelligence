@@ -75,3 +75,25 @@ def test_find_last_promoted_with_existing_backup(tmp_path):
     row = vibeforge._find_last_promoted_with_backup(ledger)
     assert row is not None
     assert int(row.get("cycle", 0)) == 1
+
+
+def test_momentum_candidates_follow_previous_wins():
+    vibeforge = _load_vibeforge_module()
+    ledger = [
+        {
+            "outcome": "promoted",
+            "proposal": {
+                "type": "tuneable",
+                "section": "advisor",
+                "key": "max_advice_items",
+                "from": 2,
+                "to": 3,
+            },
+        }
+    ]
+    tuneables = {"advisor": {"max_advice_items": 3}}
+    momentum = vibeforge._momentum_candidates(ledger, tuneables)
+    assert momentum
+    assert momentum[0]["section"] == "advisor"
+    assert momentum[0]["key"] == "max_advice_items"
+    assert float(momentum[0]["delta"]) > 0.0
