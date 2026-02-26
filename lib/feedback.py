@@ -108,8 +108,8 @@ def update_self_awareness_reliability(tool_name: str, success: bool) -> None:
         return
 
     if success:
-        best_insight.times_contradicted += 1
-    else:
         best_insight.times_validated += 1
+    else:
+        best_insight.times_contradicted += 1
     best_insight.last_validated_at = datetime.now().isoformat()
     cog._save_insights()
