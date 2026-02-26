@@ -135,14 +135,14 @@ def test_shown_ttl_suppresses_recently_shown():
 
 
 def test_shown_ttl_allows_expired():
-    """Advice shown 1000 seconds ago should be allowed (past default TTL)."""
-    state = MockState(shown_advice_ids={"test_001": time.time() - 1000})
+    """Advice shown long ago should be allowed (past any reasonable TTL)."""
+    # Use 10000s to safely exceed any multiplied TTL (base * category * source).
+    state = MockState(shown_advice_ids={"test_001": time.time() - 10_000})
     advice = MockAdvice(advice_id="test_001")
 
     with patch("lib.advisory_state.is_tool_suppressed", return_value=False):
         decision = _evaluate_single(advice, state, "Edit", None, "implementation")
 
-    # Should not be suppressed by shown_ttl (1000s > 420s default)
     assert "shown" not in decision.reason.lower() or decision.emit
 
 
