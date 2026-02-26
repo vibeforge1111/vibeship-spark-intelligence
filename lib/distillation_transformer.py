@@ -476,6 +476,77 @@ def should_suppress(text: str, dims: Dict[str, float], structure: Dict[str, Opti
     return False, ""
 
 
+def _llm_area_actionability_boost(text: str, actionability_score: float) -> Optional[str]:
+    """LLM area: boost actionability by rewriting to include clear verb+object."""
+    try:
+        from .llm_dispatch import llm_area_call
+        from .llm_area_prompts import format_prompt
+
+        prompt = format_prompt(
+            "actionability_boost",
+            statement=text[:500],
+            actionability_score=str(actionability_score),
+        )
+        result = llm_area_call("actionability_boost", prompt, fallback=text)
+        if result.used_llm and result.text and result.text != text:
+            return result.text
+        return None
+    except Exception:
+        return None
+
+
+def _llm_area_specificity_augment(text: str, specificity_score: float) -> Optional[str]:
+    """LLM area: augment vague statements with concrete details."""
+    try:
+        from .llm_dispatch import llm_area_call
+        from .llm_area_prompts import format_prompt
+
+        prompt = format_prompt(
+            "specificity_augment",
+            statement=text[:500],
+            specificity_score=str(specificity_score),
+        )
+        result = llm_area_call("specificity_augment", prompt, fallback=text)
+        if result.used_llm and result.text and result.text != text:
+            return result.text
+        return None
+    except Exception:
+        return None
+
+
+def _llm_area_system28_reformulate(text: str, structure: Dict[str, Optional[str]]) -> Optional[str]:
+    """LLM area: reformulate into condition->action->reason structure."""
+    try:
+        from .llm_dispatch import llm_area_call
+        from .llm_area_prompts import format_prompt
+
+        has_condition = bool(structure.get("condition"))
+        has_action = bool(structure.get("action"))
+        has_reasoning = bool(structure.get("reasoning"))
+        missing = []
+        if not has_condition:
+            missing.append("condition")
+        if not has_action:
+            missing.append("action")
+        if not has_reasoning:
+            missing.append("reasoning")
+
+        prompt = format_prompt(
+            "system28_reformulate",
+            statement=text[:500],
+            missing_components=", ".join(missing) if missing else "none",
+            has_condition=str(has_condition),
+            has_action=str(has_action),
+            has_reasoning=str(has_reasoning),
+        )
+        result = llm_area_call("system28_reformulate", prompt, fallback=text)
+        if result.used_llm and result.text and result.text != text:
+            return result.text
+        return None
+    except Exception:
+        return None
+
+
 def _llm_area_reasoning_patch(text: str, reasoning_score: float) -> Optional[str]:
     """LLM area: patch weak reasoning chains in a statement."""
     try:
@@ -541,6 +612,24 @@ def transform_for_advisory(
             "outcome_linked": _score_outcome_linked(text),
         }
 
+    # LLM area: actionability_boost — rewrite low-actionability statements
+    if dims["actionability"] < 0.5:
+        boosted = _llm_area_actionability_boost(text, dims["actionability"])
+        if boosted and boosted != text:
+            new_actionability = _score_actionability(boosted)
+            if new_actionability > dims["actionability"]:
+                text = boosted
+                dims["actionability"] = new_actionability
+
+    # LLM area: specificity_augment — augment vague statements
+    if dims["specificity"] < 0.5:
+        augmented = _llm_area_specificity_augment(text, dims["specificity"])
+        if augmented and augmented != text:
+            new_specificity = _score_specificity(augmented)
+            if new_specificity > dims["specificity"]:
+                text = augmented
+                dims["specificity"] = new_specificity
+
     # LLM area: reasoning_patch — improve weak reasoning before scoring
     if dims["reasoning"] < 0.5:
         patched = _llm_area_reasoning_patch(text, dims["reasoning"])
@@ -566,6 +655,29 @@ def transform_for_advisory(
 
     # Extract structure
     structure = extract_structure(text)
+
+    # LLM area: system28_reformulate — rewrite into condition->action->reason
+    if not structure.get("action") or not structure.get("reasoning"):
+        reformulated = _llm_area_system28_reformulate(text, structure)
+        if reformulated and reformulated != text:
+            new_structure = extract_structure(reformulated)
+            # Accept if structure improved
+            old_parts = sum(1 for v in structure.values() if v)
+            new_parts = sum(1 for v in new_structure.values() if v)
+            if new_parts > old_parts:
+                text = reformulated
+                structure = new_structure
+                # Re-score dimensions on reformulated text
+                dims["actionability"] = _score_actionability(text)
+                dims["reasoning"] = _score_reasoning(text)
+                dims["specificity"] = _score_specificity(text)
+                unified = _compute_unified_score(dims)
+                if reliability is not None and reliability > 0:
+                    unified = 0.70 * unified + 0.30 * float(reliability)
+                if chip_quality is not None and chip_quality > 0:
+                    unified = 0.80 * unified + 0.20 * float(chip_quality)
+                unified = min(1.0, max(0.0, unified))
+                dims["unified_score"] = unified
 
     # Detect domain
     domain = _detect_domain(text, source)
