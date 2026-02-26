@@ -186,3 +186,15 @@ docs/reports/SELF_INTERROGATION_TRIPLE_TEMPLATE.md
 
 # Internal-only local automation script
 scripts/nightly_self_interrogation.py
+
+# Internal ops workflows/docs (maintain in private ops repo, not public OSS PRs)
+docs/CI_CD_STACK.md
+docs/observability/MEMORY_OBSERVABILITY.md
+scripts/apply_branch_protection.py
+scripts/cross_surface_drift_checker.py
+scripts/helpfulness_llm_adjudicator.py
+scripts/helpfulness_watcher.py
+scripts/run_eidos_curriculum_autofix.py
+tests/test_eidos_curriculum_autofix.py
+tests/test_helpfulness_llm_adjudicator.py
+tests/test_helpfulness_watcher.py
