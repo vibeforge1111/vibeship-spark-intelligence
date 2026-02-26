@@ -124,6 +124,11 @@ Branch: feat/spark-alpha
 - Simplified scorer metadata and stats to reflect alpha-primary execution.
 - Updated Meta-Ralph tests for alpha-primary + legacy-fallback behavior.
 
+16. `4244369` - `feat(alpha-packets): refresh packet freshness on usage`
+- Updated `record_packet_usage(...)` in `lib/advisory_packet_store.py` to renew `fresh_until_ts` on non-invalidated packet usage.
+- Added packet-store test coverage to assert stale packets become fresh again after usage.
+- Goal: reduce advisory store readiness/freshness decay for actively used packets.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -145,7 +150,7 @@ Branch: feat/spark-alpha
 - `pytest tests/test_spark_alpha_replay_arena.py -q` -> `4 passed`
 - `pytest tests/test_advisory_dual_path_router.py -q` -> `10 passed`
 - `python scripts/spark_alpha_replay_arena.py --episodes 60 --seed 42` -> alpha winner, promotion gate pass, streak reached `5/3`
-- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `9/3`
+- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `10/3`
 - Replay artifacts:
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.json`
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`
@@ -157,6 +162,8 @@ Notable metrics now:
 - `advisory.emit_rate`: 0.194
 - `strict_trace_coverage`: 0.5276
 - `strict_acted_on_rate`: 0.1754
+- `advisory_store_readiness`: 0.027
+- `advisory_store_freshness`: 0.027
 
 ## Not done yet
 

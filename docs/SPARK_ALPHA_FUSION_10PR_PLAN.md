@@ -33,6 +33,7 @@ Completed commits:
 13. `2c4c3cb` PR-10 initial legacy fallback deletion sweep
 14. `52d555f` PR-10 follow-up: dead fallback config surface deletion + schema prune
 15. `80d8df2` PR-03 promotion: single-score primary path, dual runtime retired
+16. `4244369` PR-05 follow-up: packet freshness extension on usage
 
 Current measured state:
 1. `production_loop_report.py`: `NOT READY (16/19 passed)`
@@ -41,7 +42,7 @@ Current measured state:
 4. Replay arena latest (`scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42`):
    - winner: `alpha`
    - `promotion_gate_pass=true`
-   - `consecutive_pass_streak=9`
+   - `consecutive_pass_streak=10`
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial
@@ -79,8 +80,9 @@ Current measured state:
 ### PR-05 Retrieval Fusion (RRF + Contextual Retrieval)  (Partial)
 1. Hybrid retrieval now includes deterministic RRF fusion (semantic + lexical + support ranks).
 2. Improve dominant-key and low-sim behavior.
-3. Remaining: replay/canary validation before replacing old ranking paths.
-4. Deletion commitment: remove superseded single-path rank logic after replay pass.
+3. Added packet freshness extension on usage to reduce stale-store decay for active advisory packets.
+4. Remaining: replay/canary validation before replacing old ranking paths.
+5. Deletion commitment: remove superseded single-path rank logic after replay pass.
 
 ### PR-06 Advisory Alpha Vertical Slice  (Partial)
 1. Emission reliability and trace binding improved.
