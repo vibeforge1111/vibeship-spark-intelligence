@@ -1,8 +1,8 @@
-"""SQLite memory spine (shadow/dual-write lane).
+"""SQLite memory spine for cognitive insights.
 
-Current scope:
-- Dual-write cognitive insights into SQLite while JSON remains canonical.
-- Optional read fallback from SQLite when JSON is unavailable.
+Modes:
+- Shadow lane (legacy): JSON canonical + optional SQLite dual-write.
+- Alpha lane: SQLite canonical + optional JSON mirror for compatibility.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import os
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 def _db_path() -> Path:
@@ -30,9 +30,23 @@ def dual_write_enabled() -> bool:
     return val in {"1", "true", "yes", "on"}
 
 
+def canonical_enabled() -> bool:
+    raw = os.getenv("SPARK_MEMORY_SPINE_CANONICAL")
+    if raw is None and os.getenv("PYTEST_CURRENT_TEST"):
+        return False
+    val = str(raw if raw is not None else "1").strip().lower()
+    return val in {"1", "true", "yes", "on"}
+
+
 def read_fallback_enabled() -> bool:
     raw = str(os.getenv("SPARK_MEMORY_SPINE_READ_FALLBACK", "0")).strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+def json_mirror_enabled() -> bool:
+    raw = os.getenv("SPARK_MEMORY_SPINE_JSON_MIRROR")
+    val = str(raw if raw is not None else "1").strip().lower()
+    return val in {"1", "true", "yes", "on"}
 
 
 def _connect() -> sqlite3.Connection:
@@ -72,9 +86,35 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     )
 
 
-def dual_write_cognitive_insights(snapshot: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-    """Persist full cognitive insight snapshot into SQLite spine."""
-    if not dual_write_enabled():
+def _write_json_mirror(path: Optional[Path], snapshot: Dict[str, Dict[str, Any]]) -> Optional[str]:
+    if path is None:
+        return None
+    target = path.expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(f".json.tmp.{os.getpid()}")
+    tmp.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
+    for _ in range(5):
+        try:
+            tmp.replace(target)
+            break
+        except Exception:
+            time.sleep(0.05)
+    try:
+        if tmp.exists():
+            tmp.unlink()
+    except Exception:
+        pass
+    return str(target)
+
+
+def write_cognitive_insights_snapshot(
+    snapshot: Dict[str, Dict[str, Any]],
+    *,
+    force: bool = False,
+    mirror_json_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Persist full cognitive insight snapshot into SQLite with optional JSON mirror."""
+    if not force and not dual_write_enabled() and not canonical_enabled():
         return {"ok": False, "skipped": True, "reason": "dual_write_disabled"}
 
     rows = snapshot if isinstance(snapshot, dict) else {}
@@ -117,12 +157,26 @@ def dual_write_cognitive_insights(snapshot: Dict[str, Dict[str, Any]]) -> Dict[s
         )
         conn.commit()
 
-    return {"ok": True, "written": int(len(rows)), "db_path": str(_db_path())}
+    out = {"ok": True, "written": int(len(rows)), "db_path": str(_db_path())}
+    if json_mirror_enabled():
+        try:
+            mirrored = _write_json_mirror(mirror_json_path, rows)
+            if mirrored:
+                out["json_mirror_path"] = mirrored
+        except Exception:
+            # Mirror is compatibility-only; canonical SQLite write should still succeed.
+            out["json_mirror_error"] = "write_failed"
+    return out
 
 
-def load_cognitive_insights_snapshot() -> Dict[str, Dict[str, Any]]:
+def dual_write_cognitive_insights(snapshot: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """Legacy wrapper used by shadow lane code."""
+    return write_cognitive_insights_snapshot(snapshot, force=False)
+
+
+def load_cognitive_insights_snapshot(*, force: bool = False) -> Dict[str, Dict[str, Any]]:
     """Load latest full cognitive snapshot from SQLite spine metadata."""
-    if not read_fallback_enabled():
+    if not force and not read_fallback_enabled() and not canonical_enabled():
         return {}
     path = _db_path()
     if not path.exists():
@@ -145,3 +199,8 @@ def load_cognitive_insights_snapshot() -> Dict[str, Dict[str, Any]]:
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def load_cognitive_insights_snapshot_canonical() -> Dict[str, Dict[str, Any]]:
+    """Canonical read path for SQLite-first mode."""
+    return load_cognitive_insights_snapshot(force=True)

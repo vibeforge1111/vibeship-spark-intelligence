@@ -32,8 +32,12 @@ from .context_envelope import build_context_envelope
 from .noise_classifier import classify as classify_noise
 from .noise_classifier import enforce_enabled as noise_enforce_enabled
 from .noise_classifier import record_shadow as record_noise_shadow
+from .spark_memory_spine import canonical_enabled as memory_spine_canonical_enabled
 from .spark_memory_spine import dual_write_cognitive_insights
+from .spark_memory_spine import json_mirror_enabled as memory_spine_json_mirror_enabled
 from .spark_memory_spine import load_cognitive_insights_snapshot
+from .spark_memory_spine import load_cognitive_insights_snapshot_canonical
+from .spark_memory_spine import write_cognitive_insights_snapshot
 
 INSIGHT_CONTEXT_CHARS = 320
 INSIGHT_EVIDENCE_CHARS = 280
@@ -587,7 +591,19 @@ class CognitiveLearner:
     def _load_insights(self):
         """Load existing cognitive insights."""
         loaded = False
-        if self.INSIGHTS_FILE.exists():
+        if memory_spine_canonical_enabled():
+            try:
+                data = load_cognitive_insights_snapshot_canonical()
+                for key, info in data.items():
+                    self.insights[key] = CognitiveInsight.from_dict(info)
+                loaded = bool(self.insights)
+                if loaded:
+                    self.dedupe_struggles()
+                    self._backfill_action_domains()
+                    self._backfill_advisory_readiness()
+            except Exception:
+                loaded = False
+        if not loaded and self.INSIGHTS_FILE.exists():
             try:
                 data = json.loads(self.INSIGHTS_FILE.read_text(encoding="utf-8"))
                 for key, info in data.items():
@@ -712,7 +728,12 @@ class CognitiveLearner:
                 self._dirty = True
                 return
             disk_data: Dict[str, Dict[str, Any]] = {}
-            if self.INSIGHTS_FILE.exists():
+            if memory_spine_canonical_enabled():
+                try:
+                    disk_data = load_cognitive_insights_snapshot_canonical()
+                except Exception:
+                    disk_data = {}
+            elif self.INSIGHTS_FILE.exists():
                 try:
                     disk_data = json.loads(self.INSIGHTS_FILE.read_text(encoding="utf-8"))
                 except Exception:
@@ -740,23 +761,33 @@ class CognitiveLearner:
             self.insights = merged
 
             data = {key: insight.to_dict() for key, insight in self.insights.items()}
-            tmp = self.INSIGHTS_FILE.with_suffix(f".json.tmp.{os.getpid()}")
-            tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-            for _ in range(5):
+            if memory_spine_canonical_enabled():
                 try:
-                    tmp.replace(self.INSIGHTS_FILE)
-                    break
+                    write_cognitive_insights_snapshot(
+                        data,
+                        force=True,
+                        mirror_json_path=self.INSIGHTS_FILE if memory_spine_json_mirror_enabled() else None,
+                    )
                 except Exception:
-                    time.sleep(0.05)
-            try:
-                if tmp.exists():
-                    tmp.unlink()
-            except Exception:
-                pass
-            try:
-                dual_write_cognitive_insights(data)
-            except Exception:
-                pass
+                    pass
+            else:
+                tmp = self.INSIGHTS_FILE.with_suffix(f".json.tmp.{os.getpid()}")
+                tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                for _ in range(5):
+                    try:
+                        tmp.replace(self.INSIGHTS_FILE)
+                        break
+                    except Exception:
+                        time.sleep(0.05)
+                try:
+                    if tmp.exists():
+                        tmp.unlink()
+                except Exception:
+                    pass
+                try:
+                    dual_write_cognitive_insights(data)
+                except Exception:
+                    pass
 
     def _touch_validation(self, insight: CognitiveInsight, validated_delta: int = 0, contradicted_delta: int = 0):
         """Update validation counters and timestamp."""

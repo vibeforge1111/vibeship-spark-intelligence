@@ -75,3 +75,32 @@ def test_cognitive_learner_loads_from_spine_when_json_missing(tmp_path, monkeypa
     restored = CognitiveLearner()
     assert "reasoning:test" in restored.insights
     assert "Prefer replay canaries" in restored.insights["reasoning:test"].insight
+
+
+def test_cognitive_learner_sqlite_canonical_mode_with_json_mirror(tmp_path, monkeypatch):
+    db_path = tmp_path / "spark_memory_spine.db"
+    insights_path = tmp_path / "cognitive_insights.json"
+    lock_path = tmp_path / ".cognitive.lock"
+
+    monkeypatch.setenv("SPARK_MEMORY_SPINE_CANONICAL", "1")
+    monkeypatch.setenv("SPARK_MEMORY_SPINE_JSON_MIRROR", "1")
+    monkeypatch.setenv("SPARK_MEMORY_SPINE_DB", str(db_path))
+    monkeypatch.setattr(CognitiveLearner, "INSIGHTS_FILE", insights_path)
+    monkeypatch.setattr(CognitiveLearner, "LOCK_FILE", lock_path)
+
+    learner = CognitiveLearner()
+    learner.insights["wisdom:sqlite-canonical"] = CognitiveInsight(
+        category=CognitiveCategory.WISDOM,
+        insight="Canonical SQLite mode keeps one durable source of truth.",
+        evidence=["parity streak reached 4/3 before retirement"],
+        confidence=0.82,
+        context="memory spine migration",
+    )
+    learner._save_insights_now()
+
+    assert db_path.exists()
+    assert insights_path.exists()  # mirror retained for compatibility readers
+
+    insights_path.unlink()
+    restored = CognitiveLearner()
+    assert "wisdom:sqlite-canonical" in restored.insights
