@@ -50,10 +50,6 @@ telegram_token.txt
 .spark/
 .learnings/
 *.db
-*.db-wal
-*.db-shm
-*.sqlite
-*.sqlite3
 
 # optcheck local data (keep config tracked)
 .optcheck/
@@ -81,15 +77,6 @@ htmlcov/
 logs/
 tmp/
 _tmp/
-spark-alive/
-_observatory/
-SPARK_CONTEXT_FOR_CODEX.md
-SPARK_ADVISORY_PAYLOAD.json
-SPARK_ADVISORY_PAYLOAD*.json
-bandit_report.json
-pip-audit-report*.json
-coverage.xml
-.mypy_cache/
 
 # vibeship-optimizer (project state is local; keep config/logbook/reports tracked)
 .vibeship-optimizer/
@@ -98,8 +85,6 @@ coverage.xml
 # Run artifacts (keep canonical summaries tracked; stash per-run outputs)
 docs/reports/_runs/
 docs/reports/
-docs/reports/*_memory_quality_observatory.md
-docs/reports/*_retrieval_guardrails.json
 dashboard_out.txt
 dashboard_err.txt
 reports/tune_replay_*.md
@@ -141,9 +126,6 @@ sandbox/spark_sandbox_diff.json
 node_modules/
 _pw_smoke.js
 
-# Temporary: keep unfinished observability kanban project local
-projects/observability-kanban/
-
 # OSS launch hygiene (removed from public share)
 logs/
 dist/
@@ -170,23 +152,49 @@ CLAUDE.md
 AGENTS.md
 SOUL.md
 TOOLS.md
-SPARK_CONTEXT.md
-SPARK_ADVISORY.md
-SPARK_NOTIFICATIONS.md
-SPARK_LEARNINGS.md
-SPARK_MEMORY*.md
-
-# Local agent/tool homes that may be created under repo root by wrappers.
-.openclaw/
-.clawdbot/
-
-# Token and PID artifacts (machine-local secrets/state)
-*.token
-*.pid
-pids/
 
 # Any file with local Windows paths in name
 C?UsersUSER*
 *test_output.txt
 *test_out.txt
 *test_err.txt
+
+# Kanban/task-system workspace (not production-ready yet)
+projects/observability-kanban/
+projects/task-system/
+projects/*task-system*/
+docs/KANBAN_DASHBOARD.md
+docs/kanban_board.json
+
+# Local observatory/report artifacts
+_observatory/explore/
+_observatory/stages/
+_observatory/*.json
+_observatory/*.md
+_observatory/*.canvas
+SPARK_CONTEXT_FOR_CODEX.md
+SPARK_ADVISORY_PAYLOAD.json
+bandit_report.json
+scripts/.spark_openclaw_pids.json
+spark-alive/
+
+# Internal-only planning/ops docs (keep out of public PRs)
+docs/NO_BS_*.md
+docs/COMBAT_BOARD_MASTER.md
+docs/observability/*SELF_INTERROGATION*.md
+docs/reports/SELF_INTERROGATION_TRIPLE_TEMPLATE.md
+
+# Internal-only local automation script
+scripts/nightly_self_interrogation.py
+
+# Internal ops workflows/docs (maintain in private ops repo, not public OSS PRs)
+docs/CI_CD_STACK.md
+docs/observability/MEMORY_OBSERVABILITY.md
+scripts/apply_branch_protection.py
+scripts/cross_surface_drift_checker.py
+scripts/helpfulness_llm_adjudicator.py
+scripts/helpfulness_watcher.py
+scripts/run_eidos_curriculum_autofix.py
+tests/test_eidos_curriculum_autofix.py
+tests/test_helpfulness_llm_adjudicator.py
+tests/test_helpfulness_watcher.py

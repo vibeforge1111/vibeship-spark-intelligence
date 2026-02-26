@@ -3,6 +3,7 @@
 ## Scope
 
 This project is a dual-use autonomy/memory system. Contributions are welcome, but we keep safety and observability first.
+See `docs/REPO_CONTENT_POLICY.md` for public-vs-internal content boundaries.
 
 ## Quick Start for Contributors
 
@@ -42,6 +43,22 @@ python -m pip install -e .[dev]
 2. Keep changes scoped to one clear outcome.
 3. Include what changed and how to verify it.
 4. Note safety impact in the description (if relevant).
+
+## Public PR Scope
+
+Public PRs should only contain runtime/product behavior and user-relevant docs.
+
+Do include:
+- Runtime library code under `lib/`
+- Required tests for changed runtime behavior
+- User-facing docs and setup/usage docs
+
+Do not include:
+- Internal scorecards, self-interrogation loops, or operator-only planning docs
+- Team-only operational scripts for branch governance or private observability workflows
+- Generated daily reports, local snapshots, or canary scratch artifacts
+
+If a change is useful for internal operations but not for public users, keep it in a private ops repo (or private fork) rather than this public PR.
 
 ## Development guardrails
 
