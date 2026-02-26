@@ -226,6 +226,11 @@ Branch: feat/spark-alpha
 - Updated startup defaults in `start_spark.bat` to `SPARK_ADVISORY_ROUTE=alpha`.
 - Updated orchestrator tests for no-auto-fallback behavior.
 
+33. `a7562e2` - `refactor(alpha-pr10): remove advisory emitter legacy compatibility shim`
+- Removed the legacy `_emit_advisory_compat(...)` shim from `lib/advisory_engine.py`.
+- Advisory engine now calls emitter via the canonical keyword-argument path only.
+- Updated advisory engine/router tests that monkeypatched old positional-only emitter signatures.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -261,6 +266,7 @@ Branch: feat/spark-alpha
 - `pytest tests/test_vibeforge_helpers.py -q` -> `8 passed`
 - `pytest tests/test_vibeforge_helpers.py tests/test_tuneables_alignment.py -q` -> `9 passed`
 - `pytest tests/test_advisory_orchestrator.py tests/test_advisory_dual_path_router.py tests/test_advisory_engine_alpha.py -q` -> `16 passed`
+- `pytest tests/test_advisory_dual_path_router.py tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_on_pre_tool.py -q` -> `31 passed`
 - Replay artifacts:
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.json`
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`
