@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from .diagnostics import log_debug
 from .jsonl_utils import append_jsonl_capped as _append_jsonl_capped
 
 ROUTE_DECISION_LOG = Path.home() / ".spark" / "advisory_route_decisions.jsonl"
@@ -168,35 +167,18 @@ def on_pre_tool(
     fallback_used = False
     try:
         if route == "alpha":
-            try:
-                out = _alpha_on_pre_tool(session_id, tool_name, tool_input, trace_id)
-                _log_route_decision(
-                    phase="pre_tool",
-                    route=route,
-                    session_id=session_id,
-                    tool_name=tool_name,
-                    trace_id=trace_id,
-                    fallback_used=False,
-                    ok=True,
-                    elapsed_ms=(time.time() - start) * 1000.0,
-                )
-                return out
-            except Exception as exc:
-                fallback_used = True
-                log_debug("advisory_orchestrator", "alpha pre-tool failed, falling back to engine", exc)
-                out = _engine_on_pre_tool(session_id, tool_name, tool_input, trace_id)
-                _log_route_decision(
-                    phase="pre_tool",
-                    route=route,
-                    session_id=session_id,
-                    tool_name=tool_name,
-                    trace_id=trace_id,
-                    fallback_used=True,
-                    ok=True,
-                    elapsed_ms=(time.time() - start) * 1000.0,
-                    error=str(exc),
-                )
-                return out
+            out = _alpha_on_pre_tool(session_id, tool_name, tool_input, trace_id)
+            _log_route_decision(
+                phase="pre_tool",
+                route=route,
+                session_id=session_id,
+                tool_name=tool_name,
+                trace_id=trace_id,
+                fallback_used=False,
+                ok=True,
+                elapsed_ms=(time.time() - start) * 1000.0,
+            )
+            return out
 
         out = _engine_on_pre_tool(session_id, tool_name, tool_input, trace_id)
         _log_route_decision(
@@ -238,35 +220,18 @@ def on_post_tool(
     fallback_used = False
     try:
         if route == "alpha":
-            try:
-                _alpha_on_post_tool(session_id, tool_name, success, tool_input, trace_id, error)
-                _log_route_decision(
-                    phase="post_tool",
-                    route=route,
-                    session_id=session_id,
-                    tool_name=tool_name,
-                    trace_id=trace_id,
-                    fallback_used=False,
-                    ok=True,
-                    elapsed_ms=(time.time() - start) * 1000.0,
-                )
-                return
-            except Exception as exc:
-                fallback_used = True
-                log_debug("advisory_orchestrator", "alpha post-tool failed, falling back to engine", exc)
-                _engine_on_post_tool(session_id, tool_name, success, tool_input, trace_id, error)
-                _log_route_decision(
-                    phase="post_tool",
-                    route=route,
-                    session_id=session_id,
-                    tool_name=tool_name,
-                    trace_id=trace_id,
-                    fallback_used=True,
-                    ok=True,
-                    elapsed_ms=(time.time() - start) * 1000.0,
-                    error=str(exc),
-                )
-                return
+            _alpha_on_post_tool(session_id, tool_name, success, tool_input, trace_id, error)
+            _log_route_decision(
+                phase="post_tool",
+                route=route,
+                session_id=session_id,
+                tool_name=tool_name,
+                trace_id=trace_id,
+                fallback_used=False,
+                ok=True,
+                elapsed_ms=(time.time() - start) * 1000.0,
+            )
+            return
         _engine_on_post_tool(session_id, tool_name, success, tool_input, trace_id, error)
         _log_route_decision(
             phase="post_tool",
@@ -303,35 +268,18 @@ def on_user_prompt(
     fallback_used = False
     try:
         if route == "alpha":
-            try:
-                _alpha_on_user_prompt(session_id, prompt_text, trace_id)
-                _log_route_decision(
-                    phase="user_prompt",
-                    route=route,
-                    session_id=session_id,
-                    tool_name="*",
-                    trace_id=trace_id,
-                    fallback_used=False,
-                    ok=True,
-                    elapsed_ms=(time.time() - start) * 1000.0,
-                )
-                return
-            except Exception as exc:
-                fallback_used = True
-                log_debug("advisory_orchestrator", "alpha user-prompt failed, falling back to engine", exc)
-                _engine_on_user_prompt(session_id, prompt_text, trace_id)
-                _log_route_decision(
-                    phase="user_prompt",
-                    route=route,
-                    session_id=session_id,
-                    tool_name="*",
-                    trace_id=trace_id,
-                    fallback_used=True,
-                    ok=True,
-                    elapsed_ms=(time.time() - start) * 1000.0,
-                    error=str(exc),
-                )
-                return
+            _alpha_on_user_prompt(session_id, prompt_text, trace_id)
+            _log_route_decision(
+                phase="user_prompt",
+                route=route,
+                session_id=session_id,
+                tool_name="*",
+                trace_id=trace_id,
+                fallback_used=False,
+                ok=True,
+                elapsed_ms=(time.time() - start) * 1000.0,
+            )
+            return
         _engine_on_user_prompt(session_id, prompt_text, trace_id)
         _log_route_decision(
             phase="user_prompt",
