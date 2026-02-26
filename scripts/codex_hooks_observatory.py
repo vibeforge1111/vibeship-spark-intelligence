@@ -24,6 +24,7 @@ SPARK_DIR = Path.home() / ".spark"
 TELEMETRY_FILE = SPARK_DIR / "logs" / "codex_hook_bridge_telemetry.jsonl"
 LOCAL_OBSERVATORY_DIR = Path("_observatory")
 REPORTS_DIR = Path("docs") / "reports"
+ALERT_STATE_FILE = Path("_observatory") / "codex_hooks_alert_state.json"
 
 GATE_THRESHOLDS = {
     "coverage_ratio_min": 0.90,
@@ -33,6 +34,12 @@ GATE_THRESHOLDS = {
     "post_unmatched_delta_max": 0,
     "observe_success_ratio_min": 0.98,
     "observe_latency_p95_ms_max": 2500.0,
+}
+
+ALERT_THRESHOLDS = {
+    "workflow_event_ratio_min": 0.65,
+    "tool_result_capture_rate_min": 0.70,
+    "stale_max_age_s": 1800,
 }
 
 COUNTER_KEYS = (
@@ -89,6 +96,21 @@ def _safe_ratio(numer: float, denom: float) -> float:
     if denom <= 0:
         return 0.0
     return float(numer) / float(denom)
+
+
+def _read_json(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_json(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _metric_delta(first: Dict[str, Any], last: Dict[str, Any], key: str) -> int:
@@ -334,7 +356,85 @@ def evaluate_gates(summary: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _render_markdown(summary: Dict[str, Any], gates: Dict[str, Any]) -> str:
+def evaluate_fidelity_alert(
+    summary: Dict[str, Any],
+    *,
+    state_file: Path,
+    now_ts: float | None = None,
+) -> Dict[str, Any]:
+    if not summary.get("available"):
+        alert = {
+            "level": "unknown",
+            "breaches": [],
+            "consecutive_breach_windows": 0,
+            "stale": True,
+            "stale_age_s": None,
+            "thresholds": dict(ALERT_THRESHOLDS),
+        }
+        _write_json(state_file, {"last_level": "unknown", "consecutive_breach_windows": 0, "updated_at": time.time()})
+        return alert
+
+    derived = summary.get("derived") if isinstance(summary.get("derived"), dict) else {}
+    latest_ts = _to_float(summary.get("latest_ts"), 0.0)
+    if now_ts is None:
+        now_ts = time.time()
+    stale_age_s = max(0.0, float(now_ts) - float(latest_ts or 0.0))
+    stale = stale_age_s > float(ALERT_THRESHOLDS["stale_max_age_s"])
+    activity = _to_int(derived.get("window_activity_rows"), 0)
+
+    breaches: List[Dict[str, Any]] = []
+    if activity > 0:
+        workflow_event_ratio = _to_float(derived.get("workflow_event_ratio"), 0.0)
+        tool_result_capture_rate = _to_float(derived.get("tool_result_capture_rate"), 0.0)
+        if workflow_event_ratio < float(ALERT_THRESHOLDS["workflow_event_ratio_min"]):
+            breaches.append(
+                {
+                    "name": "workflow_event_ratio",
+                    "actual": round(workflow_event_ratio, 4),
+                    "expectation": f">= {ALERT_THRESHOLDS['workflow_event_ratio_min']}",
+                }
+            )
+        if tool_result_capture_rate < float(ALERT_THRESHOLDS["tool_result_capture_rate_min"]):
+            breaches.append(
+                {
+                    "name": "tool_result_capture_rate",
+                    "actual": round(tool_result_capture_rate, 4),
+                    "expectation": f">= {ALERT_THRESHOLDS['tool_result_capture_rate_min']}",
+                }
+            )
+
+    prev_state = _read_json(state_file)
+    prev_consecutive = _to_int(prev_state.get("consecutive_breach_windows"), 0)
+    consecutive = prev_consecutive + 1 if breaches else 0
+
+    if consecutive >= 2 and stale:
+        level = "critical"
+    elif breaches:
+        level = "warning"
+    else:
+        level = "ok"
+
+    alert = {
+        "level": level,
+        "breaches": breaches,
+        "consecutive_breach_windows": int(consecutive),
+        "stale": bool(stale),
+        "stale_age_s": round(stale_age_s, 1),
+        "thresholds": dict(ALERT_THRESHOLDS),
+    }
+    _write_json(
+        state_file,
+        {
+            "last_level": level,
+            "consecutive_breach_windows": int(consecutive),
+            "last_breach_names": [str(b.get("name")) for b in breaches],
+            "updated_at": float(now_ts),
+        },
+    )
+    return alert
+
+
+def _render_markdown(summary: Dict[str, Any], gates: Dict[str, Any], alert: Dict[str, Any]) -> str:
     now_utc = datetime.now(timezone.utc).isoformat()
     if not summary.get("available"):
         return "\n".join(
@@ -361,6 +461,7 @@ def _render_markdown(summary: Dict[str, Any], gates: Dict[str, Any]) -> str:
         f"- Telemetry window: last {summary.get('window_minutes')} minutes",
         f"- Mode: `{mode}`",
         f"- Gate status: **{'PASS' if gates.get('passing') else 'FAIL'}**",
+        f"- Fidelity alert: **{str(alert.get('level') or 'unknown').upper()}**",
         "",
         "## Rollout Gates",
         "",
@@ -421,6 +522,27 @@ def _render_markdown(summary: Dict[str, Any], gates: Dict[str, Any]) -> str:
     lines.extend(
         [
             "",
+            "## Fidelity Alert",
+            "",
+            f"- level: `{alert.get('level', 'unknown')}`",
+            f"- consecutive_breach_windows: `{alert.get('consecutive_breach_windows', 0)}`",
+            f"- stale: `{alert.get('stale', False)}`",
+            f"- stale_age_s: `{alert.get('stale_age_s', 0)}`",
+        ]
+    )
+    breaches = alert.get("breaches") if isinstance(alert.get("breaches"), list) else []
+    if breaches:
+        lines.append("- breaches:")
+        for row in breaches:
+            lines.append(
+                f"  - {row.get('name')}: {row.get('actual')} (expected {row.get('expectation')})"
+            )
+    else:
+        lines.append("- breaches: none")
+
+    lines.extend(
+        [
+            "",
             "## Next Action",
             "",
         ]
@@ -438,11 +560,12 @@ def _render_markdown(summary: Dict[str, Any], gates: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def write_outputs(summary: Dict[str, Any], gates: Dict[str, Any]) -> Dict[str, str]:
+def write_outputs(summary: Dict[str, Any], gates: Dict[str, Any], alert: Dict[str, Any]) -> Dict[str, str]:
     snapshot_payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "summary": summary,
         "gates": gates,
+        "alert": alert,
     }
 
     LOCAL_OBSERVATORY_DIR.mkdir(parents=True, exist_ok=True)
@@ -451,7 +574,7 @@ def write_outputs(summary: Dict[str, Any], gates: Dict[str, Any]) -> Dict[str, s
     snapshot_path = LOCAL_OBSERVATORY_DIR / "codex_hooks_snapshot.json"
     snapshot_path.write_text(json.dumps(snapshot_payload, indent=2), encoding="utf-8")
 
-    md = _render_markdown(summary, gates)
+    md = _render_markdown(summary, gates, alert)
 
     local_page_path = LOCAL_OBSERVATORY_DIR / "codex_hooks.md"
     local_page_path.write_text(md, encoding="utf-8")
@@ -477,6 +600,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Generate Codex hooks observability report")
     ap.add_argument("--telemetry-file", default=str(TELEMETRY_FILE), help="Path to codex_hook_bridge telemetry jsonl")
     ap.add_argument("--window-minutes", type=int, default=60, help="Window size for delta checks")
+    ap.add_argument("--alert-state-file", default=str(ALERT_STATE_FILE), help="State file for consecutive-window alerting")
     ap.add_argument("--json-only", action="store_true", help="Print JSON summary instead of writing files")
     args = ap.parse_args()
 
@@ -484,14 +608,16 @@ def main() -> int:
     rows = _read_jsonl(telemetry_path)
     summary = summarize_telemetry(rows, window_minutes=max(1, int(args.window_minutes)))
     gates = evaluate_gates(summary)
-    payload = {"summary": summary, "gates": gates, "telemetry_file": str(telemetry_path)}
+    alert_state_file = Path(args.alert_state_file).expanduser()
+    alert = evaluate_fidelity_alert(summary, state_file=alert_state_file)
+    payload = {"summary": summary, "gates": gates, "alert": alert, "telemetry_file": str(telemetry_path)}
 
     if args.json_only:
         print(json.dumps(payload, indent=2))
         return 0
 
-    outputs = write_outputs(summary, gates)
-    print(json.dumps({"gate_pass": gates.get("passing"), "outputs": outputs}, indent=2))
+    outputs = write_outputs(summary, gates, alert)
+    print(json.dumps({"gate_pass": gates.get("passing"), "alert_level": alert.get("level"), "outputs": outputs}, indent=2))
     return 0
 
 

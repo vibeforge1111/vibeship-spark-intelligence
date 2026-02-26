@@ -5,7 +5,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from scripts.codex_hooks_observatory import evaluate_gates, summarize_telemetry
+from scripts.codex_hooks_observatory import (
+    evaluate_fidelity_alert,
+    evaluate_gates,
+    summarize_telemetry,
+)
 
 
 def _row(ts: float, mode: str, metrics: dict) -> dict:
@@ -176,3 +180,91 @@ def test_shadow_pairing_checks_not_required_while_pending_calls_exist():
     assert checks["shadow.pairing_ratio"]["required"] is False
     assert checks["shadow.post_unmatched_delta"]["required"] is False
     assert gates["passing"] is True
+
+
+def test_fidelity_alert_warning_then_critical_with_stale_repetition(tmp_path):
+    rows = [
+        _row(
+            4000.0,
+            "shadow",
+            {
+                "rows_seen": 100,
+                "json_decode_errors": 0,
+                "relevant_rows": 80,
+                "mapped_events": 80,
+                "pre_events": 40,
+                "post_events": 10,
+                "post_unknown_exit": 0,
+                "post_unmatched_call_id": 0,
+                "observe_calls": 0,
+                "observe_success": 0,
+                "observe_failures": 0,
+                "coverage_ratio": 1.0,
+                "pairing_ratio": 1.0,
+                "observe_latency_p95_ms": 0.0,
+            },
+        ),
+        _row(
+            4060.0,
+            "shadow",
+            {
+                "rows_seen": 200,
+                "json_decode_errors": 0,
+                "relevant_rows": 160,
+                "mapped_events": 160,
+                "pre_events": 80,
+                "post_events": 20,
+                "post_unknown_exit": 0,
+                "post_unmatched_call_id": 0,
+                "observe_calls": 0,
+                "observe_success": 0,
+                "observe_failures": 0,
+                "coverage_ratio": 1.0,
+                "pairing_ratio": 1.0,
+                "observe_latency_p95_ms": 0.0,
+            },
+        ),
+    ]
+
+    summary = summarize_telemetry(rows, window_minutes=30, now_ts=4060.0)
+    state_file = tmp_path / "alert_state.json"
+
+    first = evaluate_fidelity_alert(summary, state_file=state_file, now_ts=4065.0)
+    assert first["level"] == "warning"
+    assert first["consecutive_breach_windows"] == 1
+    assert first["stale"] is False
+
+    second = evaluate_fidelity_alert(summary, state_file=state_file, now_ts=8000.0)
+    assert second["level"] == "critical"
+    assert second["consecutive_breach_windows"] == 2
+    assert second["stale"] is True
+
+
+def test_fidelity_alert_resets_after_healthy_window(tmp_path):
+    state_file = tmp_path / "alert_state.json"
+
+    warning_summary = {
+        "available": True,
+        "latest_ts": 1000.0,
+        "derived": {
+            "window_activity_rows": 10,
+            "workflow_event_ratio": 0.4,
+            "tool_result_capture_rate": 0.5,
+        },
+    }
+    warning = evaluate_fidelity_alert(warning_summary, state_file=state_file, now_ts=1005.0)
+    assert warning["level"] == "warning"
+    assert warning["consecutive_breach_windows"] == 1
+
+    healthy_summary = {
+        "available": True,
+        "latest_ts": 1010.0,
+        "derived": {
+            "window_activity_rows": 10,
+            "workflow_event_ratio": 0.9,
+            "tool_result_capture_rate": 0.95,
+        },
+    }
+    healthy = evaluate_fidelity_alert(healthy_summary, state_file=state_file, now_ts=1011.0)
+    assert healthy["level"] == "ok"
+    assert healthy["consecutive_breach_windows"] == 0

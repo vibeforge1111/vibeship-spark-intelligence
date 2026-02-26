@@ -91,6 +91,14 @@ Generate Codex hook gate report + Obsidian page (`codex_hooks.md`):
 python3 scripts/codex_hooks_observatory.py --window-minutes 60
 ```
 
+Stateful alerting (warning/critical across windows) uses:
+
+- `_observatory/codex_hooks_alert_state.json`
+
+Alert policy:
+- `warning`: fidelity KPI breach in one active window
+- `critical`: breach for two consecutive windows + stale telemetry
+
 Outputs:
 
 - `_observatory/codex_hooks_snapshot.json`
