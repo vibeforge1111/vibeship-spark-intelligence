@@ -1,0 +1,106 @@
+name: PR Sentinel
+
+on:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+jobs:
+  policy-gate:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate PR metadata and size
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+          event_path = pathlib.Path(os.environ["GITHUB_EVENT_PATH"])
+          payload = json.loads(event_path.read_text(encoding="utf-8"))
+
+          if event_name != "pull_request":
+              print(f"policy-gate: {event_name} event, no PR metadata checks required")
+              sys.exit(0)
+
+          pr = payload.get("pull_request") or {}
+          title = (pr.get("title") or "").strip()
+          changed_files = int(pr.get("changed_files") or 0)
+
+          if not title:
+              print("policy-gate: pull request title is required")
+              sys.exit(1)
+
+          # Keep this threshold high; this gate should catch outliers, not normal work.
+          if changed_files > 1200:
+              print(f"policy-gate: changed_files={changed_files} exceeds limit=1200")
+              sys.exit(1)
+
+          print(f"policy-gate: title and size checks passed (changed_files={changed_files})")
+          PY
+
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build lightweight triage report
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+          event_path = pathlib.Path(os.environ["GITHUB_EVENT_PATH"])
+          payload = json.loads(event_path.read_text(encoding="utf-8"))
+          report_dir = pathlib.Path("artifacts")
+          report_dir.mkdir(parents=True, exist_ok=True)
+
+          repo = os.environ.get("GITHUB_REPOSITORY", "unknown")
+          lines = [
+              "# PR Sentinel Triage (Lightweight)",
+              "",
+              f"- repository: `{repo}`",
+              f"- event: `{event_name}`",
+          ]
+
+          if event_name == "pull_request":
+              pr = payload.get("pull_request") or {}
+              lines.extend(
+                  [
+                      f"- pr_number: `{pr.get('number', 'n/a')}`",
+                      f"- title: `{(pr.get('title') or '').strip()}`",
+                      f"- author: `{((pr.get('user') or {}).get('login') or 'n/a')}`",
+                      f"- changed_files: `{pr.get('changed_files', 0)}`",
+                      f"- additions: `{pr.get('additions', 0)}`",
+                      f"- deletions: `{pr.get('deletions', 0)}`",
+                  ]
+              )
+
+          report_path = report_dir / "pr_sentinel_report.md"
+          report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          print(f"wrote {report_path}")
+          PY
+
+      - name: Upload Sentinel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-sentinel-${{ github.run_id }}
+          path: |
+            artifacts/*.md

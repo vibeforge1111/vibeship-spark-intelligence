@@ -1,0 +1,36 @@
+name: Semgrep
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: '42 2 * * 1'
+  workflow_dispatch:
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install OpenGrep
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh \
+            | bash -s -- -v v1.16.2
+          echo "$HOME/.opengrep/cli/latest" >> "$GITHUB_PATH"
+
+      - name: Run OpenGrep
+        run: |
+          opengrep scan --config p/security-audit --config p/python --sarif-output opengrep.sarif .
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: opengrep.sarif

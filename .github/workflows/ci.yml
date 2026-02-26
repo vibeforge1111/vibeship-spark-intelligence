@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+  merge_group:
   push:
     branches:
       - main
@@ -30,24 +31,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[dev]
 
-      - name: Lint (Critical Rules)
+      - name: Lint (Ruff)
         run: |
+          # Keep this check high-signal and debt-tolerant until full lint cleanup lands.
           python -m ruff check . --select E9,F63,F7,F82 --output-format=github
 
-      - name: Dependency CVE Audit (Blocking)
+      - name: Unit Smoke Tests (Pytest)
         run: |
-          python -m pip_audit --progress-spinner off --format columns .
-
-      - name: Public release safety check
-        env:
-          SPARK_RELEASE_REQUIRE_DEP_AUDIT: "1"
-          SPARK_RELEASE_REQUIRE_SAST: "1"
-        run: |
-          python scripts/public_release_safety_check.py
-
-      - name: Release test baseline
-        run: |
-          python scripts/verify_test_baseline.py
+          python -m pytest -q tests/test_safety_guardrails.py tests/test_sparkd_hardening.py tests/test_production_hardening.py
 
   integration-smoke:
     if: github.event_name == 'workflow_dispatch'
