@@ -50,7 +50,7 @@ class ChipStore:
         """Load insights from disk."""
         if self.insights_file.exists():
             try:
-                with open(self.insights_file, "r") as f:
+                with open(self.insights_file, "r", encoding="utf-8") as f:
                     self._insights = json.load(f)
             except Exception:
                 self._insights = {}
@@ -66,7 +66,7 @@ class ChipStore:
     def _save_insights(self):
         """Save insights to disk."""
         self._insights["updated_at"] = datetime.utcnow().isoformat()
-        with open(self.insights_file, "w") as f:
+        with open(self.insights_file, "w", encoding="utf-8") as f:
             json.dump(self._insights, f, indent=2)
 
     # Max observation file size before rotation (5 MB per chip)
@@ -94,7 +94,7 @@ class ChipStore:
             except Exception:
                 pass
 
-        with open(self.observations_file, "a") as f:
+        with open(self.observations_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(data) + "\n")
 
     def _rotate_jsonl(self, path: Path) -> None:
@@ -121,7 +121,7 @@ class ChipStore:
             return []
 
         observations = []
-        with open(self.observations_file, "r") as f:
+        with open(self.observations_file, "r", encoding="utf-8") as f:
             for line in f:
                 try:
                     obs = json.loads(line.strip())
@@ -205,7 +205,7 @@ class ChipStore:
             "validated": False,
         }
 
-        with open(self.predictions_file, "a") as f:
+        with open(self.predictions_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(pred_entry) + "\n")
 
         return pred_entry
@@ -222,7 +222,7 @@ class ChipStore:
             "created_at": datetime.utcnow().isoformat(),
         }
 
-        with open(self.outcomes_file, "a") as f:
+        with open(self.outcomes_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(outcome_entry) + "\n")
 
         return outcome_entry
@@ -233,7 +233,7 @@ class ChipStore:
             return []
 
         outcomes = []
-        with open(self.outcomes_file, "r") as f:
+        with open(self.outcomes_file, "r", encoding="utf-8") as f:
             for line in f:
                 try:
                     outcome = json.loads(line.strip())
@@ -270,17 +270,17 @@ class ChipStore:
         """Get store statistics."""
         obs_count = 0
         if self.observations_file.exists():
-            with open(self.observations_file, "r") as f:
+            with open(self.observations_file, "r", encoding="utf-8") as f:
                 obs_count = sum(1 for _ in f)
 
         pred_count = 0
         if self.predictions_file.exists():
-            with open(self.predictions_file, "r") as f:
+            with open(self.predictions_file, "r", encoding="utf-8") as f:
                 pred_count = sum(1 for _ in f)
 
         outcome_count = 0
         if self.outcomes_file.exists():
-            with open(self.outcomes_file, "r") as f:
+            with open(self.outcomes_file, "r", encoding="utf-8") as f:
                 outcome_count = sum(1 for _ in f)
 
         return {

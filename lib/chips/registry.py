@@ -42,7 +42,7 @@ class ChipRegistry:
         """Load registry from disk."""
         if REGISTRY_FILE.exists():
             try:
-                with open(REGISTRY_FILE, 'r') as f:
+                with open(REGISTRY_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     for proj, chips in data.get('active', {}).items():
                         self._active[proj] = set(chips)
@@ -59,7 +59,7 @@ class ChipRegistry:
                 'global_active': list(self._global_active),
                 'updated_at': datetime.now().isoformat()
             }
-            with open(REGISTRY_FILE, 'w') as f:
+            with open(REGISTRY_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
             log.error(f"Failed to save registry: {e}")
