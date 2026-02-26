@@ -2,6 +2,17 @@
 
 This log tracks Spark x OpenClaw integration changes that should be easy to audit later.
 
+## 2026-02-26
+
+### Added
+
+- Added formal advisory promotion/decay policy with bounded exploration budget:
+  - `docs/openclaw/ADVISORY_PROMOTION_DECAY_POLICY.md`
+- Backlog status updated for governance policy completion:
+  - `docs/openclaw/INTEGRATION_BACKLOG.md`
+- OpenClaw docs index updated to include the policy doc:
+  - `docs/openclaw/README.md`
+
 ## 2026-02-18
 
 ### Documentation consolidation (canonicalization)
