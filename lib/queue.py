@@ -366,7 +366,7 @@ def quick_capture(event_type: EventType, session_id: str, data: Dict[str, Any],
         lock = _queue_lock(timeout_s=0.05)
         with lock:
             if lock.acquired:
-                with open(EVENTS_FILE, "a") as f:
+                with open(EVENTS_FILE, "a", encoding="utf-8") as f:
                     f.write(line)
                 _invalidate_count_cache()
             else:
