@@ -12,6 +12,7 @@ This ensures:
 
 import json
 import os
+import tempfile
 import time
 import hashlib
 import threading
@@ -142,7 +143,10 @@ def _load_queue_state() -> Dict[str, Any]:
 def _save_queue_state(state: Dict[str, Any]) -> None:
     QUEUE_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        QUEUE_STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        fd, tmp_path = tempfile.mkstemp(dir=QUEUE_DIR, suffix=".tmp")
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(state, f, indent=2)
+        os.replace(tmp_path, QUEUE_STATE_FILE)
     except Exception as e:
         log_debug("queue", "save state failed", e)
 
