@@ -10,6 +10,8 @@ Not a complex trait system. Just a consistent voice that shows growth.
 """
 
 import json
+import os
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -87,7 +89,10 @@ class SparkVoice:
     
     def _save(self):
         SPARK_DIR.mkdir(parents=True, exist_ok=True)
-        VOICE_FILE.write_text(json.dumps(self.data, indent=2), encoding="utf-8")
+        fd, tmp_path = tempfile.mkstemp(dir=SPARK_DIR, suffix=".tmp")
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(self.data, f, indent=2)
+        os.replace(tmp_path, VOICE_FILE)
     
     def record_interaction(self):
         """Track that an interaction happened."""

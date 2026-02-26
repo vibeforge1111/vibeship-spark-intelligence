@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Dict, List, Any
@@ -162,9 +163,12 @@ def _load_merge_state() -> Dict[str, Any]:
 
 
 def _save_merge_state(state: Dict[str, Any]):
-    """Save the merge state."""
+    """Save the merge state (atomic write to prevent dedup-hash corruption on crash)."""
     MERGE_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    MERGE_STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    fd, tmp_path = tempfile.mkstemp(dir=MERGE_STATE_FILE.parent, suffix=".tmp")
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        json.dump(state, f, indent=2)
+    os.replace(tmp_path, MERGE_STATE_FILE)
 
 
 def _hash_insight(chip_id: str, content: str) -> str:
