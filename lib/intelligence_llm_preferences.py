@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -21,8 +22,11 @@ VALID_PROVIDERS = {"auto", "ollama", "minimax", "openai", "anthropic", "gemini",
 
 def detect_local_ollama(timeout_s: float = 2.5) -> bool:
     try:
+        ollama_bin = shutil.which("ollama")
+        if not ollama_bin:
+            return False
         proc = subprocess.run(
-            ["ollama", "list"],
+            [ollama_bin, "list"],
             capture_output=True,
             text=True,
             timeout=max(0.5, float(timeout_s)),
