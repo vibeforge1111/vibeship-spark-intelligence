@@ -111,12 +111,12 @@ Branch: feat/spark-alpha
 - `pytest tests/test_memory_retrieval_ab.py -q` -> `11 passed`
 - `pytest tests/test_advisory_orchestrator.py -q` -> `5 passed`
 - `pytest tests/test_spark_alpha_replay_arena.py -q` -> `4 passed`
-- `python scripts/spark_alpha_replay_arena.py --episodes 5 --seed 42` -> alpha winner, promotion gate pass, streak reached `4/3`
+- `python scripts/spark_alpha_replay_arena.py --episodes 60 --seed 42` -> alpha winner, promotion gate pass, streak reached `5/3`
 - Replay artifacts:
-  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_011352.json`
-  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_011352.md`
-  - `benchmarks/out/replay_arena/spark_alpha_replay_scorecards_20260227_011352.json`
-  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_diff_20260227_011352.json`
+  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_011558.json`
+  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_011558.md`
+  - `benchmarks/out/replay_arena/spark_alpha_replay_scorecards_20260227_011558.json`
+  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_diff_20260227_011558.json`
 
 Notable metrics now:
 - `context.p50`: 230

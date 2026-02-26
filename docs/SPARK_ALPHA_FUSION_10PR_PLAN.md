@@ -34,10 +34,10 @@ Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
 2. `memory_quality_observatory.py`: retrieval guardrails passing
 3. Key metrics: `context.p50=230`, `advisory.emit_rate=0.194`, `strict_trace_coverage=0.5985`
-4. Replay arena latest (`scripts/spark_alpha_replay_arena.py --episodes 5 --seed 42`):
+4. Replay arena latest (`scripts/spark_alpha_replay_arena.py --episodes 60 --seed 42`):
    - winner: `alpha`
    - `promotion_gate_pass=true`
-   - `consecutive_pass_streak=4`
+   - `consecutive_pass_streak=5`
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial
