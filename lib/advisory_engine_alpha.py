@@ -10,13 +10,13 @@ Scope:
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .diagnostics import log_debug
+from .jsonl_utils import append_jsonl_capped as _append_jsonl_capped
 
 ALPHA_ENABLED = os.getenv("SPARK_ADVISORY_ALPHA_ENABLED", "1") != "0"
 ALPHA_PROGRAMMATIC_SYNTH_ONLY = os.getenv("SPARK_ADVISORY_ALPHA_SYNTH_PROGRAMMATIC", "1") != "0"
@@ -33,21 +33,6 @@ def _hash_text(value: str) -> str:
     if not text:
         return ""
     return hashlib.sha1(text.encode("utf-8", errors="ignore")).hexdigest()[:16]
-
-
-def _append_jsonl_capped(path: Path, row: Dict[str, Any], max_lines: int) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=True) + "\n")
-    except Exception:
-        return
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-        if len(lines) > max_lines:
-            path.write_text("\n".join(lines[-max_lines:]) + "\n", encoding="utf-8")
-    except Exception:
-        pass
 
 
 def _log_alpha(
@@ -73,7 +58,7 @@ def _log_alpha(
     }
     if isinstance(extra, dict):
         row["extra"] = extra
-    _append_jsonl_capped(ALPHA_LOG, row, ALPHA_LOG_MAX_LINES)
+    _append_jsonl_capped(ALPHA_LOG, row, ALPHA_LOG_MAX_LINES, ensure_ascii=True)
 
 
 def _dedupe_advice_items(advice_items: List[Any]) -> List[Any]:
@@ -372,4 +357,3 @@ def on_user_prompt(
         )
     except Exception as exc:
         log_debug("advisory_engine_alpha", "on_user_prompt delegate failed", exc)
-

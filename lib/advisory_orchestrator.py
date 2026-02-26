@@ -3,31 +3,16 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .diagnostics import log_debug
+from .jsonl_utils import append_jsonl_capped as _append_jsonl_capped
 
 ROUTE_DECISION_LOG = Path.home() / ".spark" / "advisory_route_decisions.jsonl"
 ROUTE_DECISION_MAX_LINES = 3000
-
-
-def _append_jsonl_capped(path: Path, row: Dict[str, Any], max_lines: int) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=True) + "\n")
-    except Exception:
-        return
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-        if len(lines) > max_lines:
-            path.write_text("\n".join(lines[-max_lines:]) + "\n", encoding="utf-8")
-    except Exception:
-        pass
 
 
 def _stable_bucket(seed: str) -> int:
@@ -168,6 +153,7 @@ def _log_route_decision(
             "error": str(error or "")[:240],
         },
         ROUTE_DECISION_MAX_LINES,
+        ensure_ascii=True,
     )
 
 
@@ -378,4 +364,3 @@ def get_route_status() -> Dict[str, Any]:
         "canary_percent": _canary_percent(),
         "decision_log": str(ROUTE_DECISION_LOG),
     }
-

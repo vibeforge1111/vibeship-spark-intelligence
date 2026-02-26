@@ -9,12 +9,13 @@ The quarantine path is intentionally compact and bounded:
 
 from __future__ import annotations
 
-import json
 import os
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
+
+from .jsonl_utils import append_jsonl_capped as _append_jsonl_capped
 
 QUARANTINE_DIR = Path.home() / ".spark" / "advisory_quarantine"
 QUARANTINE_FILE = QUARANTINE_DIR / "advisory_quarantine.jsonl"
@@ -52,40 +53,6 @@ def _sanitize_text(text: str, limit: int = 420) -> str:
     if len(snippet) <= limit:
         return snippet
     return snippet[: max(1, limit - 3)] + "..."
-
-
-def _tail_jsonl(path: Path, limit: int) -> list[Dict[str, Any]]:
-    if limit <= 0 or not path.exists():
-        return []
-    out: list[Dict[str, Any]] = []
-    try:
-        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines()[-limit:]:
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except Exception:
-                continue
-            if isinstance(row, dict):
-                out.append(row)
-    except Exception:
-        return []
-    return out
-
-
-def _append_jsonl_capped(path: Path, entry: Dict[str, Any], max_lines: int) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
-        if max_lines <= 0:
-            return
-        probe = _tail_jsonl(path, max_lines + 1)
-        if len(probe) <= max_lines:
-            return
-        path.write_text("\n".join(json.dumps(r) for r in probe[-max_lines:]) + "\n", encoding="utf-8")
-    except Exception:
-        return
 
 
 def record_quarantine_item(
