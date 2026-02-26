@@ -25,6 +25,7 @@ Completed commits:
 5. `4b3e4df` advisory no-emit loop fix (bounded repeat escape)
 6. `734bddf` strict trace binding repairs + packet freshness repair + quality-band telemetry guard
 7. `(working tree)` PR-03 dual scoring challenger integration (shadow + enforce gated)
+8. `(working tree)` PR-04 SQLite dual-write for cognitive insights (JSON still canonical)
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -61,8 +62,9 @@ Current measured state:
 
 ### PR-04 Memory Spine + Contextual Write  (Partial)
 1. Contextual write path is done.
-2. Remaining: SQLite-first dual-write spine.
-3. Deletion commitment: remove JSONL writes after parity >= 99.5% for 3 runs.
+2. SQLite dual-write path for cognitive insights is now implemented (shadow lane).
+3. Remaining: extend spine coverage across advisory/memory surfaces and add parity checks.
+4. Deletion commitment: remove JSONL writes after parity >= 99.5% for 3 runs.
 
 ### PR-05 Retrieval Fusion (RRF + Contextual Retrieval)  (Pending)
 1. Hybrid retrieval with deterministic fusion.

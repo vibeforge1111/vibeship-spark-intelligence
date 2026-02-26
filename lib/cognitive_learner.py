@@ -32,6 +32,8 @@ from .context_envelope import build_context_envelope
 from .noise_classifier import classify as classify_noise
 from .noise_classifier import enforce_enabled as noise_enforce_enabled
 from .noise_classifier import record_shadow as record_noise_shadow
+from .spark_memory_spine import dual_write_cognitive_insights
+from .spark_memory_spine import load_cognitive_insights_snapshot
 
 INSIGHT_CONTEXT_CHARS = 320
 INSIGHT_EVIDENCE_CHARS = 280
@@ -584,11 +586,13 @@ class CognitiveLearner:
 
     def _load_insights(self):
         """Load existing cognitive insights."""
+        loaded = False
         if self.INSIGHTS_FILE.exists():
             try:
                 data = json.loads(self.INSIGHTS_FILE.read_text(encoding="utf-8"))
                 for key, info in data.items():
                     self.insights[key] = CognitiveInsight.from_dict(info)
+                loaded = True
                 # Consolidate duplicate struggle variants (e.g., recovered X%).
                 self.dedupe_struggles()
                 # Backfill action_domain for insights loaded without one
@@ -597,6 +601,15 @@ class CognitiveLearner:
                 self._backfill_advisory_readiness()
             except Exception as e:
                 print(f"[SPARK] Error loading insights: {e}")
+        if not loaded and not self.insights:
+            # Shadow migration path: JSON remains canonical, but if unavailable we can
+            # recover from the latest SQLite spine snapshot.
+            try:
+                data = load_cognitive_insights_snapshot()
+                for key, info in data.items():
+                    self.insights[key] = CognitiveInsight.from_dict(info)
+            except Exception:
+                pass
 
     def _backfill_action_domains(self):
         """Backfill action_domain for insights that don't have one."""
@@ -738,6 +751,10 @@ class CognitiveLearner:
             try:
                 if tmp.exists():
                     tmp.unlink()
+            except Exception:
+                pass
+            try:
+                dual_write_cognitive_insights(data)
             except Exception:
                 pass
 

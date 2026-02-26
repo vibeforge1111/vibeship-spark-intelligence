@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-26 (local branch snapshot, post PR-03 dual-scoring integration)
+Last updated: 2026-02-26 (local branch snapshot, post PR-04 SQLite dual-write slice)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -44,6 +44,16 @@ Branch: feat/spark-alpha
 - Added scorer metadata in roast records (`result.scoring`) and dual-score counters in `get_stats()`.
 - Added tests for shadow/enforce paths in `tests/test_meta_ralph.py`.
 
+8. `(working tree)` - `feat(alpha-memory): add SQLite memory spine dual-write for cognitive insights`
+- Added SQLite spine module (`lib/spark_memory_spine.py`) with:
+  - Cognitive insight snapshot dual-write (`dual_write_cognitive_insights`)
+  - Optional JSON-missing read fallback (`load_cognitive_insights_snapshot`)
+- Integrated cognitive learner persistence path (`lib/cognitive_learner.py`):
+  - JSON remains canonical write/read path.
+  - SQLite receives full-snapshot dual-write on save.
+  - Optional read fallback from SQLite when JSON is unavailable.
+- Added focused tests (`tests/test_memory_spine_sqlite.py`).
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -57,6 +67,8 @@ Branch: feat/spark-alpha
 - `pytest tests/test_meta_ralph.py -q` -> `18 passed`
 - `pytest tests/test_metaralph_integration.py -q` -> `7 passed, 1 skipped`
 - `pytest tests/test_10_improvements.py -q` -> `9 passed, 1 skipped`
+- `pytest tests/test_cognitive_learner.py -q` -> `76 passed`
+- `pytest tests/test_memory_spine_sqlite.py -q` -> `2 passed`
 
 Notable metrics now:
 - `context.p50`: 230
@@ -77,7 +89,8 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 7. Broad file/function deletion pass to reach Carmack-size target is not done.
 8. Final migration playbook for old paths/deprecated modules is not done.
 9. PR-03 deletion commitment is still pending (legacy scorer path removal after replay wins).
+10. PR-04 deletion commitment is still pending (JSONL/legacy path retirement after parity criteria).
 
 ## In progress right now
 
-- PR-03 implementation is in local working tree and ready to commit.
+- PR-04 SQLite dual-write slice is in local working tree and ready to commit.
