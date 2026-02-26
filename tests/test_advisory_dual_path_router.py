@@ -328,7 +328,7 @@ def test_on_user_prompt_creates_baseline_and_prefetch_job(monkeypatch, tmp_path)
     assert row["session_id"] == "s3"
 
 
-def test_pre_tool_packet_no_emit_does_not_fallback_when_disabled(monkeypatch, tmp_path):
+def test_pre_tool_packet_no_emit_stays_gate_suppressed_without_fallback(monkeypatch, tmp_path):
     _patch_state_and_store(monkeypatch, tmp_path)
 
     pkt = packet_store.build_packet(
@@ -344,7 +344,6 @@ def test_pre_tool_packet_no_emit_does_not_fallback_when_disabled(monkeypatch, tm
     )
     packet_store.save_packet(pkt)
 
-    monkeypatch.setattr(engine, "PACKET_FALLBACK_EMIT_ENABLED", False)
     monkeypatch.setattr("lib.advisory_gate.evaluate", _suppress_all_gate)
     monkeypatch.setattr(
         "lib.advisory_memory_fusion.build_memory_bundle",
@@ -369,47 +368,6 @@ def test_pre_tool_packet_no_emit_does_not_fallback_when_disabled(monkeypatch, tm
     assert row.get("error_code") == "AE_GATE_SUPPRESSED"
     assert row.get("gate_reason") == "test_suppressed"
     assert row.get("suppressed_count") == 1
-
-
-def test_pre_tool_packet_no_emit_remains_gate_suppressed_when_flag_enabled(monkeypatch, tmp_path):
-    _patch_state_and_store(monkeypatch, tmp_path)
-
-    pkt = packet_store.build_packet(
-        project_key="proj",
-        session_context_key="dummy",
-        tool_name="Edit",
-        intent_family="emergent_other",
-        task_plane="build_delivery",
-        advisory_text="Use packet guidance.",
-        source_mode="baseline",
-        advice_items=[{"advice_id": "pkt-a1", "text": "Use packet guidance."}],
-        lineage={"sources": ["baseline"], "memory_absent_declared": False},
-    )
-    packet_store.save_packet(pkt)
-
-    monkeypatch.setattr(engine, "PACKET_FALLBACK_EMIT_ENABLED", True)
-    monkeypatch.setattr("lib.advisory_gate.evaluate", _suppress_all_gate)
-    monkeypatch.setattr(
-        "lib.advisory_memory_fusion.build_memory_bundle",
-        lambda **kwargs: {
-            "memory_absent_declared": False,
-            "sources": {"cognitive": {"count": 1}},
-        },
-    )
-    monkeypatch.setattr(
-        "lib.advisory_emitter.emit_advisory",
-        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("emit should not be called")),
-    )
-
-    text = engine.on_pre_tool("s5", "Edit", {"file_path": "x.py"})
-    assert text is None
-
-    lines = engine.ENGINE_LOG.read_text(encoding="utf-8").splitlines()
-    assert lines
-    row = json.loads(lines[-1])
-    assert row["event"] == "no_emit"
-    assert row.get("error_code") == "AE_GATE_SUPPRESSED"
-    assert row.get("fallback_guard_blocked") is None
 
 
 def test_pre_tool_selective_ai_uses_auto_mode_for_warning(monkeypatch, tmp_path):

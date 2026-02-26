@@ -580,7 +580,7 @@ def generate_system_flow_comprehensive(data: Dict[int, Dict[str, Any]]) -> str:
     lines.append("### Gaps Closed by Intelligence Flow Evolution")
     lines.append("")
     lines.append("- **Unified write path**: 8 bypass paths closed via `validate_and_store` — all cognitive writes now routed through Meta-Ralph.")
-    lines.append("- **Fallback budget**: Quick/packet fallback emissions rate-limited (`fallback_budget_cap=1`, `window=5`).")
+    lines.append("- **Single-path emission**: Packet gate suppression stays explicit `no_emit` (no fallback emission lane).")
     lines.append("- **Auto-tuner bounds**: Clamped from [0.2, 3.0] to [0.8, 1.1] on load, preventing runaway boosts.")
     lines.append("- **JSONL rotation race**: Atomic single-handle rotation prevents lost appends during concurrent writes.")
     lines.append("- **Advisory reorder**: Cheap checks first in `on_pre_tool()` (safety, text repeat, budget before retrieval).")

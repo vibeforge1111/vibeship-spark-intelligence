@@ -217,7 +217,7 @@ def generate_glossary() -> str:
         ("Tool Cooldown", "Per-tool temporary suppression window to reduce advisory spam."),
         ("Validate and Store", "Unified write gate (`lib/validate_and_store.py`) that routes every cognitive insight through Meta-Ralph before storage. Fail-open: quarantines on error, then stores anyway."),
         ("Noise Patterns", "Shared module (`lib/noise_patterns.py`) consolidating noise detection regex from 5 locations into one importable set."),
-        ("Fallback Budget", "Rate-limiter on quick/packet fallback emissions (`fallback_budget_cap` / `fallback_budget_window` in tuneables advisory_engine section)."),
+        ("Single-Path Emission", "Advisory emission no longer uses fallback emit branches; gate-suppressed packets remain explicit `no_emit`."),
         ("Flow Tuneables", "The `flow` tuneable section controlling unified write-path behavior, notably `validate_and_store_enabled`."),
         ("Fail-Open Quarantine", "On Meta-Ralph exception during validate_and_store: the insight is logged to `~/.spark/insight_quarantine.jsonl` AND still stored in cognitive (true fail-open)."),
         ("Rejection Telemetry", "Per-reason counters at every advisory exit path, flushed to `~/.spark/advisory_rejection_telemetry.json`."),

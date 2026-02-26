@@ -105,30 +105,6 @@ def test_delivery_badge_live_and_stale_states():
     assert stale["state"] == "stale"
 
 
-def test_engine_config_exposes_packet_fallback_flag(monkeypatch):
-    monkeypatch.setattr(advisory_engine, "PACKET_FALLBACK_EMIT_ENABLED", False)
-    advisory_engine.apply_engine_config({"packet_fallback_emit_enabled": True})
-    cfg = advisory_engine.get_engine_config()
-    assert cfg["packet_fallback_emit_enabled"] is True
-
-
-def test_engine_config_exposes_fallback_rate_guard_fields(monkeypatch):
-    monkeypatch.setattr(advisory_engine, "FALLBACK_RATE_GUARD_ENABLED", True)
-    monkeypatch.setattr(advisory_engine, "FALLBACK_RATE_GUARD_MAX_RATIO", 0.55)
-    monkeypatch.setattr(advisory_engine, "FALLBACK_RATE_GUARD_WINDOW", 80)
-    advisory_engine.apply_engine_config(
-        {
-            "fallback_rate_guard_enabled": False,
-            "fallback_rate_max_ratio": 0.35,
-            "fallback_rate_window": 120,
-        }
-    )
-    cfg = advisory_engine.get_engine_config()
-    assert cfg["fallback_rate_guard_enabled"] is False
-    assert cfg["fallback_rate_max_ratio"] == 0.35
-    assert cfg["fallback_rate_window"] == 120
-
-
 def test_engine_config_exposes_global_dedupe_cooldown(monkeypatch):
     monkeypatch.setattr(advisory_engine, "GLOBAL_DEDUPE_COOLDOWN_S", 600.0)
     advisory_engine.apply_engine_config({"global_dedupe_cooldown_s": 180.0})
@@ -162,27 +138,6 @@ def test_record_rejection_flushes_global_dedupe_suppressed(monkeypatch, tmp_path
     assert telemetry_file.exists()
     payload = json.loads(telemetry_file.read_text(encoding="utf-8"))
     assert int(payload.get("global_dedupe_suppressed", 0)) >= 1
-
-
-def test_fallback_rate_guard_blocks_when_recent_ratio_exceeded(monkeypatch, tmp_path):
-    log_path = tmp_path / "advisory_engine.jsonl"
-    rows = []
-    rows.extend({"event": "fallback_emit"} for _ in range(9))
-    rows.extend({"event": "emitted"} for _ in range(3))
-    log_path.write_text(
-        "\n".join(json.dumps(row) for row in rows) + "\n",
-        encoding="utf-8",
-    )
-
-    monkeypatch.setattr(advisory_engine, "ENGINE_LOG", log_path)
-    monkeypatch.setattr(advisory_engine, "FALLBACK_RATE_GUARD_ENABLED", True)
-    monkeypatch.setattr(advisory_engine, "FALLBACK_RATE_GUARD_MAX_RATIO", 0.5)
-    monkeypatch.setattr(advisory_engine, "FALLBACK_RATE_GUARD_WINDOW", 20)
-
-    out = advisory_engine._fallback_guard_allows()
-    assert out["allowed"] is False
-    assert out["reason"] == "ratio_exceeded"
-    assert round(float(out["ratio"] or 0.0), 3) == 0.75
 
 
 def test_load_engine_config_reads_advisory_engine_section(tmp_path):

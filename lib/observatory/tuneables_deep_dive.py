@@ -646,7 +646,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     lines.append("| 6. Cognitive/EIDOS | `eidos`, `semantic` | `max_steps`, `min_fusion_score`, `dedupe_similarity` |")
     lines.append("| 7. Mind sync | `bridge_worker`, `advisor` | `mind_sync_*`, `mind_max_stale_s`, `mind_min_salience` |")
     lines.append("| 5.5. Unified write gate | `flow` | `validate_and_store_enabled` (bypass Meta-Ralph if false) |")
-    lines.append("| 8. Pre-tool orchestrator | `advisory_engine` | `max_ms`, `include_mind`, `delivery_stale_s`, `fallback_budget_cap/window` |")
+    lines.append("| 8. Pre-tool orchestrator | `advisory_engine` | `max_ms`, `include_mind`, `delivery_stale_s`, `global_dedupe_*`, synth controls |")
     lines.append("| 9. Retrieval fanout | `advisor`, `retrieval`, `semantic` | `min_rank_score`, `level` |")
     lines.append("| 10. Gate + suppression | `advisory_gate` | `max_emit_per_call`, `*_cooldown_*`, `*_threshold` |")
     lines.append("| 11. Synth + emit | `synthesizer`, `advisory_quality` | `mode`, `preferred_provider` |")

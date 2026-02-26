@@ -30,23 +30,6 @@ MAX_ENGINE_MS = float(os.getenv("SPARK_ADVISORY_MAX_MS", "4000"))
 INCLUDE_MIND_IN_MEMORY = os.getenv("SPARK_ADVISORY_INCLUDE_MIND", "0") == "1"
 ENABLE_PREFETCH_QUEUE = os.getenv("SPARK_ADVISORY_PREFETCH_QUEUE", "1") != "0"
 ENABLE_INLINE_PREFETCH_WORKER = os.getenv("SPARK_ADVISORY_PREFETCH_INLINE", "1") != "0"
-PACKET_FALLBACK_EMIT_ENABLED = os.getenv("SPARK_ADVISORY_PACKET_FALLBACK_EMIT", "0") == "1"
-
-FALLBACK_RATE_GUARD_ENABLED = os.getenv("SPARK_ADVISORY_FALLBACK_RATE_GUARD", "1") != "0"
-FALLBACK_RATE_GUARD_MAX_RATIO = float(
-    os.getenv("SPARK_ADVISORY_FALLBACK_RATE_MAX_RATIO", "0.55")
-)
-try:
-    FALLBACK_RATE_GUARD_WINDOW = max(
-        10, int(os.getenv("SPARK_ADVISORY_FALLBACK_RATE_WINDOW", "80") or 80)
-    )
-except Exception:
-    FALLBACK_RATE_GUARD_WINDOW = 80
-# Per-window budget cap for fallback emissions (complementary to ratio guard).
-# Max N fallback emits per WINDOW tool calls. Resets when window is exhausted.
-FALLBACK_BUDGET_CAP = int(os.getenv("SPARK_ADVISORY_FALLBACK_BUDGET_CAP", "1"))
-FALLBACK_BUDGET_WINDOW = int(os.getenv("SPARK_ADVISORY_FALLBACK_BUDGET_WINDOW", "5"))
-_fallback_budget: Dict[str, int] = {"calls": 0, "quick_emits": 0, "packet_emits": 0}
 
 MEMORY_SCOPE_DEFAULT = str(os.getenv("SPARK_MEMORY_SCOPE_DEFAULT", "session") or "session").strip() or "session"
 ACTIONABILITY_ENFORCE = os.getenv("SPARK_ADVISORY_REQUIRE_ACTION", "1") != "0"
@@ -337,12 +320,6 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
             "include_mind": env_bool("SPARK_ADVISORY_INCLUDE_MIND"),
             "prefetch_queue_enabled": env_bool("SPARK_ADVISORY_PREFETCH_QUEUE"),
             "prefetch_inline_enabled": env_bool("SPARK_ADVISORY_PREFETCH_INLINE"),
-            "packet_fallback_emit_enabled": env_bool("SPARK_ADVISORY_PACKET_FALLBACK_EMIT"),
-            "fallback_rate_guard_enabled": env_bool("SPARK_ADVISORY_FALLBACK_RATE_GUARD"),
-            "fallback_rate_max_ratio": env_float("SPARK_ADVISORY_FALLBACK_RATE_MAX_RATIO"),
-            "fallback_rate_window": env_int("SPARK_ADVISORY_FALLBACK_RATE_WINDOW"),
-            "fallback_budget_cap": env_int("SPARK_ADVISORY_FALLBACK_BUDGET_CAP"),
-            "fallback_budget_window": env_int("SPARK_ADVISORY_FALLBACK_BUDGET_WINDOW"),
             "prefetch_inline_max_jobs": env_int("SPARK_ADVISORY_PREFETCH_INLINE_MAX_JOBS"),
             "actionability_enforce": env_bool("SPARK_ADVISORY_REQUIRE_ACTION"),
             "delivery_stale_s": env_float("SPARK_ADVISORY_STALE_S"),
@@ -372,12 +349,6 @@ def apply_engine_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     global INCLUDE_MIND_IN_MEMORY
     global ENABLE_PREFETCH_QUEUE
     global ENABLE_INLINE_PREFETCH_WORKER
-    global PACKET_FALLBACK_EMIT_ENABLED
-    global FALLBACK_RATE_GUARD_ENABLED
-    global FALLBACK_RATE_GUARD_MAX_RATIO
-    global FALLBACK_RATE_GUARD_WINDOW
-    global FALLBACK_BUDGET_CAP
-    global FALLBACK_BUDGET_WINDOW
     global INLINE_PREFETCH_MAX_JOBS
     global ACTIONABILITY_ENFORCE
     global DELIVERY_STALE_SECONDS
@@ -420,55 +391,6 @@ def apply_engine_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
             ENABLE_INLINE_PREFETCH_WORKER,
         )
         applied.append("prefetch_inline_enabled")
-
-    if "packet_fallback_emit_enabled" in cfg:
-        PACKET_FALLBACK_EMIT_ENABLED = _parse_bool(
-            cfg.get("packet_fallback_emit_enabled"),
-            PACKET_FALLBACK_EMIT_ENABLED,
-        )
-        applied.append("packet_fallback_emit_enabled")
-
-    if "fallback_rate_guard_enabled" in cfg:
-        FALLBACK_RATE_GUARD_ENABLED = _parse_bool(
-            cfg.get("fallback_rate_guard_enabled"),
-            FALLBACK_RATE_GUARD_ENABLED,
-        )
-        applied.append("fallback_rate_guard_enabled")
-
-    if "fallback_rate_max_ratio" in cfg:
-        try:
-            FALLBACK_RATE_GUARD_MAX_RATIO = max(
-                0.0,
-                min(1.0, float(cfg.get("fallback_rate_max_ratio") or FALLBACK_RATE_GUARD_MAX_RATIO)),
-            )
-            applied.append("fallback_rate_max_ratio")
-        except Exception:
-            warnings.append("invalid_fallback_rate_max_ratio")
-
-    if "fallback_rate_window" in cfg:
-        try:
-            FALLBACK_RATE_GUARD_WINDOW = max(
-                10, min(500, int(cfg.get("fallback_rate_window") or FALLBACK_RATE_GUARD_WINDOW))
-            )
-            applied.append("fallback_rate_window")
-        except Exception:
-            warnings.append("invalid_fallback_rate_window")
-
-    if "fallback_budget_cap" in cfg:
-        try:
-            raw = cfg["fallback_budget_cap"]
-            FALLBACK_BUDGET_CAP = max(0, int(raw if raw is not None else FALLBACK_BUDGET_CAP))
-            applied.append("fallback_budget_cap")
-        except Exception:
-            warnings.append("invalid_fallback_budget_cap")
-
-    if "fallback_budget_window" in cfg:
-        try:
-            raw = cfg["fallback_budget_window"]
-            FALLBACK_BUDGET_WINDOW = max(1, int(raw if raw is not None else FALLBACK_BUDGET_WINDOW))
-            applied.append("fallback_budget_window")
-        except Exception:
-            warnings.append("invalid_fallback_budget_window")
 
     if "prefetch_inline_max_jobs" in cfg:
         try:
@@ -570,12 +492,6 @@ def get_engine_config() -> Dict[str, Any]:
         "include_mind": bool(INCLUDE_MIND_IN_MEMORY),
         "prefetch_queue_enabled": bool(ENABLE_PREFETCH_QUEUE),
         "prefetch_inline_enabled": bool(ENABLE_INLINE_PREFETCH_WORKER),
-        "packet_fallback_emit_enabled": bool(PACKET_FALLBACK_EMIT_ENABLED),
-        "fallback_rate_guard_enabled": bool(FALLBACK_RATE_GUARD_ENABLED),
-        "fallback_rate_max_ratio": float(FALLBACK_RATE_GUARD_MAX_RATIO),
-        "fallback_rate_window": int(FALLBACK_RATE_GUARD_WINDOW),
-        "fallback_budget_cap": int(FALLBACK_BUDGET_CAP),
-        "fallback_budget_window": int(FALLBACK_BUDGET_WINDOW),
         "prefetch_inline_max_jobs": int(INLINE_PREFETCH_MAX_JOBS),
         "actionability_enforce": bool(ACTIONABILITY_ENFORCE),
         "force_programmatic_synth": bool(FORCE_PROGRAMMATIC_SYNTH),
@@ -1688,104 +1604,6 @@ def _decision_ledger_status() -> Dict[str, Any]:
     return status
 
 
-def _fallback_guard_allows() -> Dict[str, Any]:
-    if not FALLBACK_RATE_GUARD_ENABLED:
-        return {
-            "allowed": True,
-            "reason": "guard_disabled",
-            "ratio": None,
-            "limit": float(FALLBACK_RATE_GUARD_MAX_RATIO),
-            "delivered_recent": 0,
-            "window": int(FALLBACK_RATE_GUARD_WINDOW),
-        }
-    if FALLBACK_RATE_GUARD_WINDOW <= 0:
-        return {
-            "allowed": True,
-            "reason": "invalid_window",
-            "ratio": None,
-            "limit": float(FALLBACK_RATE_GUARD_MAX_RATIO),
-            "delivered_recent": 0,
-            "window": int(FALLBACK_RATE_GUARD_WINDOW),
-        }
-
-    fallback_count = 0
-    emitted_count = 0
-    try:
-        rows = _tail_jsonl(ENGINE_LOG, FALLBACK_RATE_GUARD_WINDOW)
-        for row in rows:
-            event = str(row.get("event") or "")
-            if event == "fallback_emit":
-                fallback_count += 1
-            elif event == "emitted":
-                emitted_count += 1
-    except Exception:
-        return {
-            "allowed": True,
-            "reason": "read_failed",
-            "ratio": None,
-            "limit": float(FALLBACK_RATE_GUARD_MAX_RATIO),
-            "delivered_recent": 0,
-            "window": int(FALLBACK_RATE_GUARD_WINDOW),
-        }
-
-    delivered = fallback_count + emitted_count
-    min_sample = max(10, int(FALLBACK_RATE_GUARD_WINDOW * 0.25))
-    if delivered < min_sample:
-        return {
-            "allowed": True,
-            "reason": "insufficient_sample",
-            "ratio": None,
-            "limit": float(FALLBACK_RATE_GUARD_MAX_RATIO),
-            "delivered_recent": int(delivered),
-            "window": int(FALLBACK_RATE_GUARD_WINDOW),
-        }
-
-    ratio = float(fallback_count) / float(max(delivered, 1))
-    allowed = ratio <= float(FALLBACK_RATE_GUARD_MAX_RATIO)
-    return {
-        "allowed": allowed,
-        "reason": "ok" if allowed else "ratio_exceeded",
-        "ratio": ratio,
-        "limit": float(FALLBACK_RATE_GUARD_MAX_RATIO),
-        "delivered_recent": int(delivered),
-        "window": int(FALLBACK_RATE_GUARD_WINDOW),
-    }
-
-
-def _fallback_budget_allows(kind: str) -> bool:
-    """Check if a fallback emission is allowed under the per-window budget cap.
-
-    Resets counters when FALLBACK_BUDGET_WINDOW tool calls are exhausted.
-    ``kind`` should be ``"quick"`` or ``"packet"``.
-    """
-    if FALLBACK_BUDGET_CAP <= 0:
-        return True  # 0 = unlimited (old behaviour)
-    key = f"{kind}_emits"
-    if _fallback_budget.get(key, 0) < FALLBACK_BUDGET_CAP:
-        return True
-    return False
-
-
-def _fallback_budget_record(kind: str) -> None:
-    """Record a fallback emission against the per-window budget."""
-    key = f"{kind}_emits"
-    _fallback_budget[key] = _fallback_budget.get(key, 0) + 1
-
-
-def _fallback_budget_tick() -> None:
-    """Increment the call counter and reset the window when exhausted.
-
-    Window semantics: with FALLBACK_BUDGET_WINDOW=5, calls 1-5 are in one window.
-    Reset happens *after* the window is full (call > window), so the Nth call
-    is still inside the window it started in.
-    """
-    _fallback_budget["calls"] = _fallback_budget.get("calls", 0) + 1
-    if _fallback_budget["calls"] > FALLBACK_BUDGET_WINDOW:
-        _fallback_budget["calls"] = 1
-        _fallback_budget["quick_emits"] = 0
-        _fallback_budget["packet_emits"] = 0
-
-
 def on_pre_tool(
     session_id: str,
     tool_name: str,
@@ -1865,8 +1683,6 @@ def on_pre_tool(
         session_context_key = _session_context_key(state, tool_name)
         intent_family = state.intent_family or "emergent_other"
         task_plane = state.task_plane or "build_delivery"
-
-        _fallback_budget_tick()
 
         # Early-exit: if same tool+context as last emission and within cooldown,
         # skip the entire retrieval → gate → synthesis path. (Batch 1 optimization.)
