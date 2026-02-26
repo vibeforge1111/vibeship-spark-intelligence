@@ -20,21 +20,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Semgrep
+      - name: Install OpenGrep
         run: |
-          python -m pip install --upgrade pip
-          pip install semgrep
+          curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh \
+            | sh -s -- -b "$HOME/.local/bin" -v v1.16.2
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Run Semgrep
+      - name: Run OpenGrep
         run: |
-          semgrep scan --config p/security-audit --config p/python --sarif --output semgrep.sarif .
+          opengrep scan --config p/security-audit --config p/python --sarif-output opengrep.sarif .
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: semgrep.sarif
+          sarif_file: opengrep.sarif
