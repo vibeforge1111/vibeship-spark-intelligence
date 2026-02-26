@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import json
 import time
-from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from .config import spark_dir
+
 try:
     from ..tuneables_schema import SCHEMA as _TUNEABLES_SCHEMA
     from ..tuneables_schema import SECTION_CONSUMERS as _SCHEMA_SECTION_CONSUMERS
@@ -332,8 +332,8 @@ def _llm_area_config_advise(drifts: list, anomalies: list) -> str:
     When disabled (default), returns empty string.
     """
     try:
-        from ..llm_dispatch import llm_area_call
         from ..llm_area_prompts import format_prompt
+        from ..llm_dispatch import llm_area_call
 
         prompt = format_prompt(
             "config_advise",

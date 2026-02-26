@@ -7,7 +7,7 @@ Uses the llm_areas `canary_decide` hook (opt-in, disabled by default).
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 
 def canary_decide(
@@ -38,9 +38,10 @@ def canary_decide(
     }
 
     try:
-        from .llm_dispatch import llm_area_call
-        from .llm_area_prompts import format_prompt
         import json
+
+        from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         prompt = format_prompt(
             "canary_decide",

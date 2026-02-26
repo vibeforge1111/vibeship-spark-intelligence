@@ -9,8 +9,8 @@ import json
 import os
 import subprocess
 import sys
-import time
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 from urllib import request
@@ -21,7 +21,6 @@ from lib.ports import (
     PULSE_UI_URL,
     SPARKD_HEALTH_URL,
 )
-
 
 SPARK_DIR = Path(__file__).resolve().parent
 LOG_DIR = Path.home() / ".spark" / "logs"
@@ -335,10 +334,10 @@ def _start_process(
         if os.name == "nt":
             # CREATE_NO_WINDOW (0x08000000) prevents console windows from opening
             # DETACHED_PROCESS alone is NOT enough on Windows
-            CREATE_NO_WINDOW = 0x08000000
+            create_no_window = 0x08000000
             creationflags = (
                 getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                | CREATE_NO_WINDOW
+                | create_no_window
             )
         with open(log_path, "a", encoding="utf-8", errors="replace") as log_f:
             subprocess.Popen(
@@ -421,8 +420,8 @@ def _record_restart(state: dict, service: str) -> None:
 
 def _queue_counts() -> tuple[int, int]:
     sys.path.insert(0, str(SPARK_DIR))
-    from lib.queue import count_events
     from lib.pattern_detection.worker import get_pattern_backlog
+    from lib.queue import count_events
 
     return count_events(), get_pattern_backlog()
 
@@ -585,7 +584,7 @@ def main() -> None:
         if manage_pulse and (not pulse_ok):
             # Check PID file first (covers external pulse started by service_control)
             try:
-                from lib.service_control import _read_pid, _pid_alive, _get_pulse_command
+                from lib.service_control import _get_pulse_command, _pid_alive, _read_pid
                 pulse_pid_from_file = _read_pid("pulse")
                 pid_file_alive = _pid_alive(pulse_pid_from_file)
             except Exception:

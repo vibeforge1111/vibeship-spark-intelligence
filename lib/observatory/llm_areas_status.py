@@ -20,13 +20,13 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
         Full markdown page content.
     """
     try:
+        from ..llm_area_prompts import AREA_PROMPTS
         from ..llm_dispatch import (
             ALL_AREAS,
             ARCHITECTURE_AREAS,
             LEARNING_AREAS,
             get_all_area_configs,
         )
-        from ..llm_area_prompts import AREA_PROMPTS
     except Exception:
         return _fallback_page("import error: llm_dispatch or llm_area_prompts unavailable")
 
@@ -53,8 +53,8 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
         "",
         "## Summary",
         "",
-        f"| Metric | Value |",
-        f"| --- | --- |",
+        "| Metric | Value |",
+        "| --- | --- |",
         f"| Total areas | **{total}** |",
         f"| Enabled | **{enabled_count}** |",
         f"| Disabled | **{disabled_count}** |",
@@ -74,7 +74,7 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
         lines.append("")
 
     # Host module mapping
-    _HOST_MODULES = {
+    host_modules = {
         "archive_rewrite": "lib/distillation_refiner.py",
         "archive_rescue": "lib/distillation_refiner.py",
         "system28_reformulate": "lib/distillation_transformer.py",
@@ -118,7 +118,7 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
         provider = cfg.get("provider", "minimax")
         timeout = cfg.get("timeout_s", 6.0)
         max_chars = cfg.get("max_chars", 300)
-        host = _HOST_MODULES.get(area_id, "?")
+        host = host_modules.get(area_id, "?")
         lines.append(
             f"| {i} | `{area_id}` | {status} | `{provider}` | {timeout}s | {max_chars} | `{host}` |"
         )
@@ -135,7 +135,7 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
         provider = cfg.get("provider", "minimax")
         timeout = cfg.get("timeout_s", 6.0)
         max_chars = cfg.get("max_chars", 300)
-        host = _HOST_MODULES.get(area_id, "?")
+        host = host_modules.get(area_id, "?")
         lines.append(
             f"| {i} | `{area_id}` | {status} | `{provider}` | `{timeout}s` | {max_chars} | `{host}` |"
         )

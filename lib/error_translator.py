@@ -6,8 +6,6 @@ Uses the llm_areas `error_translate` hook (opt-in, disabled by default).
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 def translate_error(error_msg: str, *, context: str = "") -> str:
     """Translate a technical error message into a human-readable explanation.
@@ -24,8 +22,8 @@ def translate_error(error_msg: str, *, context: str = "") -> str:
     if not error_msg or not error_msg.strip():
         return error_msg
     try:
-        from .llm_dispatch import llm_area_call
         from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         prompt = format_prompt(
             "error_translate",
