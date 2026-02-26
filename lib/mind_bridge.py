@@ -546,12 +546,12 @@ class MindBridge:
     def sync_recent_insights(
         self,
         *,
-        limit: int = 8,
+        limit: int = 20,
         min_readiness: float = 0.45,
         min_reliability: float = 0.35,
         max_age_s: int = 14 * 24 * 3600,
         drain_queue: bool = True,
-        queue_budget: int = 2,
+        queue_budget: int = 25,
     ) -> Dict[str, int]:
         """Sync a bounded high-signal subset of unsynced insights to Mind."""
         stats: Dict[str, int] = {
@@ -566,6 +566,8 @@ class MindBridge:
         }
 
         if drain_queue and queue_budget > 0:
+            # Drain more aggressively by default so offline backlog trends downward
+            # under sustained ingestion load.
             stats["queue_drained"] = int(self.process_offline_queue(max_items=queue_budget) or 0)
 
         capped_limit = max(0, int(limit or 0))

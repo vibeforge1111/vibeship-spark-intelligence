@@ -42,3 +42,23 @@ def test_invalid_quarantine_is_bounded(monkeypatch, tmp_path):
     assert isinstance(rows[-1]["payload"], str)
     assert rows[-1]["payload"].endswith("...<truncated>")
 
+
+def test_invalid_quarantine_redacts_sensitive_tokens(monkeypatch, tmp_path):
+    quarantine = tmp_path / "invalid_events.jsonl"
+    monkeypatch.setattr(sparkd, "INVALID_EVENTS_FILE", quarantine)
+    monkeypatch.setattr(sparkd, "INVALID_EVENTS_MAX_LINES", 10)
+    monkeypatch.setattr(sparkd, "INVALID_EVENTS_MAX_PAYLOAD_CHARS", 500)
+
+    payload = {
+        "Authorization": "Bearer super-secret-token-value",
+        "api_key": "ABCDEFGH12345678",
+        "nested": {"token": "ZXY987654321TOKEN"},
+    }
+    sparkd._quarantine_invalid(payload, "invalid")
+
+    row = json.loads(quarantine.read_text(encoding="utf-8").strip())
+    body = str(row["payload"])
+    assert "super-secret-token-value" not in body
+    assert "ABCDEFGH12345678" not in body
+    assert "ZXY987654321TOKEN" not in body
+    assert "[REDACTED]" in body

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from lib.diagnostics import log_debug
+from lib.file_lock import file_lock_for
 
 FEEDBACK_FILE = Path.home() / ".spark" / "advisor" / "implicit_feedback.jsonl"
 FEEDBACK_FILE_MAX = 2000
@@ -99,15 +100,19 @@ class ImplicitOutcomeTracker:
     def _append_feedback(self, entry: Dict) -> None:
         try:
             FEEDBACK_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with FEEDBACK_FILE.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            self._rotate_if_needed()
+            with file_lock_for(FEEDBACK_FILE, fail_open=False):
+                with FEEDBACK_FILE.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                self._rotate_if_needed()
         except Exception as e:
             log_debug("implicit_tracker", "write failed", e)
 
     @staticmethod
     def _rotate_if_needed() -> None:
-        """Trim feedback file using atomic temp-write + os.replace."""
+        """Trim feedback file using atomic temp-write + os.replace.
+
+        Caller should already hold FEEDBACK_FILE lock.
+        """
         try:
             if not FEEDBACK_FILE.exists():
                 return
@@ -117,7 +122,7 @@ class ImplicitOutcomeTracker:
             if len(lines) <= FEEDBACK_FILE_MAX:
                 return
             keep = "\n".join(lines[-FEEDBACK_FILE_MAX:]) + "\n"
-            tmp = FEEDBACK_FILE.with_suffix(".tmp")
+            tmp = FEEDBACK_FILE.with_suffix(FEEDBACK_FILE.suffix + f".tmp.{os.getpid()}.{time.time_ns()}")
             tmp.write_text(keep, encoding="utf-8")
             os.replace(str(tmp), str(FEEDBACK_FILE))
         except Exception:

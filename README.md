@@ -142,7 +142,7 @@ Spark works with any coding agent that supports hooks or event capture.
 - **Advisory delivery** — pre-tool guidance ranked across retrieval sources with cool-down and dedupe.
 - **EIDOS loop** — prediction → outcome → evaluation for continuous quality updates.
 - **Domain chips** — pluggable expertise modules that can specialize behavior.
-- **Observability surfaces** — Obsidian Observatory in-repo, plus optional external Spark Pulse and local Meta-Ralph views.
+- **Observability surfaces** — Obsidian Observatory in-repo, plus optional external Spark Pulse (separate `vibeship-spark-pulse` app; `spark_pulse.py` is a redirector) and local Meta-Ralph views.
 - **CLI** — `spark status`, `spark learnings`, `spark promote`, `spark up/down`, and more.
 - **Hot-reloadable config** — tuneables with schema checks and live behavior shifts.
 
@@ -304,8 +304,9 @@ Full guide: [`docs/OBSIDIAN_OBSERVATORY_GUIDE.md`](docs/OBSIDIAN_OBSERVATORY_GUI
 
 ## Documentation
 
-- **5-minute start**: `docs/GETTING_STARTED_5_MIN.md`
-- **Full setup**: `docs/QUICKSTART.md`
+- **Start here (canonical onboarding)**: `docs/SPARK_ONBOARDING_COMPLETE.md`
+- **Fast path (5 minutes)**: `docs/GETTING_STARTED_5_MIN.md`
+- **CLI + operations quickstart**: `docs/QUICKSTART.md`
 - **Obsidian Observatory**: `docs/OBSIDIAN_OBSERVATORY_GUIDE.md`
 - **Docs index**: `docs/DOCS_INDEX.md`
 - **Website**: [spark.vibeship.co](https://spark.vibeship.co)

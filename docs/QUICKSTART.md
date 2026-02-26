@@ -1,86 +1,28 @@
 ﻿# Spark Quick Start Guide
 
-Get Spark running in 5 minutes.
+Runtime and operations reference for an already-installed Spark setup.
 
-If you are brand new, start with `docs/GETTING_STARTED_5_MIN.md` (shorter, newcomer path).
+If this is your first time:
+- Canonical onboarding: `docs/SPARK_ONBOARDING_COMPLETE.md`
+- Fast onboarding path: `docs/GETTING_STARTED_5_MIN.md`
+
 For the full active documentation map, see `docs/DOCS_INDEX.md`.
 For term-based navigation, see `docs/GLOSSARY.md`.
+Command style: this guide uses explicit interpreter commands (`python -m spark.cli ...`) for portability.
 
-## Prerequisites
+## First-Time Setup (Do Once)
 
-- Python 3.10+ (Windows one-command bootstrap auto-installs latest Python 3 via `winget` when missing)
-- pip
-- Git
-- Windows one-command path: PowerShell
-- Mac/Linux one-command path: `curl` + `bash`
+Use `docs/GETTING_STARTED_5_MIN.md` for install/start/health.
+For full context and troubleshooting depth, use `docs/SPARK_ONBOARDING_COMPLETE.md`.
 
-## Installation
+After first successful health check, return to this guide for runtime operations.
 
-### Option 1: Windows One Command (includes startup + health check)
-
-```powershell
-irm https://raw.githubusercontent.com/vibeforge1111/vibeship-spark-intelligence/main/install.ps1 | iex
-```
-
-Optional re-check (from repo root):
-
-```powershell
-.\.venv\Scripts\python -m spark.cli up
-.\.venv\Scripts\python -m spark.cli health
-```
-
-### Option 2: Mac/Linux One Command
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/vibeforge1111/vibeship-spark-intelligence/main/install.sh | bash
-```
-
-Then run a ready check (from repo root):
-
-```bash
-./.venv/bin/python -m spark.cli up
-./.venv/bin/python -m spark.cli health
-```
-
-### Option 3: Quick Install
-
-```bash
-cd /path/to/Spark
-./scripts/install.sh
-```
-
-### Option 4: Manual Install
-
-```bash
-# Install dependencies in a virtual environment (recommended)
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .[services]
-
-# Optional: Enable embeddings (fastembed)
-python -m pip install -e .[embeddings]
-
-# Test it works
-python -m spark.cli health
-```
-
-```powershell
-# Windows manual install without activation policy issues:
-py -3 -m venv .venv
-.\.venv\Scripts\python -m pip install -e ".[services]"
-.\.venv\Scripts\python -m spark.cli health
-```
-
-If pip reports `externally-managed-environment`, you are likely running on a
-system-managed Python install (Ubuntu/Debian policy). Re-run after creating and
-activating a local virtualenv as above.
-
-## Basic Usage
+## Runtime Operations
 
 ### Check Status
 
 ```bash
-python3 -m spark.cli status
+python -m spark.cli status
 ```
 
 ### Start Background Services (Recommended)
@@ -88,12 +30,12 @@ python3 -m spark.cli status
 These keep the bridge worker running and the dashboard live.
 
 ```bash
-python3 -m spark.cli up
+python -m spark.cli up
 # or: spark up
 ```
 Lightweight mode (core services only: sparkd + bridge_worker):
 ```bash
-python3 -m spark.cli up --lite
+python -m spark.cli up --lite
 ```
 
 Repo shortcuts:
@@ -107,24 +49,20 @@ start_spark.bat
 ```
 Preferred launch paths on Windows are `start_spark.bat` and `python -m spark.cli ...`.
 `scripts/spark.ps1` and `scripts/spark.cmd` are deprecated compatibility wrappers.
-This also starts Mind on `SPARK_MIND_PORT` (default `8080`) if `mind.exe` is available.  
+By default this starts built-in Mind on `SPARK_MIND_PORT` (default `8080`).
 Set `SPARK_NO_MIND=1` to skip Mind startup.
 Set `SPARK_LITE=1` to skip dashboards/pulse/watchdog (core services only).
+Set `SPARK_NO_PULSE=1` or `SPARK_NO_WATCHDOG=1` for targeted disables.
 Spark auto-detects sibling `../vibeship-spark-pulse`. Set `SPARK_PULSE_DIR` env var if it's elsewhere.
-Set `SPARK_PULSE_DIR` to override both.
+Set `SPARK_PULSE_DIR` to override auto-detection.
 For this setup, use:
 ```bat
 set SPARK_PULSE_DIR=<SPARK_PULSE_DIR>
 ```
-If Mind CLI is installed but unstable, force Spark's built-in Mind server:
-```bat
-set SPARK_FORCE_BUILTIN_MIND=1
-start_spark.bat
-```
 
 Check status:
 ```bash
-python3 -m spark.cli services
+python -m spark.cli services
 # or: spark services
 ```
 
@@ -179,7 +117,7 @@ The watchdog auto-restarts workers and warns when the queue grows. Set
 
 Stop services:
 ```bash
-python3 -m spark.cli down
+python -m spark.cli down
 # or: spark down
 ```
 
@@ -283,7 +221,7 @@ Description=Spark background services
 
 [Service]
 Type=simple
-ExecStart=python3 -m spark.cli up --sync-context --project /path/to/your/project
+ExecStart=python -m spark.cli up --sync-context --project /path/to/your/project
 Restart=on-failure
 
 [Install]
@@ -304,7 +242,7 @@ systemctl --user disable --now spark-up.service
 #### Fallback (cron)
 If you prefer cron:
 ```
-@reboot python3 -m spark.cli up --sync-context --project /path/to/your/project >/dev/null 2>&1
+@reboot python -m spark.cli up --sync-context --project /path/to/your/project >/dev/null 2>&1
 ```
 
 ### Per-Project Ensure (Optional)
@@ -314,7 +252,7 @@ project start script or editor task:
 
 ```bash
 spark ensure --sync-context --project .
-# or: python3 -m spark.cli ensure --sync-context --project .
+# or: python -m spark.cli ensure --sync-context --project .
 ```
 
 Windows helper (run from project root):
@@ -350,7 +288,7 @@ cognitive.learn_principle(
 ### Write to Markdown
 
 ```bash
-python3 -m spark.cli write
+python -m spark.cli write
 # Creates .learnings/LEARNINGS.md
 ```
 
@@ -375,7 +313,7 @@ If you want a safety net (for sessions launched outside wrappers), run sync on a
 - Action: `spark`
 - Args: `sync-context`
 - Start in: your repo root
-- Trigger: every 10â€“30 minutes
+- Trigger: every 10-30 minutes
 
 **macOS/Linux (cron)**
 ```
@@ -386,28 +324,28 @@ If you want a safety net (for sessions launched outside wrappers), run sync on a
 
 ```bash
 # Check what's ready
-python3 -m spark.cli promote --dry-run
+python -m spark.cli promote --dry-run
 
 # Actually promote
-python3 -m spark.cli promote
+python -m spark.cli promote
 # Creates/updates AGENTS.md, CLAUDE.md, etc.
 ```
 
 ## Mind Integration (Optional)
 
-For persistent semantic memory:
+Spark ships with a built-in Mind server (`mind_server.py`) started by `spark up`.
+Use this section only if you need explicit checks or want an external Mind runtime.
 
 ```bash
-# Install Mind
-pip install vibeship-mind
+# Check built-in Mind health
+curl http://127.0.0.1:${SPARK_MIND_PORT:-8080}/health
 
-# Start Mind server
-python3 -m mind.lite_tier
-# If Mind CLI fails, use Spark's built-in server:
-python3 mind_server.py
+# Optional: external Mind runtime (if you use it)
+# pip install vibeship-mind
+# python3 -m mind.lite_tier
 
 # Sync Spark learnings to Mind
-python3 -m spark.cli sync
+python -m spark.cli sync
 ```
 
 ## Semantic Retrieval (Optional)
@@ -439,49 +377,166 @@ Semantic retrieval logs and metrics:
 - `~/.spark/logs/semantic_retrieval.jsonl`
 - `~/.spark/advisor/metrics.json`
 
-## Claude Code Integration
+## Configuring Tuneables
 
-Add to `.claude/settings.json`:
+Tuneables control every runtime behavior — quality thresholds, advisory timing, gate limits, retrieval weights, and more.
+317 keys across 37 sections, all configurable without code changes.
+
+For the full key reference, see [`docs/TUNEABLES_REFERENCE.md`](TUNEABLES_REFERENCE.md).
+For the architectural contract, see [`docs/CONFIG_AUTHORITY.md`](CONFIG_AUTHORITY.md).
+
+### How to Change a Tuneable
+
+**Option A: Edit the runtime file** (most common)
 
 ```json
+// ~/.spark/tuneables.json
 {
-  "hooks": {
-    "PreToolUse": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "python3 /path/to/Spark/hooks/observe.py"
-      }]
-    }],
-    "PostToolUse": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "python3 /path/to/Spark/hooks/observe.py"
-      }]
-    }],
-    "PostToolUseFailure": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "python3 /path/to/Spark/hooks/observe.py"
-      }]
-    }],
-    "UserPromptSubmit": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "python3 /path/to/Spark/hooks/observe.py"
-      }]
-    }]
+  "advisory_gate": {
+    "max_emit_per_call": 3,
+    "tool_cooldown_s": 20
+  },
+  "meta_ralph": {
+    "quality_threshold": 5.0
   }
 }
 ```
 
-Spark maps these hook names to runtime event types used by chips:
-`pre_tool`, `post_tool`, `post_tool_failure`, `user_prompt`.
+Save the file. Changes take effect automatically within 1-30 seconds (next bridge cycle).
 
-For predictive advisory to work end-to-end, `PreToolUse` must be enabled.
+**Option B: Environment variables** (for CI, containers, or quick overrides)
+
+```bash
+# Windows
+set SPARK_ADVISORY_MAX_MS=10000
+set SPARK_ADVISORY_EMIT_WHISPERS=false
+
+# Mac/Linux
+export SPARK_ADVISORY_MAX_MS=10000
+export SPARK_ADVISORY_EMIT_WHISPERS=false
+```
+
+Env vars override everything — they win over both files. Must be set **before** starting Spark.
+~148 keys have env overrides wired. See [`docs/CONFIG_AUTHORITY.md`](CONFIG_AUTHORITY.md) for the full list.
+
+### Precedence (Highest Wins Last)
+
+```
+1. Schema defaults   (lib/tuneables_schema.py)     <- hardcoded baseline
+2. Versioned baseline (config/tuneables.json)       <- checked into git
+3. Runtime overrides  (~/.spark/tuneables.json)     <- your local edits
+4. Env overrides      (SPARK_* env vars)            <- highest priority
+```
+
+You almost always edit layer 3 (`~/.spark/tuneables.json`). Layer 2 (`config/tuneables.json`) is the project baseline and shouldn't be edited for local use. Env overrides (layer 4) are for temporary or deployment-specific needs.
+
+### Hot-Reload
+
+Most modules pick up changes automatically — no restart needed:
+
+| Modules with hot-reload | Section |
+|-------------------------|---------|
+| `advisory_engine.py`, `advisory_emitter.py` | `advisory_engine` |
+| `advisory_gate.py`, `advisory_state.py` | `advisory_gate` |
+| `advisor.py`, `advisory_preferences.py` | `advisor`, `auto_tuner` |
+| `meta_ralph.py` | `meta_ralph` |
+| `pipeline.py` | `pipeline`, `values` |
+| `bridge_cycle.py` | `bridge_worker` |
+| `queue.py` | `queue` |
+| `eidos/models.py` | `eidos`, `values` |
+| `advisory_synthesizer.py` | `synthesizer` |
+| `advisory_packet_store.py` | `advisory_packet_store` |
+| `advisory_prefetch_worker.py` | `advisory_prefetch` |
+| `memory_capture.py` | `memory_capture` |
+| `memory_store.py` | `memory_deltas`, `memory_emotion`, `memory_learning`, `memory_retrieval_guard` |
+| `memory_banks.py` | `memory_emotion` |
+| `promoter.py`, `auto_promote.py` | `promotion` |
+| `chip_merger.py` | `chip_merge` |
+| `feature_flags.py` | `feature_flags` |
+| `opportunity_scanner.py` | `opportunity_scanner` |
+| `semantic_retriever.py` | `semantic`, `triggers` |
+| `context_sync.py` | `sync` |
+| `request_tracker.py` | `request_tracker` |
+| `validate_and_store.py` | `flow` |
+
+All sections listed above support hot-reload via `register_reload()`. No restart is required for these.
+
+### Reconciliation
+
+On startup, Spark runs `reconcile_with_defaults()` which removes stale copies from `~/.spark/tuneables.json` — if a runtime value matches the baseline exactly, it's stripped so the code default wins. This prevents old overrides from defeating newer defaults after upgrades.
+
+The `auto_tuner` section is exempt (its values are intentionally evolved).
+
+### Auto-Tuner
+
+The auto-tuner runs every 12 hours and adjusts `auto_tuner.source_boosts` based on measured effectiveness. It writes to `~/.spark/tuneables.json` but only touches its own section unless `apply_cross_section_recommendations` is explicitly enabled.
+
+Disable it:
+```json
+{ "auto_tuner": { "enabled": false } }
+```
+
+Monitor it:
+```bash
+python -c "from lib.config_authority import resolve_section; import json; s=resolve_section('auto_tuner'); print(json.dumps({k:v for k,v in s.data.items() if k in ('enabled','mode','source_boosts','last_run')}, indent=2))"
+```
+
+### Common Tuneables
+
+| What | Key | Default | Effect |
+|------|-----|---------|--------|
+| Quality gate strictness | `meta_ralph.quality_threshold` | `4.5` | Higher = fewer learnings pass (0-10) |
+| Advice items per tool call | `advisory_gate.max_emit_per_call` | `2` | How many tips shown per action |
+| Advisory time budget | `advisory_engine.max_ms` | `4000` | ms budget for advisory engine |
+| Repeat cooldown | `advisory_gate.advice_repeat_cooldown_s` | `300` | Seconds before same advice re-emits |
+| Shown advice TTL | `advisory_gate.shown_advice_ttl_s` | `600` | How long "already shown" suppression lasts |
+| Tool cooldown | `advisory_gate.tool_cooldown_s` | `15` | Same-tool suppression cooldown (s) |
+| Retrieval min score | `advisor.min_rank_score` | `0.4` | Floor for advisory ranking fusion score |
+| Mind sync enabled | `bridge_worker.mind_sync_enabled` | `true` | Whether bridge syncs to Mind |
+| Prefetch queue | `advisory_engine.prefetch_queue_enabled` | `false` | Predictive advisory pre-computation |
+| Semantic retrieval | `semantic.enabled` | `true` | Enable semantic matching |
+
+### Troubleshooting Tuneables
+
+**"I changed a value but nothing happened"**
+- Check if the module has hot-reload (table above). If not, restart services.
+- Env vars set after startup are ignored — restart required.
+- Verify JSON is valid: `python -c "import json; json.load(open('path/to/tuneables.json'))"`
+
+**"My override disappeared after restart"**
+- Reconciliation strips values matching the baseline. If you intentionally want a value that happens to match the baseline, that's fine — the baseline already provides it.
+
+**"Lock file stuck"**
+- Delete `~/.spark/tuneables.json.lock` if a process crashed mid-write.
+
+**"How do I see what's active?"**
+```bash
+python -c "
+from lib.config_authority import resolve_section
+section = resolve_section('advisory_gate')
+for k, v in sorted(section.data.items()):
+    print(f'  {k} = {v!r}  [{section.sources.get(k, \"?\")}]')
+"
+```
+
+## Claude Code Integration
+
+Use the maintained integration flow in `docs/claude_code.md`.
+
+Minimal path:
+
+```bash
+# macOS/Linux
+./scripts/install_claude_hooks.sh
+
+# Windows (PowerShell)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\install_claude_hooks.ps1
+```
+
+Then merge `~/.claude/spark-hooks.json` into `~/.claude/settings.json`.
+
+Note: generated hooks use `python`/`python3` from PATH. If you run Spark in a venv,
+replace the hook command with that venv interpreter path.
 
 ## Codex Integration (Optional)
 
@@ -521,7 +576,7 @@ python -m lib.integration_status
 If status still reports missing Codex sync, confirm:
 
 - the command runs in the same shell/environment where `SPARK_CODEX_CMD` or `CODEX_CMD` is set
-- `spark.cli sync-context` is completing successfully
+- `python -m spark.cli sync-context` is completing successfully
 - `SPARK_SYNC_TARGETS` is not overridden to exclude `codex`
 
 ## Directory Structure
@@ -576,9 +631,10 @@ CLAUDE.md                      # Promoted conventions
 
 ### "Mind API: Not available"
 
-Mind isn't running. Either:
-- Start Mind: `python3 -m mind.lite_tier`
-- Or ignore it â€” Spark works offline and queues for later
+Mind is not reachable. Try:
+- Start services with Mind enabled: `python -m spark.cli up` (default includes built-in `mind_server.py`)
+- Verify Mind health: `curl http://127.0.0.1:${SPARK_MIND_PORT:-8080}/health`
+- Or ignore it - Spark still works offline and queues sync for later
 
 ### "requests not installed"
 
@@ -620,10 +676,10 @@ expand scope if needed.
 
 ## Next Steps
 
-1. **Integrate with your workflow** â€” Set up the hooks
-2. **Start Mind** â€” For persistent cross-project learning
-3. **Review learnings** â€” `python3 -m spark.cli learnings`
-4. **Promote insights** â€” `python3 -m spark.cli promote`
+1. **Integrate with your workflow** - Set up the hooks
+2. **Confirm services** - `python -m spark.cli services` and `python -m spark.cli health`
+3. **Review learnings** - `python -m spark.cli learnings`
+4. **Promote insights** - `python -m spark.cli promote`
 
 ---
 

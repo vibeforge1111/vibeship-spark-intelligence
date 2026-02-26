@@ -12,6 +12,7 @@ import os
 import re
 
 from .cognitive_learner import CognitiveLearner, CognitiveInsight
+from .config_authority import EnvOverride, env_int, env_str, resolve_section
 from .output_adapters import (
     write_claude_code,
     write_cursor,
@@ -38,6 +39,7 @@ DEFAULT_MAX_CHIP_HIGHLIGHTS = 4
 DEFAULT_MAX_MIND_HIGHLIGHTS = 2
 CHIP_INSIGHTS_DIR = Path.home() / ".spark" / "chip_insights"
 TUNEABLES_FILE = Path.home() / ".spark" / "tuneables.json"
+BASELINE_TUNEABLES_FILE = Path(__file__).resolve().parent.parent / "config" / "tuneables.json"
 
 CORE_SYNC_ADAPTERS = ("openclaw", "exports")
 OPTIONAL_SYNC_ADAPTERS = ("claude_code", "cursor", "windsurf", "clawdbot", "codex")
@@ -69,24 +71,20 @@ def _parse_adapter_list(raw: Any) -> List[str]:
 
 
 def _load_sync_adapter_policy() -> Dict[str, Any]:
-    mode = str(os.getenv("SPARK_SYNC_MODE", "") or "").strip().lower()
-    env_targets = _parse_adapter_list(os.getenv("SPARK_SYNC_TARGETS", ""))
-    env_disabled = set(_parse_adapter_list(os.getenv("SPARK_SYNC_DISABLE_TARGETS", "")))
-    cfg: Dict[str, Any] = {}
+    cfg = resolve_section(
+        "sync",
+        baseline_path=BASELINE_TUNEABLES_FILE,
+        runtime_path=TUNEABLES_FILE,
+        env_overrides={
+            "mode": env_str("SPARK_SYNC_MODE", lower=True),
+            "adapters_enabled": EnvOverride("SPARK_SYNC_TARGETS", _parse_adapter_list),
+            "adapters_disabled": EnvOverride("SPARK_SYNC_DISABLE_TARGETS", _parse_adapter_list),
+        },
+    ).data
 
-    try:
-        if TUNEABLES_FILE.exists():
-            # Accept UTF-8 with BOM (common on Windows).
-            data = json.loads(TUNEABLES_FILE.read_text(encoding="utf-8-sig"))
-            raw = data.get("sync") or {}
-            if isinstance(raw, dict):
-                cfg = raw
-    except Exception:
-        cfg = {}
-
-    cfg_mode = str(cfg.get("mode") or "").strip().lower()
+    mode = str(cfg.get("mode") or "").strip().lower()
     if not mode:
-        mode = cfg_mode or "core"
+        mode = "core"
     if mode not in {"core", "all"}:
         mode = "core"
 
@@ -99,14 +97,14 @@ def _load_sync_adapter_policy() -> Dict[str, Any]:
     cfg_disabled = set(_parse_adapter_list(cfg.get("adapters_disabled")))
     enabled -= cfg_disabled
 
-    if env_targets:
-        enabled = set(env_targets)
-    elif os.getenv("SPARK_CODEX_CMD") or os.getenv("CODEX_CMD"):
+    if not cfg_enabled and (os.getenv("SPARK_CODEX_CMD") or os.getenv("CODEX_CMD")):
         # If a Codex command is configured and no explicit targets were set,
         # keep Codex in sync automatically (backward-compatible default).
         enabled.add("codex")
 
-    enabled -= env_disabled
+    # Re-apply disabled set as final override so SPARK_SYNC_DISABLE_TARGETS
+    # always wins (backward-compatible kill-switch semantics).
+    enabled -= cfg_disabled
 
     return {
         "mode": mode,
@@ -469,8 +467,16 @@ def _load_chip_highlights(
 
 
 def _mind_limit_from_env(default: int = DEFAULT_MAX_MIND_HIGHLIGHTS) -> int:
+    cfg = resolve_section(
+        "sync",
+        baseline_path=BASELINE_TUNEABLES_FILE,
+        runtime_path=TUNEABLES_FILE,
+        env_overrides={
+            "mind_limit": env_int("SPARK_SYNC_MIND_LIMIT", lo=0, hi=6),
+        },
+    ).data
     try:
-        value = int(os.environ.get("SPARK_SYNC_MIND_LIMIT", str(default)))
+        value = int(cfg.get("mind_limit", default))
     except Exception:
         value = int(default)
     return max(0, min(6, value))
@@ -941,6 +947,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         "targets": stats.targets,
     }, indent=2))
     return 0
+
+
+def _reload_sync_from(_cfg: Dict) -> None:
+    """Hot-reload callback — config is read fresh each sync call."""
+    pass
+
+
+try:
+    from .tuneables_reload import register_reload as _sync_register
+
+    _sync_register("sync", _reload_sync_from, label="context_sync.reload")
+except Exception:
+    pass
 
 
 if __name__ == "__main__":

@@ -222,6 +222,32 @@ curl.exe -s http://localhost:8765/api/trace?limit=20
 curl.exe -s http://localhost:8765/api/tuneables/status
 ```
 
+### Learning systems bridge (safe write ingress)
+
+Use these commands instead of direct writes to `~/.spark/cognitive_insights.json` or `~/.spark/tuneables.json`:
+
+```powershell
+python scripts/learning_systems_bridge.py store-insight `
+  --text "Use tighter retrieval threshold for low-context prompts" `
+  --category reasoning `
+  --source system_04 `
+  --context retrieval_gauntlet `
+  --confidence 0.74
+
+python scripts/learning_systems_bridge.py propose-tuneable `
+  --system-id 04 `
+  --section advisor `
+  --key min_rank_score `
+  --new-value 0.52 `
+  --reasoning "Observed precision gain in replay scenarios" `
+  --confidence 0.68
+```
+
+Bridge artifacts:
+
+- `~/.spark/learning_systems/insight_ingest_audit.jsonl`
+- `~/.spark/learning_systems/tuneable_proposals.jsonl`
+
 ---
 
 ## Analyze → propose → test → keep/rollback protocol (required operating standard)
@@ -361,4 +387,3 @@ curl.exe -X POST http://localhost:8790/kill
   - explicit pass/fail measurement criteria.
 - Prefer short cycles over broad full loops during stabilization.
 - Track changes only if they improve measurable advisory + intelligence behavior.
-

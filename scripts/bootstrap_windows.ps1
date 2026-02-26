@@ -167,13 +167,9 @@ Invoke-External -FilePath $venvPython -Arguments @("-m", "pip", "install", "-e",
 if ($SkipUp) {
   Write-Host ""
   Write-Host "Install complete."
-  Write-Host ("Start later with: {0} -m spark.cli up" -f $venvPython)
+  Write-Host ("Start later with: {0} -m spark.cli onboard --quick --yes" -f $venvPython)
   exit 0
 }
 
 Write-Host ""
-Write-Host "Starting Spark services..."
-Invoke-External -FilePath $venvPython -Arguments @("-m", "spark.cli", "up")
-Write-Host "Running Spark health check..."
-Invoke-External -FilePath $venvPython -Arguments @("-m", "spark.cli", "health")
-Write-Host "Spark services are up and healthy."
+Invoke-External -FilePath $venvPython -Arguments @("-m", "spark.cli", "onboard", "--quick", "--yes")

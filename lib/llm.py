@@ -323,8 +323,18 @@ def _strip_json_fence(text: str) -> str:
     return t
 
 
+def _resolve_eidos_provider() -> str:
+    """Resolve EIDOS LLM provider from config-authority."""
+    try:
+        from lib.config_authority import resolve_section, env_str
+        cfg = resolve_section("eidos", env_overrides={"llm_provider": env_str("SPARK_EIDOS_PROVIDER")}).data
+        return str(cfg.get("llm_provider", "minimax")).strip().lower()
+    except Exception:
+        return (os.getenv("SPARK_EIDOS_PROVIDER") or "minimax").strip().lower()
+
+
 def _ask_distillation_model(prompt: str, *, timeout_s: int = 45) -> Optional[str]:
-    preferred = (os.getenv("SPARK_EIDOS_PROVIDER") or "minimax").strip().lower()
+    preferred = _resolve_eidos_provider()
 
     # Try provider chain first (MiniMax-preferred for structured distillation).
     try:
@@ -449,7 +459,7 @@ def _normalize_distillation_payload(raw: str) -> Optional[Dict[str, Any]]:
         "schema": "spark.eidos.v1",
         "insights": final[:3],
         "meta": {
-            "provider": (os.getenv("SPARK_EIDOS_PROVIDER") or "minimax").strip().lower(),
+            "provider": _resolve_eidos_provider(),
             "count": len(final[:3]),
         },
     }

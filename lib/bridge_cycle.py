@@ -9,84 +9,57 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import re
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from lib.bridge import update_spark_context
-from lib.openclaw_paths import discover_openclaw_workspaces
-from lib.memory_capture import process_recent_memory_events
-from lib.tastebank import parse_like_message, add_item
-from lib.queue import read_recent_events, EventType
-from lib.pattern_detection import process_pattern_events
-from lib.validation_loop import process_validation_events, process_outcome_validation
-from lib.prediction_loop import process_prediction_cycle
-from lib.content_learner import learn_from_edit_event
-from lib.chips import process_chip_events
-from lib.chip_merger import merge_chip_insights
-from lib.context_sync import sync_context
 from lib.advisory_quarantine import record_quarantine_item
+from lib.bridge import update_spark_context
+from lib.chip_merger import merge_chip_insights
+from lib.chips import process_chip_events
+from lib.content_learner import learn_from_edit_event
+from lib.context_sync import sync_context
 from lib.diagnostics import log_debug
+from lib.feature_flags import PREMIUM_TOOLS as _FF_PREMIUM
+from lib.feature_flags import chips_active as _ff_chips_active
+from lib.memory_capture import process_recent_memory_events
+from lib.noise_patterns import API_ERROR_STRINGS, GENERIC_ADVICE_STRINGS
+from lib.openclaw_paths import discover_openclaw_workspaces
 from lib.opportunity_scanner_adapter import scan_runtime_opportunities
+from lib.pattern_detection import process_pattern_events
+from lib.prediction_loop import process_prediction_cycle
+from lib.queue import EventType, read_recent_events
 from lib.runtime_hygiene import cleanup_runtime_artifacts
-
+from lib.tastebank import add_item, parse_like_message
+from lib.validation_loop import process_outcome_validation, process_validation_events
 
 BRIDGE_HEARTBEAT_FILE = Path.home() / ".spark" / "bridge_worker_heartbeat.json"
+_reconcile_done = False
 
-# --- OpenClaw notification integration ---
-SPARK_OPENCLAW_NOTIFY = os.environ.get("SPARK_OPENCLAW_NOTIFY", "1").strip().lower() not in {
-    "0", "false", "no", "off"
-}
+# --- Defaults — overridden by config-authority resolution below ---
+SPARK_OPENCLAW_NOTIFY: bool = True
 _NOTIFY_COOLDOWN_S = 300  # 5 minutes
 _last_notify_time: float = 0.0
-BRIDGE_STEP_TIMEOUT_S = float(os.environ.get("SPARK_BRIDGE_STEP_TIMEOUT_S", "45"))
-BRIDGE_DISABLE_TIMEOUTS = os.environ.get("SPARK_BRIDGE_DISABLE_TIMEOUTS", "0").strip().lower() in {
-    "1", "true", "yes", "on"
-}
-
-# GC is a safety valve, but doing a full collection every cycle is often
-# unnecessary overhead once obvious references are cleared.
-# Default: collect every 3 cycles. Set SPARK_BRIDGE_GC_EVERY=1 to restore
-# previous behavior.
-try:
-    _BRIDGE_GC_EVERY = int(os.environ.get("SPARK_BRIDGE_GC_EVERY", "3"))
-except Exception:
-    _BRIDGE_GC_EVERY = 3
-_BRIDGE_GC_EVERY = max(1, min(100, _BRIDGE_GC_EVERY))
+BRIDGE_STEP_TIMEOUT_S: float = 45.0
+BRIDGE_DISABLE_TIMEOUTS: bool = False
+_BRIDGE_GC_EVERY: int = 3
 _BRIDGE_GC_COUNTER = 0
 
 
 def _premium_tools_enabled() -> bool:
-    return str(os.environ.get("SPARK_PREMIUM_TOOLS", "")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return _FF_PREMIUM
 
 
 def _chips_disabled() -> bool:
-    return str(os.environ.get("SPARK_ADVISORY_DISABLE_CHIPS", "")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return not _ff_chips_active()
 
 
 def _chips_enabled() -> bool:
-    if _chips_disabled():
-        return False
-    if not _premium_tools_enabled():
-        return False
-    return str(os.environ.get("SPARK_CHIPS_ENABLED", "")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return _ff_chips_active()
 
 
 def _env_float(name: str, default: float, lo: float = 0.0, hi: float = 1.0) -> float:
@@ -125,25 +98,120 @@ def _parse_bool(value: Any, default: bool) -> bool:
     return bool(default)
 
 
+def _normalize_project_path(path: Optional[str]) -> str:
+    text = str(path or "").strip()
+    if not text:
+        return ""
+    try:
+        return os.path.normcase(os.path.normpath(text))
+    except Exception:
+        return text.lower()
+
+
+def _same_project_path(a: Optional[str], b: Optional[str]) -> bool:
+    pa = _normalize_project_path(a)
+    pb = _normalize_project_path(b)
+    if not pa or not pb:
+        return False
+    if pa == pb:
+        return True
+    sep = os.sep
+    return pa.startswith(pb + sep) or pb.startswith(pa + sep)
+
+
+def _filter_chip_events_for_project(
+    chip_events: list[Dict[str, Any]],
+    project_path: Optional[str],
+) -> tuple[list[Dict[str, Any]], Dict[str, Any]]:
+    total = len(chip_events or [])
+    if total <= 0:
+        return [], {"enabled": False, "reason": "no_events", "input_events": 0, "filtered_events": 0, "fallback_used": False}
+
+    if not _normalize_project_path(project_path):
+        return list(chip_events), {
+            "enabled": False,
+            "reason": "no_project_path",
+            "input_events": total,
+            "filtered_events": total,
+            "fallback_used": False,
+        }
+
+    filtered = []
+    for event in chip_events:
+        cwd = (event or {}).get("cwd")
+        if _same_project_path(cwd, project_path):
+            filtered.append(event)
+
+    if not filtered:
+        return list(chip_events), {
+            "enabled": True,
+            "reason": "no_matching_cwd_fallback",
+            "input_events": total,
+            "filtered_events": total,
+            "fallback_used": True,
+        }
+
+    return filtered, {
+        "enabled": True,
+        "reason": "matched_project_cwd",
+        "input_events": total,
+        "filtered_events": len(filtered),
+        "fallback_used": False,
+    }
+
+
 CHIP_MERGE_MIN_CONFIDENCE = _env_float("SPARK_CHIP_MERGE_MIN_CONFIDENCE", 0.55)
 CHIP_MERGE_MIN_QUALITY = _env_float("SPARK_CHIP_MERGE_MIN_QUALITY", 0.55)
-BRIDGE_MIND_SYNC_ENABLED = _env_bool("SPARK_BRIDGE_MIND_SYNC_ENABLED", True)
-BRIDGE_MIND_SYNC_LIMIT = _env_int("SPARK_BRIDGE_MIND_SYNC_LIMIT", 8, 0, 200)
-BRIDGE_MIND_SYNC_MIN_READINESS = _env_float("SPARK_BRIDGE_MIND_SYNC_MIN_READINESS", 0.45, 0.0, 1.0)
-BRIDGE_MIND_SYNC_MIN_RELIABILITY = _env_float("SPARK_BRIDGE_MIND_SYNC_MIN_RELIABILITY", 0.35, 0.0, 1.0)
-BRIDGE_MIND_SYNC_MAX_AGE_S = _env_int("SPARK_BRIDGE_MIND_SYNC_MAX_AGE_S", 14 * 24 * 3600, 0, 365 * 24 * 3600)
-BRIDGE_MIND_SYNC_DRAIN_QUEUE = _env_bool("SPARK_BRIDGE_MIND_SYNC_DRAIN_QUEUE", True)
-BRIDGE_MIND_SYNC_QUEUE_BUDGET = _env_int("SPARK_BRIDGE_MIND_SYNC_QUEUE_BUDGET", 2, 0, 1000)
+BRIDGE_MIND_SYNC_ENABLED = True
+BRIDGE_MIND_SYNC_LIMIT = 8
+BRIDGE_MIND_SYNC_MIN_READINESS = 0.45
+BRIDGE_MIND_SYNC_MIN_RELIABILITY = 0.35
+BRIDGE_MIND_SYNC_MAX_AGE_S = 14 * 24 * 3600
+BRIDGE_MIND_SYNC_DRAIN_QUEUE = True
+BRIDGE_MIND_SYNC_QUEUE_BUDGET = 2
 
 
-def _reload_bridge_worker_config(cfg: Dict[str, Any]) -> None:
+def _load_bridge_worker_config() -> None:
+    """Load bridge_worker tuneables via config-authority."""
+    global SPARK_OPENCLAW_NOTIFY, BRIDGE_STEP_TIMEOUT_S, BRIDGE_DISABLE_TIMEOUTS
+    global _BRIDGE_GC_EVERY
     global BRIDGE_MIND_SYNC_ENABLED, BRIDGE_MIND_SYNC_LIMIT
     global BRIDGE_MIND_SYNC_MIN_READINESS, BRIDGE_MIND_SYNC_MIN_RELIABILITY
     global BRIDGE_MIND_SYNC_MAX_AGE_S, BRIDGE_MIND_SYNC_DRAIN_QUEUE, BRIDGE_MIND_SYNC_QUEUE_BUDGET
+    try:
+        from lib.config_authority import env_bool, env_float, env_int, resolve_section
 
+        cfg = resolve_section(
+            "bridge_worker",
+            env_overrides={
+                "mind_sync_enabled": env_bool("SPARK_BRIDGE_MIND_SYNC_ENABLED"),
+                "mind_sync_limit": env_int("SPARK_BRIDGE_MIND_SYNC_LIMIT"),
+                "mind_sync_min_readiness": env_float("SPARK_BRIDGE_MIND_SYNC_MIN_READINESS"),
+                "mind_sync_min_reliability": env_float("SPARK_BRIDGE_MIND_SYNC_MIN_RELIABILITY"),
+                "mind_sync_max_age_s": env_int("SPARK_BRIDGE_MIND_SYNC_MAX_AGE_S"),
+                "mind_sync_drain_queue": env_bool("SPARK_BRIDGE_MIND_SYNC_DRAIN_QUEUE"),
+                "mind_sync_queue_budget": env_int("SPARK_BRIDGE_MIND_SYNC_QUEUE_BUDGET"),
+                "openclaw_notify": env_bool("SPARK_OPENCLAW_NOTIFY"),
+                "step_timeout_s": env_float("SPARK_BRIDGE_STEP_TIMEOUT_S"),
+                "disable_timeouts": env_bool("SPARK_BRIDGE_DISABLE_TIMEOUTS"),
+                "gc_every": env_int("SPARK_BRIDGE_GC_EVERY"),
+                "step_executor_workers": env_int("SPARK_BRIDGE_STEP_EXECUTOR_WORKERS"),
+            },
+        ).data
+        _apply_bridge_worker_cfg(cfg)
+    except Exception:
+        pass
+
+
+def _apply_bridge_worker_cfg(cfg: Dict[str, Any]) -> None:
+    """Apply resolved bridge_worker config dict to module globals."""
+    global SPARK_OPENCLAW_NOTIFY, BRIDGE_STEP_TIMEOUT_S, BRIDGE_DISABLE_TIMEOUTS
+    global _BRIDGE_GC_EVERY
+    global BRIDGE_MIND_SYNC_ENABLED, BRIDGE_MIND_SYNC_LIMIT
+    global BRIDGE_MIND_SYNC_MIN_READINESS, BRIDGE_MIND_SYNC_MIN_RELIABILITY
+    global BRIDGE_MIND_SYNC_MAX_AGE_S, BRIDGE_MIND_SYNC_DRAIN_QUEUE, BRIDGE_MIND_SYNC_QUEUE_BUDGET
     if not isinstance(cfg, dict):
         return
-
     if "mind_sync_enabled" in cfg:
         BRIDGE_MIND_SYNC_ENABLED = _parse_bool(cfg.get("mind_sync_enabled"), BRIDGE_MIND_SYNC_ENABLED)
     if "mind_sync_limit" in cfg:
@@ -167,6 +235,21 @@ def _reload_bridge_worker_config(cfg: Dict[str, Any]) -> None:
         BRIDGE_MIND_SYNC_QUEUE_BUDGET = max(
             0, min(1000, int(cfg.get("mind_sync_queue_budget") or BRIDGE_MIND_SYNC_QUEUE_BUDGET))
         )
+    if "openclaw_notify" in cfg:
+        SPARK_OPENCLAW_NOTIFY = _parse_bool(cfg.get("openclaw_notify"), SPARK_OPENCLAW_NOTIFY)
+    if "step_timeout_s" in cfg:
+        BRIDGE_STEP_TIMEOUT_S = max(5.0, min(300.0, float(cfg.get("step_timeout_s") or BRIDGE_STEP_TIMEOUT_S)))
+    if "disable_timeouts" in cfg:
+        BRIDGE_DISABLE_TIMEOUTS = _parse_bool(cfg.get("disable_timeouts"), BRIDGE_DISABLE_TIMEOUTS)
+    if "gc_every" in cfg:
+        _BRIDGE_GC_EVERY = max(1, min(100, int(cfg.get("gc_every") or _BRIDGE_GC_EVERY)))
+
+
+_load_bridge_worker_config()
+
+
+def _reload_bridge_worker_config(cfg: Dict[str, Any]) -> None:
+    _load_bridge_worker_config()
 
 
 try:
@@ -182,7 +265,17 @@ except Exception:
 # remain busy. We use a small pool to allow subsequent steps to proceed.
 _STEP_EXECUTOR: Optional[ThreadPoolExecutor] = None
 _STEP_EXECUTOR_LOCK = Lock()
-_STEP_EXECUTOR_WORKERS = max(2, int(os.environ.get("SPARK_BRIDGE_STEP_EXECUTOR_WORKERS", "4")))
+# Read once at import; not hot-reloadable (ThreadPoolExecutor size is fixed).
+try:
+    from lib.config_authority import env_int as _bw_env_int
+    from lib.config_authority import resolve_section as _bw_resolve
+    _STEP_EXECUTOR_WORKERS = max(2, int(
+        _bw_resolve("bridge_worker", env_overrides={
+            "step_executor_workers": _bw_env_int("SPARK_BRIDGE_STEP_EXECUTOR_WORKERS"),
+        }).data.get("step_executor_workers", 4)
+    ))
+except Exception:
+    _STEP_EXECUTOR_WORKERS = max(2, int(os.environ.get("SPARK_BRIDGE_STEP_EXECUTOR_WORKERS", "4")))
 
 
 def _shutdown_step_executor() -> None:
@@ -255,6 +348,18 @@ def run_bridge_cycle(
     # TF-IDF hashing: ~0MB overhead, 0.4ms/embed, no model download needed.
     import os
     os.environ.setdefault("SPARK_EMBED_BACKEND", "tfidf")
+
+    # --- Reconcile stale defaults on first cycle (once per process) ---
+    global _reconcile_done
+    if not _reconcile_done:
+        _reconcile_done = True
+        try:
+            from lib.tuneables_reload import reconcile_with_defaults
+            rc = reconcile_with_defaults()
+            if rc["stripped"]:
+                log_debug("bridge_cycle", "reconcile_stripped_stale_defaults", rc["stripped"])
+        except Exception:
+            pass
 
     # --- Hot-reload tuneables if file changed ---
     try:
@@ -561,15 +666,16 @@ def run_bridge_cycle(
 
         chips_enabled = _chips_enabled()
         if chips_enabled:
-            # TODO: Filter chips by project context (game-dev shouldn't fire during spark-checker work)
-            # See: spark_reports/day1_fixes_plan.md for details
-
             # --- Chip processing (uses pre-built chip_events list, capped for speed) ---
+            project_chip_events, project_chip_filter = _filter_chip_events_for_project(chip_events, project_path)
             # Cap at 30 events to keep cycle time under 30s (was 60s+ with 67 events x 13 chips)
-            capped_chip_events = chip_events[-30:] if len(chip_events) > 30 else chip_events
+            capped_chip_events = (
+                project_chip_events[-30:] if len(project_chip_events) > 30 else project_chip_events
+            )
             ok, chip_stats, error = _run_step("chips", process_chip_events, capped_chip_events, project_path, timeout_s=30)
             if ok:
                 stats["chips"] = chip_stats or {}
+                stats["chips"]["project_filter"] = project_chip_filter
             else:
                 stats["errors"].append("chips")
                 log_debug("bridge_worker", f"chip processing failed ({error})", None)
@@ -657,11 +763,11 @@ def run_bridge_cycle(
         # Only run when we have meaningful data to analyze
         patterns_found = stats.get("pattern_processed", 0)
         insights_merged = (stats.get("chip_merge") or {}).get("merged", 0)
+        content_learned = int(stats.get("content_learned", 0) or 0)
 
-        if patterns_found >= 5 or insights_merged >= 2:
+        if patterns_found >= 5 or insights_merged >= 2 or content_learned >= 2:
             try:
-                from lib.llm import synthesize_advisory, interpret_patterns
-                from lib.cognitive_learner import get_cognitive_learner, CognitiveCategory
+                from lib.llm import synthesize_advisory
 
                 # 1. Build rich pattern summaries from actual event data
                 pattern_summaries = _build_pattern_summaries(
@@ -702,7 +808,6 @@ def run_bridge_cycle(
         # EIDOS distillation (less frequent — every 10th cycle with patterns)
         try:
             from lib.llm import distill_eidos
-            cycle_count = stats.get("pipeline", {}).get("health", {}).get("queue_depth_before", 0)
             # Use a simple file counter
             _eidos_counter_file = Path.home() / ".spark" / "eidos_llm_counter.txt"
             counter = 0
@@ -716,11 +821,13 @@ def run_bridge_cycle(
 
             opp_stats = stats.get("opportunity_scanner") or {}
             opp_promotions = (opp_stats.get("promoted_candidates") or []) if isinstance(opp_stats, dict) else []
-            if counter % 5 == 0 and (patterns_found > 0 or opp_promotions):
+            if counter % 5 == 0 and (patterns_found > 0 or opp_promotions or content_learned > 0):
                 # Gather behavioral observations
                 observations = []
                 if stats.get("llm_advisory"):
                     observations.append(f"Advisory: {stats['llm_advisory'][:200]}")
+                if content_learned > 0:
+                    observations.append(f"Content learning captured {content_learned} item(s) this cycle")
                 chip_stats = stats.get("chips", {})
                 if chip_stats.get("insights_captured"):
                     observations.append(f"Captured {chip_stats['insights_captured']} chip insights")
@@ -824,8 +931,6 @@ def run_bridge_cycle(
     return stats
 
 
-import re
-
 # --- Noise patterns to filter from insights before LLM prompt ---
 _INSIGHT_NOISE_PATTERNS = [
     "Strong reasoning on",       # depth forge benchmark scores
@@ -897,7 +1002,7 @@ def _get_filtered_insights(limit: int = 10, source: str = "") -> list:
     If source is specified, strongly prefer insights from that adapter.
     Untagged (legacy) insights are included but ranked lower.
     """
-    from lib.cognitive_learner import get_cognitive_learner, CognitiveCategory
+    from lib.cognitive_learner import CognitiveCategory, get_cognitive_learner
 
     cog = get_cognitive_learner()
     filtered = []
@@ -1029,9 +1134,6 @@ def _write_llm_advisory(advisory: str) -> None:
         log_debug("bridge_worker", f"Failed to write advisory: {e}", None)
 
 
-# Import shared noise patterns and extend with EIDOS-specific ones.
-from lib.noise_patterns import API_ERROR_STRINGS, GENERIC_ADVICE_STRINGS
-
 _EIDOS_NOISE_PATTERNS = list(API_ERROR_STRINGS | GENERIC_ADVICE_STRINGS) + [
     # EIDOS-specific tautologies not in shared set
     "when repeated",
@@ -1152,6 +1254,7 @@ def _append_eidos_update(update: str) -> None:
                 "schema": structured.get("schema") or "spark.eidos.v1",
                 "insights": kept[:3],
                 "distillation_summary": " | ".join(summary_parts)[:1200],
+                "refined_statement": adv_quality_dict.get("advisory_text") or " | ".join(summary_parts)[:1200],
                 "advisory_quality": adv_quality_dict,
                 "advisory_readiness": round(min(max(advisory_readiness, 0.0), 1.0), 4),
             }
@@ -1159,9 +1262,35 @@ def _append_eidos_update(update: str) -> None:
             entry = {
                 "timestamp": datetime.now().isoformat(),
                 "distillation": update,
+                "refined_statement": adv_quality_dict.get("advisory_text") or update,
                 "advisory_quality": adv_quality_dict,
                 "advisory_readiness": round(min(max(advisory_readiness, 0.0), 1.0), 4),
             }
+
+        def _sig(item: dict) -> str:
+            txt = str(
+                item.get("refined_statement")
+                or item.get("distillation_summary")
+                or item.get("distillation")
+                or ""
+            ).strip().lower()
+            return " ".join(txt.split())
+
+        # Skip duplicate distillations emitted from repeated chip summaries.
+        new_sig = _sig(entry)
+        if new_sig and eidos_file.exists():
+            try:
+                tail = eidos_file.read_text(encoding="utf-8", errors="replace").splitlines()[-120:]
+                for line in reversed(tail):
+                    try:
+                        prev = json.loads(line)
+                    except Exception:
+                        continue
+                    if _sig(prev) == new_sig:
+                        log_debug("bridge_worker", "Skipped duplicate EIDOS distillation append", None)
+                        return
+            except Exception:
+                pass
 
         with open(eidos_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
@@ -1186,10 +1315,18 @@ def _is_generic_advisory(text: str) -> bool:
     t = text.lower()
     matches = sum(1 for phrase in _GENERIC_ADVISORY_PHRASES if phrase in t)
     # If more than half the recommendations match generic phrases, skip
-    lines = [l for l in text.strip().split('\n') if l.strip().startswith(('1.', '2.', '3.', '4.', '5.'))]
+    lines = [
+        line
+        for line in text.strip().split('\n')
+        if line.strip().startswith(('1.', '2.', '3.', '4.', '5.'))
+    ]
     if not lines:
         return matches >= 2
-    generic_lines = sum(1 for l in lines if any(p in l.lower() for p in _GENERIC_ADVISORY_PHRASES))
+    generic_lines = sum(
+        1
+        for line in lines
+        if any(phrase in line.lower() for phrase in _GENERIC_ADVISORY_PHRASES)
+    )
     return generic_lines > len(lines) / 2
 
 
@@ -1215,7 +1352,7 @@ def _recent_exec_commands(events: list, limit: int = 12) -> list[str]:
 
 def _line_matches_recent_action(line: str, recent_cmds: list[str]) -> bool:
     """Return True when an advisory line recommends something already done recently."""
-    l = line.lower()
+    lower_line = line.lower()
 
     # 1) Direct command repetition via backticks: `openclaw session-status`
     for cmd in re.findall(r"`([^`]+)`", line):
@@ -1227,7 +1364,7 @@ def _line_matches_recent_action(line: str, recent_cmds: list[str]) -> bool:
 
     # 2) High-signal heuristic for codex usage checks already completed
     if any("session-status" in rc for rc in recent_cmds):
-        if "session-status" in l or ("codex" in l and "usage" in l):
+        if "session-status" in lower_line or ("codex" in lower_line and "usage" in lower_line):
             return True
 
     return False

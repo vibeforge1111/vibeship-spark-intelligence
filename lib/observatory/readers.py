@@ -7,9 +7,7 @@ No imports from pipeline modules — pure file I/O, zero side effects.
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
-import time
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +80,7 @@ def _count_jsonl(path: Path) -> int:
                 sample_lines.append(line)
         if not sample_lines:
             return 0
-        avg_line = sum(len(l) for l in sample_lines) / len(sample_lines)
+        avg_line = sum(len(line) for line in sample_lines) / len(sample_lines)
         if avg_line <= 0:
             return 0
         return int(size / avg_line)
@@ -104,6 +102,13 @@ def _file_size(path: Path) -> int:
         return path.stat().st_size if path.exists() else 0
     except Exception:
         return 0
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return int(default)
 
 
 # ── Stage 1: Event Capture ──────────────────────────────────────────
@@ -208,7 +213,10 @@ def read_meta_ralph(max_recent: int = 15) -> dict[str, Any]:
     # Roast history — recent verdicts
     rh = _load_json(_SD / "meta_ralph" / "roast_history.json") or {}
     history = rh.get("history", []) if isinstance(rh, dict) else []
-    d["total_roasted"] = len(history)
+    total_roasted = 0
+    if isinstance(rh, dict):
+        total_roasted = _as_int(rh.get("total_roasted"), 0)
+    d["total_roasted"] = max(total_roasted, len(history))
     recent = history[-max_recent:] if history else []
     d["recent_verdicts"] = []
     verdicts: dict[str, int] = {}
@@ -233,12 +241,16 @@ def read_meta_ralph(max_recent: int = 15) -> dict[str, Any]:
             if isinstance(total, (int, float)):
                 total_score_sum += total
                 total_score_count += 1
+    quality_passed = verdicts.get("quality", 0)
+    if isinstance(rh, dict):
+        quality_passed = _as_int(rh.get("quality_passed"), quality_passed)
+    d["quality_passed"] = quality_passed
     d["verdict_distribution"] = verdicts
     d["dimension_averages"] = {
         dim: round(dim_sums[dim] / max(dim_counts[dim], 1), 2) for dim in dims
     }
     d["avg_total_score"] = round(total_score_sum / max(total_score_count, 1), 2)
-    d["pass_rate"] = round(verdicts.get("quality", 0) / max(len(history), 1) * 100, 1)
+    d["pass_rate"] = round(d["quality_passed"] / max(d["total_roasted"], 1) * 100, 1)
     # Weak dimensions (below 1.0 avg or lowest 2)
     sorted_dims = sorted(d["dimension_averages"].items(), key=lambda x: x[1])
     d["weak_dimensions"] = [dim for dim, avg in sorted_dims[:2] if avg < 1.5]
@@ -323,22 +335,149 @@ def read_eidos() -> dict[str, Any]:
                 d["recent_distillations"] = [dict(r) for r in rows]
             except Exception:
                 d["recent_distillations"] = []
+
+            # Advisory quality + feedback observability.
+            d["advisory_quality_histogram"] = []
+            d["feedback_loop"] = {
+                "used_distillations": 0,
+                "total_uses": 0,
+                "total_helped": 0,
+                "effectiveness_pct": 0.0,
+            }
+            d["suppression_breakdown"] = {
+                "pass_transformer": 0,
+                "fail_suppressed": 0,
+                "fail_score_floor": 0,
+                "unknown_quality": 0,
+                "archived_suppressed": 0,
+                "archived_score_floor": 0,
+            }
+            try:
+                cur.execute(
+                    "SELECT advisory_quality, times_used, times_helped FROM distillations"
+                )
+                all_rows = cur.fetchall()
+
+                used_distillations = 0
+                total_uses = 0
+                total_helped = 0
+                scores: list[float] = []
+
+                for row in all_rows:
+                    times_used = int(row["times_used"] or 0)
+                    times_helped = int(row["times_helped"] or 0)
+                    if times_used > 0:
+                        used_distillations += 1
+                    total_uses += times_used
+                    total_helped += times_helped
+
+                    aq_raw = row["advisory_quality"]
+                    aq = None
+                    if isinstance(aq_raw, str) and aq_raw.strip():
+                        try:
+                            aq = json.loads(aq_raw)
+                        except Exception:
+                            aq = None
+                    elif isinstance(aq_raw, dict):
+                        aq = aq_raw
+
+                    if not isinstance(aq, dict):
+                        d["suppression_breakdown"]["unknown_quality"] += 1
+                        continue
+
+                    unified = float(aq.get("unified_score", 0.0) or 0.0)
+                    suppressed = bool(aq.get("suppressed", False))
+                    scores.append(unified)
+
+                    if suppressed:
+                        d["suppression_breakdown"]["fail_suppressed"] += 1
+                    elif unified < 0.35:
+                        d["suppression_breakdown"]["fail_score_floor"] += 1
+                    else:
+                        d["suppression_breakdown"]["pass_transformer"] += 1
+
+                bins = [
+                    ("0.0-0.2", 0.0, 0.2),
+                    ("0.2-0.4", 0.2, 0.4),
+                    ("0.4-0.6", 0.4, 0.6),
+                    ("0.6-0.8", 0.6, 0.8),
+                    ("0.8-1.0", 0.8, 1.01),
+                ]
+                histogram = []
+                for label, lo, hi in bins:
+                    count = sum(1 for s in scores if lo <= s < hi)
+                    histogram.append({"bucket": label, "count": count})
+                d["advisory_quality_histogram"] = histogram
+
+                effectiveness = (100.0 * total_helped / max(total_uses, 1)) if total_uses else 0.0
+                d["feedback_loop"] = {
+                    "used_distillations": used_distillations,
+                    "total_uses": total_uses,
+                    "total_helped": total_helped,
+                    "effectiveness_pct": round(effectiveness, 1),
+                }
+            except Exception:
+                pass
+
+            try:
+                cur.execute(
+                    "SELECT archive_reason, COUNT(*) AS c FROM distillations_archive GROUP BY archive_reason"
+                )
+                for row in cur.fetchall():
+                    reason = str(row["archive_reason"] or "")
+                    count = int(row["c"] or 0)
+                    if reason.startswith("suppressed:"):
+                        d["suppression_breakdown"]["archived_suppressed"] += count
+                    elif reason.startswith("unified_score_below_floor:"):
+                        d["suppression_breakdown"]["archived_score_floor"] += count
+            except Exception:
+                pass
             conn.close()
         except Exception:
             d["episodes"] = 0
             d["steps"] = 0
             d["distillations"] = 0
             d["recent_distillations"] = []
+            d["advisory_quality_histogram"] = []
+            d["feedback_loop"] = {}
+            d["suppression_breakdown"] = {}
     else:
         d["episodes"] = 0
         d["steps"] = 0
         d["distillations"] = 0
         d["recent_distillations"] = []
+        d["advisory_quality_histogram"] = []
+        d["feedback_loop"] = {}
+        d["suppression_breakdown"] = {}
     # Active episodes/steps
     ae = _load_json(_SD / "eidos_active_episodes.json") or {}
     d["active_episodes"] = len(ae) if isinstance(ae, dict) else 0
     ast = _load_json(_SD / "eidos_active_steps.json") or {}
     d["active_steps"] = len(ast) if isinstance(ast, dict) else 0
+
+    # Distillation curriculum snapshot metrics.
+    curriculum_latest = _load_json(_SD / "eidos_curriculum_latest.json")
+    curriculum_stats = {}
+    if isinstance(curriculum_latest, dict):
+        stats = curriculum_latest.get("stats")
+        if isinstance(stats, dict):
+            curriculum_stats = stats
+
+    severity = curriculum_stats.get("severity", {}) if isinstance(curriculum_stats.get("severity"), dict) else {}
+    d["curriculum_rows_scanned"] = _as_int(curriculum_stats.get("rows_scanned"), 0)
+    d["curriculum_cards_generated"] = _as_int(curriculum_stats.get("cards_generated"), 0)
+    d["curriculum_high"] = _as_int(severity.get("high"), 0)
+    d["curriculum_medium"] = _as_int(severity.get("medium"), 0)
+    d["curriculum_low"] = _as_int(severity.get("low"), 0)
+    d["curriculum_gaps"] = curriculum_stats.get("gaps", {}) if isinstance(curriculum_stats.get("gaps"), dict) else {}
+
+    history_rows = _tail_jsonl(_SD / "eidos_curriculum_history.jsonl", 60)
+    d["curriculum_history_points"] = len(history_rows)
+    if history_rows:
+        first_high = _as_int(history_rows[0].get("high"), d["curriculum_high"])
+        d["curriculum_high_delta"] = d["curriculum_high"] - first_high
+    else:
+        d["curriculum_high_delta"] = 0
     return d
 
 
@@ -378,26 +517,50 @@ def read_advisory(max_recent: int = 15) -> dict[str, Any]:
     # Implicit feedback summary
     feedback_path = _SD / "advisor" / "implicit_feedback.jsonl"
     fb_entries = _tail_jsonl(feedback_path, 200)
-    fb_followed = sum(1 for e in fb_entries if e.get("signal") == "followed")
+    fb_followed = sum(1 for e in fb_entries if e.get("signal") in {"followed", "helpful"})
     fb_ignored = sum(1 for e in fb_entries if e.get("signal") == "ignored")
+    fb_unhelpful = sum(1 for e in fb_entries if e.get("signal") == "unhelpful")
+    fb_not_followed = sum(1 for e in fb_entries if e.get("signal") == "not_followed")
+    fb_eval_total = fb_followed + fb_ignored + fb_unhelpful + fb_not_followed
     d["feedback_total"] = len(fb_entries)
     d["feedback_followed"] = fb_followed
     d["feedback_ignored"] = fb_ignored
+    d["feedback_unhelpful"] = fb_unhelpful
+    d["feedback_not_followed"] = fb_not_followed
+    d["feedback_eval_total"] = fb_eval_total
     d["feedback_follow_rate"] = round(
-        fb_followed / max(fb_followed + fb_ignored, 1) * 100, 1
+        fb_followed / max(fb_eval_total, 1) * 100, 1
     )
     # Per-tool follow rates
     tool_fb: dict[str, dict[str, int]] = {}
     for e in fb_entries:
         tool = e.get("tool", "?")
         if tool not in tool_fb:
-            tool_fb[tool] = {"followed": 0, "ignored": 0, "total": 0}
+            tool_fb[tool] = {
+                "followed": 0,
+                "ignored": 0,
+                "unhelpful": 0,
+                "not_followed": 0,
+                "total": 0,
+            }
         tool_fb[tool]["total"] += 1
-        if e.get("signal") == "followed":
+        signal = e.get("signal")
+        if signal in {"followed", "helpful"}:
             tool_fb[tool]["followed"] += 1
-        elif e.get("signal") == "ignored":
+        elif signal == "ignored":
             tool_fb[tool]["ignored"] += 1
+        elif signal == "unhelpful":
+            tool_fb[tool]["unhelpful"] += 1
+        elif signal == "not_followed":
+            tool_fb[tool]["not_followed"] += 1
     d["feedback_by_tool"] = tool_fb
+
+    # Calibrated helpfulness stream from deterministic watcher.
+    helpfulness_summary = _load_json(_SD / "advisor" / "helpfulness_summary.json") or {}
+    d["helpfulness_summary"] = helpfulness_summary if isinstance(helpfulness_summary, dict) else {}
+    d["recent_helpfulness_events"] = _tail_jsonl(
+        _SD / "advisor" / "helpfulness_events.jsonl", max_recent
+    )
     return d
 
 

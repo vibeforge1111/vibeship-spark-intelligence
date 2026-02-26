@@ -94,10 +94,10 @@ python scripts/advisory_self_review.py --window-hours 0.25 --json
 - Artifacts:
   - `~/.spark/advisory_engine.jsonl`
   - `~/.spark/advisory_global_dedupe.jsonl`
-- Tuneables:
-  - `SPARK_ADVISORY_GLOBAL_DEDUPE=0|1`
-  - `SPARK_ADVISORY_GLOBAL_DEDUPE_BY_TEXT=0|1` (default 1, suppress repeated advice even if `advice_id` churns)
-  - `SPARK_ADVISORY_GLOBAL_DEDUPE_COOLDOWN_S=600` (default 10 minutes)
+- Tuneables (canonical: `advisory_engine` section in `~/.spark/tuneables.json`):
+  - `global_dedupe_enabled` (env override: `SPARK_ADVISORY_GLOBAL_DEDUPE=0|1`)
+  - `global_dedupe_by_text` (env override: `SPARK_ADVISORY_GLOBAL_DEDUPE_BY_TEXT=0|1`, default true)
+  - `global_dedupe_cooldown_s` (env override: `SPARK_ADVISORY_GLOBAL_DEDUPE_COOLDOWN_S=600`, default 10 min)
 
 ### Advice ID Stability (Prevents Churn + Fragmented Outcomes)
 

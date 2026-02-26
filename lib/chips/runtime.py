@@ -113,38 +113,46 @@ class ChipRuntime:
     def __init__(self):
         self.registry = ChipRegistry()
         self.router = ChipRouter()
-        self.observer_only_mode = self._env_flag("SPARK_CHIP_OBSERVER_ONLY", True)
+        # Resolve chip runtime config through config-authority
         try:
-            self.min_insight_score = float(os.getenv("SPARK_CHIP_MIN_SCORE", "0.35"))
+            from lib.config_authority import resolve_section, env_bool, env_int, env_float, env_str
+            _cc = resolve_section(
+                "chips_runtime",
+                env_overrides={
+                    "observer_only": env_bool("SPARK_CHIP_OBSERVER_ONLY"),
+                    "min_score": env_float("SPARK_CHIP_MIN_SCORE"),
+                    "min_confidence": env_float("SPARK_CHIP_MIN_CONFIDENCE"),
+                    "gate_mode": env_str("SPARK_CHIP_GATE_MODE"),
+                    "min_learning_evidence": env_int("SPARK_CHIP_MIN_LEARNING_EVIDENCE"),
+                    "blocked_ids": env_str("SPARK_CHIP_BLOCKED_IDS"),
+                    "telemetry_observer_blocklist": env_str("SPARK_CHIP_TELEMETRY_OBSERVERS"),
+                    "max_active_per_event": env_int("SPARK_CHIP_EVENT_ACTIVE_LIMIT"),
+                },
+            ).data
         except Exception:
-            self.min_insight_score = 0.35
-        self.min_insight_score = max(0.0, min(1.0, self.min_insight_score))
-        try:
-            self.min_insight_confidence = float(os.getenv("SPARK_CHIP_MIN_CONFIDENCE", "0.7"))
-        except Exception:
-            self.min_insight_confidence = 0.7
-        self.min_insight_confidence = max(0.0, min(1.0, self.min_insight_confidence))
-        self.gate_mode = str(os.getenv("SPARK_CHIP_GATE_MODE", "balanced")).strip().lower()
+            _cc = {}
+        self.observer_only_mode = bool(_cc.get("observer_only", self._env_flag("SPARK_CHIP_OBSERVER_ONLY", True)))
+        self.min_insight_score = max(0.0, min(1.0, float(_cc.get("min_score", 0.35))))
+        self.min_insight_confidence = max(0.0, min(1.0, float(_cc.get("min_confidence", 0.7))))
+        self.gate_mode = str(_cc.get("gate_mode", "balanced")).strip().lower()
         self.require_learning_schema = self._env_flag("SPARK_CHIP_REQUIRE_LEARNING_SCHEMA", True)
-        try:
-            self.min_learning_evidence = max(1, int(os.getenv("SPARK_CHIP_MIN_LEARNING_EVIDENCE", "1") or 1))
-        except Exception:
-            self.min_learning_evidence = 1
-        raw_blocked = str(os.getenv("SPARK_CHIP_BLOCKED_IDS", "")).strip()
+        self.min_learning_evidence = max(1, int(_cc.get("min_learning_evidence", 1)))
+        raw_blocked = str(_cc.get("blocked_ids", "")).strip()
         self.blocked_chip_ids = {
             token.strip().lower().replace("_", "-")
             for token in raw_blocked.split(",")
             if token.strip()
         }
-        self.premium_tools_enabled = os.getenv("SPARK_PREMIUM_TOOLS", "").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
+        try:
+            from lib.feature_flags import PREMIUM_TOOLS
+            self.premium_tools_enabled = PREMIUM_TOOLS
+        except ImportError:
+            self.premium_tools_enabled = os.getenv("SPARK_PREMIUM_TOOLS", "").strip().lower() in {
+                "1", "true", "yes", "on",
+            }
         if not self.premium_tools_enabled:
             self.blocked_chip_ids.update(PREMIUM_ONLY_CHIP_IDS)
-        raw_observer_blocklist = str(os.getenv("SPARK_CHIP_TELEMETRY_OBSERVERS", "")).strip()
+        raw_observer_blocklist = str(_cc.get("telemetry_observer_blocklist", "")).strip()
         if raw_observer_blocklist:
             self.telemetry_observer_blocklist = {
                 token.strip().lower()
@@ -158,10 +166,7 @@ class ChipRuntime:
         self.blocked_observer_names = set(policy.get("disabled_observer_names") or [])
         if self.blocked_observer_names:
             self.telemetry_observer_blocklist.update(self.blocked_observer_names)
-        try:
-            self.max_active_chips_per_event = max(1, int(os.getenv("SPARK_CHIP_EVENT_ACTIVE_LIMIT", "6") or 6))
-        except Exception:
-            self.max_active_chips_per_event = 6
+        self.max_active_chips_per_event = max(1, int(_cc.get("max_active_per_event", 6)))
         self.global_safety_policy = SafetyPolicy(
             block_patterns=[
                 r"\bdecept(?:ive|ion)\b",

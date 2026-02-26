@@ -1,6 +1,9 @@
 # Getting Started (5 Minutes)
 
-If you are new: follow this page first. For the full map, see `docs/DOCS_INDEX.md`.
+If you are new: follow this page first.
+For the full canonical onboarding path, see `docs/SPARK_ONBOARDING_COMPLETE.md`.
+For the full map, see `docs/DOCS_INDEX.md`.
+Command style: this guide uses explicit interpreter commands (`python -m spark.cli ...`) for portability.
 
 ## 0) Prereqs
 
@@ -81,7 +84,7 @@ start_spark.bat
 ### Mac/Linux (repo)
 
 ```bash
-python3 -m spark.cli up
+python -m spark.cli up
 # or: spark up
 ```
 
@@ -89,7 +92,7 @@ python3 -m spark.cli up
 
 CLI:
 ```bash
-python3 -m spark.cli health
+python -m spark.cli health
 ```
 
 HTTP:
@@ -113,6 +116,11 @@ If you use Claude Code or Cursor:
 The goal is simple:
 - Spark writes learnings to context files.
 - Your agent reads them and adapts.
+
+Next after setup:
+- Daily runtime operations and CLI workflow: `docs/QUICKSTART.md`
+- Configure behavior (thresholds, timing, gates): `docs/QUICKSTART.md#configuring-tuneables`
+- Full config reference (317 keys, 37 sections): `docs/TUNEABLES_REFERENCE.md`
 
 ## Troubleshooting (Fast)
 

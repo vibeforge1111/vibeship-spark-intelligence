@@ -252,6 +252,56 @@ def test_merge_distills_from_structured_fields(tmp_path, monkeypatch):
     assert "source" in vas_calls[0]
 
 
+def test_merge_uses_refined_store_result_for_exposure_key(tmp_path, monkeypatch):
+    chip_dir = tmp_path / "chip_insights"
+    state_file = tmp_path / "chip_merge_state.json"
+    learning_file = tmp_path / "chip_learning_distillations.jsonl"
+    monkeypatch.setattr(cm, "CHIP_INSIGHTS_DIR", chip_dir)
+    monkeypatch.setattr(cm, "MERGE_STATE_FILE", state_file)
+    monkeypatch.setattr(cm, "LEARNING_DISTILLATIONS_FILE", learning_file)
+    monkeypatch.setattr(cm, "get_cognitive_learner", lambda: _DummyCog())
+
+    captured_exposures = {}
+
+    def _fake_record_exposures(*, source, items, session_id=None, trace_id=None):
+        captured_exposures["source"] = source
+        captured_exposures["items"] = list(items or [])
+        return len(items or [])
+
+    monkeypatch.setattr(cm, "record_exposures", _fake_record_exposures)
+
+    def _fake_validate_and_store(**kwargs):
+        return {
+            "stored": True,
+            "insight_key": "reasoning:refined_key",
+            "stored_text": "Refined learning statement from Meta-Ralph",
+        }
+
+    import lib.validate_and_store as vas_mod
+    monkeypatch.setattr(vas_mod, "validate_and_store_insight", _fake_validate_and_store)
+
+    row = {
+        "chip_id": "engagement-pulse",
+        "content": "",
+        "confidence": 0.92,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "captured_data": {
+            "fields": {"topic": "agent payments", "likes": 31, "replies": 4, "retweets": 6},
+            "quality_score": {"total": 0.81, "cognitive_value": 0.7, "actionability": 0.6, "transferability": 0.5},
+        },
+    }
+    _write_rows(chip_dir / "engagement-pulse.jsonl", [row])
+
+    stats = cm.merge_chip_insights(min_confidence=0.5, min_quality_score=0.5, limit=5, dry_run=False)
+    assert stats["merged"] == 1
+    assert captured_exposures["source"] == "chip_merge"
+    assert captured_exposures["items"][0]["insight_key"] == "reasoning:refined_key"
+    assert captured_exposures["items"][0]["text"] == "Refined learning statement from Meta-Ralph"
+
+    distillation_row = json.loads(learning_file.read_text(encoding="utf-8").splitlines()[0])
+    assert distillation_row["stored_statement"] == "Refined learning statement from Meta-Ralph"
+
+
 def test_distill_skips_telemetry_observer_rows():
     out = cm._distill_learning_statement(
         chip_id="vibecoding",

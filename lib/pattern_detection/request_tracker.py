@@ -14,13 +14,13 @@ they are decisions to track through the full lifecycle.
 """
 
 import hashlib
-import json
 import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ..config_authority import resolve_section
 from ..eidos.models import Step, Evaluation, ActionType
 
 
@@ -31,17 +31,8 @@ REQUEST_TRACKER_MAX_AGE_SECONDS = 3600.0
 
 
 def _load_request_tracker_config() -> Dict[str, Any]:
-    try:
-        if TUNEABLES_FILE.exists():
-            # Accept UTF-8 with BOM (common on Windows).
-            data = json.loads(TUNEABLES_FILE.read_text(encoding="utf-8-sig"))
-            if isinstance(data, dict):
-                cfg = data.get("request_tracker") or {}
-                if isinstance(cfg, dict):
-                    return cfg
-    except Exception:
-        pass
-    return {}
+    resolved = resolve_section("request_tracker", runtime_path=TUNEABLES_FILE)
+    return resolved.data if isinstance(resolved.data, dict) else {}
 
 
 def _apply_request_tracker_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
@@ -101,7 +92,21 @@ def get_request_tracker_config() -> Dict[str, Any]:
     }
 
 
+def _reload_request_tracker_config(_cfg: Dict[str, Any]) -> None:
+    apply_request_tracker_config(_load_request_tracker_config())
+
+
 _apply_request_tracker_config(_load_request_tracker_config())
+try:
+    from ..tuneables_reload import register_reload as _register_request_tracker_reload
+
+    _register_request_tracker_reload(
+        "request_tracker",
+        _reload_request_tracker_config,
+        label="request_tracker.reload_from",
+    )
+except Exception:
+    pass
 
 
 @dataclass
@@ -155,6 +160,16 @@ class RequestTracker:
         "help": ("get assistance", "User needs assistance"),
         "search": ("find information", "User wants to find something"),
         "find": ("locate items", "User wants to locate something"),
+        "constraint": ("respect constraints", "User defined constraints that should shape execution"),
+        "non-negotiable": ("respect constraints", "User specified a hard boundary that must be preserved"),
+        "must not": ("respect constraints", "User set a negative constraint that should not be violated"),
+        "deadline": ("meet deadline", "User expects delivery within a fixed time window"),
+        "scope": ("control scope", "User is constraining project scope"),
+        "tradeoff": ("evaluate tradeoff", "User wants an explicit tradeoff decision"),
+        "risk": ("manage risk", "User expects risk-aware execution"),
+        "decision": ("make decision", "User asked for a decision path"),
+        "decide": ("make decision", "User asked to decide between options"),
+        "choose": ("select option", "User asked to choose between options"),
     }
 
     def __init__(self, max_pending: int = 50, max_completed: int = 200):
@@ -459,6 +474,14 @@ class RequestTracker:
             return "Code will be deployed and accessible in target environment"
         if "clean" in msg_lower or "remove" in msg_lower:
             return "Unwanted items will be eliminated without side effects"
+        if any(k in msg_lower for k in ("constraint", "non-negotiable", "must not", "scope")):
+            return "Execution will respect stated constraints without violating boundaries"
+        if any(k in msg_lower for k in ("decision", "decide", "choose", "tradeoff")):
+            return "A clear option will be selected with rationale and tradeoffs"
+        if "deadline" in msg_lower:
+            return "The plan will prioritize fastest safe path to hit deadline"
+        if "risk" in msg_lower:
+            return "High-risk paths will be identified and mitigated before execution"
 
         return "User will be satisfied if request is fulfilled correctly"
 
@@ -476,6 +499,12 @@ class RequestTracker:
 
         if "test" in msg_lower:
             assumptions.append("Test environment is configured correctly")
+        if any(k in msg_lower for k in ("constraint", "non-negotiable", "must not", "scope")):
+            assumptions.append("Constraints are explicit and mutually consistent")
+        if any(k in msg_lower for k in ("decision", "decide", "choose", "tradeoff")):
+            assumptions.append("Selection criteria are clear enough to rank options")
+        if "deadline" in msg_lower:
+            assumptions.append("Delivery window is feasible for remaining scope")
 
         if context.get("project"):
             assumptions.append(f"Working in correct project: {context['project']}")

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from lib.diagnostics import log_debug
+from lib.file_lock import file_lock_for
 
 
 REQUESTS_FILE = Path.home() / ".spark" / "advice_feedback_requests.jsonl"
@@ -27,8 +28,7 @@ def _rotate_jsonl(path: Path, max_lines: int) -> None:
     """Trim a JSONL file to its last *max_lines* lines.
 
     Uses atomic temp-write + os.replace to avoid partial-write corruption.
-    A concurrent append between read and replace may lose one line (rare,
-    rotation runs only when file exceeds size estimate).
+    Callers should hold the per-file lock across append+rotate.
     """
     try:
         if not path.exists():
@@ -41,11 +41,21 @@ def _rotate_jsonl(path: Path, max_lines: int) -> None:
         if len(lines) <= max_lines:
             return
         keep = "\n".join(lines[-max_lines:]) + "\n"
-        tmp = path.with_suffix(".tmp")
+        tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{time.time_ns()}")
         tmp.write_text(keep, encoding="utf-8")
         os.replace(str(tmp), str(path))
     except Exception:
         pass
+
+
+def _append_jsonl_row(path: Path, row: Dict[str, Any], max_lines: int) -> None:
+    """Append one JSON row and rotate under a shared lock."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(row, ensure_ascii=False) + "\n"
+    with file_lock_for(path, fail_open=False):
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line)
+        _rotate_jsonl(path, max_lines)
 
 
 def _session_lineage(session_id: Optional[str]) -> Dict[str, Any]:
@@ -207,9 +217,7 @@ def record_advice_request(
             "packet_id": (str(packet_id)[:120] if packet_id else None),
             "created_at": now,
         }
-        with REQUESTS_FILE.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-        _rotate_jsonl(REQUESTS_FILE, REQUESTS_FILE_MAX)
+        _append_jsonl_row(REQUESTS_FILE, row, REQUESTS_FILE_MAX)
 
         last_by_tool[tool] = now
         state["last_by_tool"] = last_by_tool
@@ -263,7 +271,6 @@ def record_feedback(
 ) -> bool:
     """Record explicit feedback on advice helpfulness."""
     try:
-        FEEDBACK_FILE.parent.mkdir(parents=True, exist_ok=True)
         st = str(status or "").strip().lower() if status else ""
         if st and st not in {"acted", "blocked", "harmful", "ignored", "skipped"}:
             st = ""
@@ -305,9 +312,7 @@ def record_feedback(
             "source": source,
             "created_at": time.time(),
         }
-        with FEEDBACK_FILE.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-        _rotate_jsonl(FEEDBACK_FILE, FEEDBACK_FILE_MAX)
+        _append_jsonl_row(FEEDBACK_FILE, row, FEEDBACK_FILE_MAX)
         return True
     except Exception as e:
         log_debug("advice_feedback", "record_feedback failed", e)

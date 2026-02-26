@@ -75,7 +75,7 @@ class SparkVoice:
         if VOICE_FILE.exists():
             try:
                 return json.loads(VOICE_FILE.read_text(encoding="utf-8"))
-            except:
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                 pass
         return {
             "opinions": {},

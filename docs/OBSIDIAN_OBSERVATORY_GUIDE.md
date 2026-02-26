@@ -449,3 +449,12 @@ The observatory and the existing advisory export system are **independent**:
 They share the same Obsidian vault but never write to each other's directories. The observatory links TO the advisory pages (watchtower and packets/index) for easy navigation.
 
 For advisory-specific guidance, see `docs/ADVISORY_OBSIDIAN_PLAYBOOK.md`.
+
+## Coexistence with Learning Systems Bridge
+
+Spark now has an external-learning ingress bridge (`lib/learning_systems_bridge.py`) that writes:
+
+- `~/.spark/learning_systems/insight_ingest_audit.jsonl`
+- `~/.spark/learning_systems/tuneable_proposals.jsonl`
+
+These files are append-only diagnostics/queue artifacts. They are safe to expose as read-only explorer pages in Observatory, and they should never be edited manually from the vault.

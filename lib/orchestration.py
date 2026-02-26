@@ -10,7 +10,7 @@ import os
 import time
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .skills_router import recommend_skills
 from .context_sync import build_compact_context
@@ -25,6 +25,26 @@ def _env_truthy(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in _TRUTHY
 
 
+def _load_orchestration_config() -> Dict[str, Any]:
+    """Load orchestration settings through config-authority."""
+    try:
+        from .config_authority import resolve_section, env_bool, env_int
+        # SPARK_AGENT_CONTEXT_LIMIT is a legacy alias for context_max_chars
+        env_max_chars = env_int("SPARK_AGENT_CONTEXT_MAX_CHARS")
+        if env_max_chars is None:
+            env_max_chars = env_int("SPARK_AGENT_CONTEXT_LIMIT")
+        return resolve_section(
+            "orchestration",
+            env_overrides={
+                "inject_enabled": env_bool("SPARK_AGENT_INJECT"),
+                "context_max_chars": env_max_chars,
+                "context_item_limit": env_int("SPARK_AGENT_CONTEXT_ITEM_LIMIT"),
+            },
+        ).data
+    except Exception:
+        return {}
+
+
 def inject_agent_context(
     prompt: str,
     *,
@@ -37,28 +57,13 @@ def inject_agent_context(
     """
     if not prompt:
         return prompt
-    if not _env_truthy("SPARK_AGENT_INJECT"):
+
+    cfg = _load_orchestration_config()
+    if not cfg.get("inject_enabled", False) and not _env_truthy("SPARK_AGENT_INJECT"):
         return prompt
 
-    # Backward-compatible env handling:
-    # - SPARK_AGENT_CONTEXT_MAX_CHARS is canonical for char budget
-    # - SPARK_AGENT_CONTEXT_LIMIT is accepted as alias for char budget
-    # - SPARK_AGENT_CONTEXT_ITEM_LIMIT controls number of compact context items
-    max_chars_raw = (
-        os.environ.get("SPARK_AGENT_CONTEXT_MAX_CHARS", "").strip()
-        or os.environ.get("SPARK_AGENT_CONTEXT_LIMIT", "").strip()
-    )
-    try:
-        max_chars = int(max_chars_raw) if max_chars_raw else 1200
-    except Exception:
-        max_chars = 1200
-
-    item_limit_raw = os.environ.get("SPARK_AGENT_CONTEXT_ITEM_LIMIT", "").strip()
-    if item_limit_raw:
-        try:
-            limit = max(1, int(item_limit_raw))
-        except Exception:
-            pass
+    max_chars = int(cfg.get("context_max_chars", 1200))
+    limit = int(cfg.get("context_item_limit", limit))
 
     context, _ = build_compact_context(project_dir=project_dir, limit=limit)
     if not context:

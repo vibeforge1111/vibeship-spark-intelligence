@@ -7,29 +7,25 @@ promotion runs at most once per configured interval (default: 1 hour).
 Called from hooks/observe.py on session end events (Stop, SessionEnd).
 """
 
-import json
 import time
 from pathlib import Path
 from typing import Dict, Optional
 
+from .config_authority import resolve_section
 from .diagnostics import log_debug
 
 LAST_PROMOTION_FILE = Path.home() / ".spark" / "last_promotion.txt"
 DEFAULT_INTERVAL_S = 3600  # 1 hour
 
 
-def _load_promotion_config_interval() -> int:
-    """Load promotion interval from tuneables.json."""
+def _load_promotion_config_interval(path: Optional[Path] = None) -> int:
+    """Load promotion interval through ConfigAuthority."""
+    tuneables = path or (Path.home() / ".spark" / "tuneables.json")
     try:
-        tuneables = Path.home() / ".spark" / "tuneables.json"
-        if tuneables.exists():
-            # Accept UTF-8 with BOM (common on Windows).
-            data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-            cfg = data.get("promotion") or {}
-            return int(cfg.get("auto_interval_s", DEFAULT_INTERVAL_S))
+        cfg = resolve_section("promotion", runtime_path=tuneables).data
+        return int(cfg.get("auto_interval_s", DEFAULT_INTERVAL_S))
     except Exception:
-        pass
-    return DEFAULT_INTERVAL_S
+        return DEFAULT_INTERVAL_S
 
 
 def _should_run() -> bool:
@@ -79,3 +75,16 @@ def maybe_promote_on_session_end(project_dir: Optional[Path] = None) -> Optional
         log_debug("auto_promote", "auto-promotion failed", e)
         _mark_run()  # Still mark to prevent retry-storms
         return None
+
+
+def _reload_promotion_from(_cfg: Dict) -> None:
+    """Hot-reload callback — config is read fresh each call, no cached state."""
+    pass
+
+
+try:
+    from .tuneables_reload import register_reload as _promo_register
+
+    _promo_register("promotion", _reload_promotion_from, label="auto_promote.reload")
+except Exception:
+    pass

@@ -37,7 +37,19 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 
-PREDICTOR_ENABLED = os.getenv("SPARK_OUTCOME_PREDICTOR", "0") == "1"
+def _resolve_predictor_enabled() -> bool:
+    try:
+        from lib.config_authority import resolve_section, env_bool
+        cfg = resolve_section(
+            "feature_gates",
+            env_overrides={"outcome_predictor": env_bool("SPARK_OUTCOME_PREDICTOR")},
+        ).data
+        return bool(cfg.get("outcome_predictor", False))
+    except Exception:
+        return os.getenv("SPARK_OUTCOME_PREDICTOR", "0") == "1"
+
+
+PREDICTOR_ENABLED = _resolve_predictor_enabled()
 STORE_PATH = Path.home() / ".spark" / "outcome_predictor.json"
 
 # Cache reads so a single hook invocation doesn't hit disk multiple times.

@@ -21,8 +21,11 @@ import hashlib
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-DEFAULT_SPARKD = os.environ.get("SPARKD_URL") or f"http://127.0.0.1:{os.environ.get('SPARKD_PORT', '8787')}"
-TOKEN_FILE = Path.home() / ".spark" / "sparkd.token"
+from adapters._common import (
+    DEFAULT_SPARKD,
+    resolve_token as _resolve_token,
+    normalize_sparkd_base_url as _normalize_sparkd_base_url,
+)
 
 
 STATE_DIR = Path.home() / ".spark" / "adapters"
@@ -54,19 +57,6 @@ def _hash(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()[:20]
 
 
-def _resolve_token(cli_token: str | None) -> str | None:
-    if cli_token:
-        return cli_token
-    env_token = os.environ.get("SPARKD_TOKEN")
-    if env_token:
-        return env_token
-    try:
-        token = TOKEN_FILE.read_text(encoding="utf-8").strip()
-    except Exception:
-        return None
-    return token or None
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sparkd", default=DEFAULT_SPARKD, help="sparkd base URL")
@@ -76,9 +66,11 @@ def main():
     ap.add_argument("--backfill", action="store_true", help="Backfill from the start of the transcript (DANGEROUS; default is tail-from-end)")
     ap.add_argument("--verbose", action="store_true", help="Log adapter activity")
     ap.add_argument("--token", default=None, help="sparkd auth token (or set SPARKD_TOKEN env, or use ~/.spark/sparkd.token)")
+    ap.add_argument("--allow-remote", action="store_true", help="allow non-local sparkd URL (disabled by default)")
     args = ap.parse_args()
 
     token = _resolve_token(args.token)
+    sparkd_base = _normalize_sparkd_base_url(args.sparkd, allow_remote=args.allow_remote)
 
     agent_dir = Path.home() / ".clawdbot" / "agents" / args.agent / "sessions"
     sessions_json = agent_dir / "sessions.json"
@@ -90,18 +82,18 @@ def main():
     state = {"sessionFile": None, "offset": 0}
     if state_file.exists():
         try:
-            state.update(json.loads(state_file.read_text()))
+            state.update(json.loads(state_file.read_text(encoding="utf-8")))
         except Exception:
             pass
 
     def save_state():
-        state_file.write_text(json.dumps(state, indent=2))
+        state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
     while True:
         try:
             if args.verbose:
                 print("[clawdbot_tailer] tick", flush=True)
-            sj = json.loads(sessions_json.read_text())
+            sj = json.loads(sessions_json.read_text(encoding="utf-8"))
             # sessions.json is a map; pick most recent by updatedAt/lastMessageAt if present.
             entries = []
             for k, v in sj.items():
@@ -130,12 +122,12 @@ def main():
                     state["offset"] = 0
                 else:
                     try:
-                        state["offset"] = len(session_file.read_text().splitlines())
+                        state["offset"] = len(session_file.read_text(encoding="utf-8").splitlines())
                     except Exception:
                         state["offset"] = 0
                 save_state()
 
-            lines = session_file.read_text().splitlines()
+            lines = session_file.read_text(encoding="utf-8").splitlines()
             if args.verbose:
                 print(f"[clawdbot_tailer] lines={len(lines)} offset={state.get('offset')}", flush=True)
             off = int(state.get("offset") or 0)
@@ -249,7 +241,7 @@ def main():
                         }
 
                 evt = _event(trace_id, session_id=session_key, source="clawdbot", kind=kind, ts=ts, payload=payload)
-                _post_json(args.sparkd.rstrip("/") + "/ingest", evt, token=token)
+                _post_json(sparkd_base + "/ingest", evt, token=token)
                 sent += 1
 
             state["offset"] = off + sent

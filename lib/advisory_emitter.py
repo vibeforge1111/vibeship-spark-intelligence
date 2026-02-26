@@ -31,21 +31,48 @@ from .diagnostics import log_debug
 
 # ============= Configuration =============
 
-# Environment variable to disable emission entirely (kill switch)
-EMIT_ENABLED = os.getenv("SPARK_ADVISORY_EMIT", "1") != "0"
-
-# Maximum characters to emit per hook call (protect Claude's context)
-MAX_EMIT_CHARS = int(os.getenv("SPARK_ADVISORY_MAX_CHARS", "500"))
-
-# Minimum score to emit (final safety net)
+# Defaults — overridden by config-authority resolution below.
+EMIT_ENABLED: bool = True
+MAX_EMIT_CHARS: int = 500
 MIN_EMIT_SCORE = 0.4
-
-# Emission log for diagnostics
 EMIT_LOG = Path.home() / ".spark" / "advisory_emit.jsonl"
 EMIT_LOG_MAX_LINES = 500
+FORMAT_STYLE: str = "inline"
 
-# Format style: "inline" (compact) or "block" (markdown sections)
-FORMAT_STYLE = os.getenv("SPARK_ADVISORY_FORMAT", "inline")
+
+def _load_emitter_config() -> None:
+    """Resolve emitter knobs from the advisory_engine section via config-authority."""
+    global EMIT_ENABLED, MAX_EMIT_CHARS, FORMAT_STYLE
+    try:
+        from .config_authority import resolve_section, env_bool, env_int, env_str
+
+        cfg = resolve_section(
+            "advisory_engine",
+            env_overrides={
+                "emit_enabled": env_bool("SPARK_ADVISORY_EMIT"),
+                "emit_max_chars": env_int("SPARK_ADVISORY_MAX_CHARS"),
+                "emit_format": env_str("SPARK_ADVISORY_FORMAT"),
+            },
+        ).data
+        EMIT_ENABLED = bool(cfg.get("emit_enabled", True))
+        MAX_EMIT_CHARS = int(cfg.get("emit_max_chars", 500))
+        FORMAT_STYLE = str(cfg.get("emit_format", "inline"))
+    except Exception:
+        pass
+
+
+_load_emitter_config()
+
+try:
+    from .tuneables_reload import register_reload as _emitter_register
+
+    _emitter_register(
+        "advisory_engine",
+        lambda _cfg: _load_emitter_config(),
+        label="advisory_emitter.reload",
+    )
+except ImportError:
+    pass
 
 
 # ============= Emission Formatting =============

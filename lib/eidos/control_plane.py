@@ -340,7 +340,12 @@ class ControlPlane:
         """Detect missing trace_id on a step."""
         if getattr(step, "trace_id", None):
             return None
-        strict = os.environ.get("SPARK_TRACE_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}
+        try:
+            from lib.config_authority import resolve_section, env_bool
+            _e = resolve_section("eidos", env_overrides={"trace_strict": env_bool("SPARK_TRACE_STRICT")}).data
+            strict = bool(_e.get("trace_strict", False))
+        except Exception:
+            strict = os.environ.get("SPARK_TRACE_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}
         return WatcherAlert(
             watcher_type=WatcherType.TRACE_GAP,
             message="Step missing trace_id binding",

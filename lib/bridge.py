@@ -27,13 +27,28 @@ WORKSPACE = Path(os.environ.get("SPARK_WORKSPACE", str(Path.home() / "clawd"))).
 MEMORY_FILE = WORKSPACE / "MEMORY.md"
 SPARK_CONTEXT_FILE = WORKSPACE / "SPARK_CONTEXT.md"
 HIGH_VALIDATION_OVERRIDE = 50
-CONTEXT_MIND_RESERVED_SLOTS = max(0, int(os.environ.get("SPARK_CONTEXT_MIND_RESERVED_SLOTS", "1") or 1))
-CONTEXT_ADVISOR_INCLUDE_MIND = str(os.environ.get("SPARK_CONTEXT_ADVISOR_INCLUDE_MIND", "1")).strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
+CONTEXT_MIND_RESERVED_SLOTS = 1
+CONTEXT_ADVISOR_INCLUDE_MIND = True
+
+try:
+    from lib.config_authority import resolve_section, env_int, env_bool
+    _bw_cfg = resolve_section(
+        "bridge_worker",
+        env_overrides={
+            "context_mind_reserved_slots": env_int("SPARK_CONTEXT_MIND_RESERVED_SLOTS"),
+            "context_advisor_include_mind": env_bool("SPARK_CONTEXT_ADVISOR_INCLUDE_MIND"),
+        },
+    ).data
+    CONTEXT_MIND_RESERVED_SLOTS = max(0, int(_bw_cfg.get("context_mind_reserved_slots", 1)))
+    CONTEXT_ADVISOR_INCLUDE_MIND = bool(_bw_cfg.get("context_advisor_include_mind", True))
+except Exception:
+    try:
+        CONTEXT_MIND_RESERVED_SLOTS = max(0, int(os.environ.get("SPARK_CONTEXT_MIND_RESERVED_SLOTS", "1") or 1))
+    except Exception:
+        pass
+    CONTEXT_ADVISOR_INCLUDE_MIND = str(os.environ.get("SPARK_CONTEXT_ADVISOR_INCLUDE_MIND", "1")).strip().lower() in {
+        "1", "true", "yes", "on",
+    }
 
 
 def _normalize_insight_text(text: str) -> str:

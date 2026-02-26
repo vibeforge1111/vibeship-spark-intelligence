@@ -11,11 +11,14 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, Dict, List
 
+from .config_authority import resolve_section
+
 
 SPARK_DIR = Path.home() / ".spark"
 COGNITIVE_FILE = SPARK_DIR / "cognitive_insights.json"
 EFFECTIVENESS_FILE = SPARK_DIR / "advisor" / "effectiveness.json"
 CHIP_INSIGHTS_DIR = SPARK_DIR / "chip_insights"
+TUNEABLES_FILE = SPARK_DIR / "tuneables.json"
 
 
 @dataclass
@@ -362,11 +365,18 @@ def load_live_metrics() -> LoopMetrics:
     )
 
 
-def _load_loop_thresholds_from_tuneables() -> LoopThresholds:
-    """Load production gate thresholds from ~/.spark/tuneables.json when present."""
+def _load_loop_thresholds_from_tuneables(
+    path: Path | None = None,
+    *,
+    baseline_path: Path | None = None,
+) -> LoopThresholds:
+    """Load production-gate thresholds through config authority."""
     default = LoopThresholds()
-    data = _read_json(SPARK_DIR / "tuneables.json", {})
-    cfg = data.get("production_gates") if isinstance(data, dict) else None
+    cfg = resolve_section(
+        "production_gates",
+        baseline_path=baseline_path,
+        runtime_path=(path or TUNEABLES_FILE),
+    ).data
     if not isinstance(cfg, dict):
         return default
 
@@ -667,3 +677,19 @@ def format_gate_report(metrics: LoopMetrics, result: Dict[str, Any]) -> str:
             lines.append(f"         action: {check.get('recommendation')}")
     lines.append("=" * 66)
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Hot-reload registration
+# ---------------------------------------------------------------------------
+
+def _reload_production_gates_from(_cfg) -> None:
+    """Hot-reload callback — config is read fresh each call, no cached state."""
+    pass
+
+
+try:
+    from .tuneables_reload import register_reload as _pg_register
+    _pg_register("production_gates", _reload_production_gates_from, label="production_gates.reload")
+except Exception:
+    pass

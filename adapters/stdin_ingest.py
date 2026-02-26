@@ -20,21 +20,11 @@ import sys
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-DEFAULT_SPARKD = os.environ.get("SPARKD_URL") or f"http://127.0.0.1:{os.environ.get('SPARKD_PORT', '8787')}"
-TOKEN_FILE = Path.home() / ".spark" / "sparkd.token"
-
-
-def _resolve_token(cli_token: str | None) -> str | None:
-    if cli_token:
-        return cli_token
-    env_token = os.environ.get("SPARKD_TOKEN")
-    if env_token:
-        return env_token
-    try:
-        token = TOKEN_FILE.read_text(encoding="utf-8").strip()
-    except Exception:
-        return None
-    return token or None
+from adapters._common import (
+    DEFAULT_SPARKD,
+    resolve_token as _resolve_token,
+    normalize_sparkd_base_url as _normalize_sparkd_base_url,
+)
 
 
 def post(url: str, obj: dict, token: str = None):
@@ -50,10 +40,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sparkd", default=DEFAULT_SPARKD, help="sparkd base URL")
     ap.add_argument("--token", default=None, help="sparkd token (or set SPARKD_TOKEN env, or use ~/.spark/sparkd.token)")
+    ap.add_argument("--allow-remote", action="store_true", help="allow non-local sparkd URL (disabled by default)")
     args = ap.parse_args()
 
     token = _resolve_token(args.token)
-    ingest_url = args.sparkd.rstrip("/") + "/ingest"
+    sparkd_base = _normalize_sparkd_base_url(args.sparkd, allow_remote=args.allow_remote)
+    ingest_url = sparkd_base + "/ingest"
 
     ok = 0
     bad = 0

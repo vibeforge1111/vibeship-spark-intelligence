@@ -10,9 +10,15 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from benchmarks.generators.garbage_memories import generate_garbage
-from benchmarks.generators.useful_memories import generate_useful
-from benchmarks.generators.advisory_queries import generate_queries
+try:
+    from benchmarks.generators.garbage_memories import generate_garbage
+    from benchmarks.generators.useful_memories import generate_useful
+    from benchmarks.generators.advisory_queries import generate_queries
+except ModuleNotFoundError:
+    # Fallback when benchmark is run from inside benchmarks/ directory.
+    from generators.garbage_memories import generate_garbage
+    from generators.useful_memories import generate_useful
+    from generators.advisory_queries import generate_queries
 
 RESULTS_DIR = Path(__file__).parent / "results"
 RESULTS_DIR.mkdir(exist_ok=True)

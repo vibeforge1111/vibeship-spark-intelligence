@@ -90,15 +90,24 @@ class PatternDistiller:
 
     def _get_tool_pattern_flag(self) -> bool:
         """Return True when tool-pattern distillation is enabled."""
-        enable = os.environ.get("SPARK_ENABLE_TOOL_DISTILLATION", "").strip().lower()
+        # DISABLE wins if set explicitly
         disable = os.environ.get("SPARK_DISABLE_TOOL_DISTILLATION", "").strip().lower()
         if disable in {"1", "true", "yes", "on"}:
             return False
-        if enable in {"1", "true", "yes", "on"}:
+        try:
+            from lib.config_authority import resolve_section, env_bool
+            cfg = resolve_section(
+                "eidos",
+                env_overrides={
+                    "tool_distillation_enabled": env_bool("SPARK_ENABLE_TOOL_DISTILLATION"),
+                },
+            ).data
+            return bool(cfg.get("tool_distillation_enabled", True))
+        except Exception:
+            enable = os.environ.get("SPARK_ENABLE_TOOL_DISTILLATION", "").strip().lower()
+            if enable in {"1", "true", "yes", "on"}:
+                return True
             return True
-        # Default: enabled.  The memory gate and primitive filter already
-        # block telemetry-heavy items, so tool patterns are safe to distill.
-        return True
 
     def distill_from_steps(self, steps: List[Step]) -> List[Distillation]:
         """

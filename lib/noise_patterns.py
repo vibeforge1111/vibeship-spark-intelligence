@@ -118,6 +118,32 @@ PRIMITIVE_KEYWORDS: Tuple[str, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# Session boilerplate / inventory scaffolding (shared across capture + distill)
+# ---------------------------------------------------------------------------
+
+SESSION_BOILERPLATE_PATTERNS: Tuple[str, ...] = (
+    r"you are spark intelligence, observing a live coding session",
+    r"system inventory \(what actually exists",
+    r"<task-notification>|<task-id>|<output-file>|<status>|<summary>",
+    r"\bmission id:\b|\bassigned tasks:\b|\bexecution expectations:\b",
+    r"\bh70 skill loading\b|\bmission completion gate\b",
+    r"^\s*#\s*provider prompt",
+    r"\bcurl\s+-x\s+post\s+http://127\.0\.0\.1:\d+/api/events\b",
+)
+
+SESSION_BOILERPLATE_RE = re.compile(
+    "|".join(SESSION_BOILERPLATE_PATTERNS), re.I
+)
+
+
+def is_session_boilerplate(text: str) -> bool:
+    """Detect session scaffolding that should not become durable memory."""
+    sample = str(text or "").strip()
+    if not sample:
+        return False
+    return bool(SESSION_BOILERPLATE_RE.search(sample))
+
+# ---------------------------------------------------------------------------
 # Quick noise check combining the most common shared patterns.
 # ---------------------------------------------------------------------------
 

@@ -108,6 +108,8 @@ from lib.memory_capture import (
 from lib.capture_cli import format_pending
 from lib.memory_migrate import migrate as migrate_memory
 from lib.personality_evolver import load_personality_evolver
+from lib.doctor import run_doctor, format_doctor_human
+from lib.onboard import run_onboard, show_onboard_status, reset_onboard
 
 # Chips imports (lazy to avoid startup cost if not used)
 def _get_chips_registry():
@@ -434,59 +436,636 @@ def cmd_decay(args):
 
 def cmd_health(args):
     """Health check."""
-    print("\nðŸ¥ Health Check\n")
-    
+    use_json = getattr(args, "json", False)
+    checks = []
+
     # Check cognitive learner
     try:
         cognitive = get_cognitive_learner()
-        print("âœ“ Cognitive Learner: OK")
+        checks.append({"name": "cognitive_learner", "ok": True})
     except Exception as e:
-        print(f"âœ— Cognitive Learner: {e}")
-    
+        checks.append({"name": "cognitive_learner", "ok": False, "error": str(e)})
+
     # Check Mind connection
-    bridge = get_mind_bridge()
-    if bridge._check_mind_health():
-        print("âœ“ Mind API: OK")
-    else:
-        print("âœ— Mind API: Not available (will queue offline)")
-    
+    try:
+        bridge = get_mind_bridge()
+        mind_ok = bridge._check_mind_health()
+        checks.append({"name": "mind_api", "ok": mind_ok})
+    except Exception as e:
+        checks.append({"name": "mind_api", "ok": False, "error": str(e)})
+
     # Check queue
     try:
         stats = get_queue_stats()
-        print(f"âœ“ Event Queue: OK ({stats['event_count']} events)")
+        checks.append({"name": "event_queue", "ok": True, "events": stats["event_count"]})
     except Exception as e:
-        print(f"âœ— Event Queue: {e}")
-    
+        checks.append({"name": "event_queue", "ok": False, "error": str(e)})
+
     # Check bridge worker heartbeat
     hb_age = bridge_heartbeat_age_s()
-    if hb_age is None:
-        print("Ã¢Å¡Â  bridge_worker: No heartbeat (start bridge_worker)")
-    else:
-        print(f"Ã¢Å“â€œ bridge_worker: heartbeat {int(hb_age)}s ago")
+    bridge_ok = hb_age is not None and hb_age <= 90
+    checks.append({"name": "bridge_worker", "ok": bridge_ok, "heartbeat_age_s": int(hb_age) if hb_age else None})
 
     # Check learnings dir
     writer = get_markdown_writer()
-    if writer.learnings_dir.exists():
-        print(f"âœ“ Learnings Dir: OK ({writer.learnings_dir})")
+    checks.append({"name": "learnings_dir", "ok": writer.learnings_dir.exists(), "path": str(writer.learnings_dir)})
+
+    all_ok = all(c["ok"] for c in checks)
+
+    if use_json:
+        print(json.dumps({"ok": all_ok, "command": "health", "checks": checks}, indent=2))
     else:
-        print(f"? Learnings Dir: Will be created on first write")
-    
-    print()
+        print("\n  Health Check\n")
+        for c in checks:
+            icon = "[+]" if c["ok"] else "[X]"
+            detail = ""
+            if c.get("events"):
+                detail = f" ({c['events']} events)"
+            if c.get("heartbeat_age_s") is not None:
+                detail = f" ({c['heartbeat_age_s']}s ago)"
+            if c.get("error"):
+                detail = f" - {c['error']}"
+            print(f"  {icon} {c['name']}{detail}")
+        print()
+
+    sys.exit(0 if all_ok else 1)
+
+
+def cmd_doctor(args):
+    """Comprehensive system diagnostics and optional repair."""
+    deep = getattr(args, "deep", False)
+    repair = getattr(args, "repair", False)
+    use_json = getattr(args, "json", False)
+
+    result = run_doctor(deep=deep, repair=repair)
+
+    if use_json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        print(format_doctor_human(result))
+
+    # Exit codes per blueprint: 0=healthy, 1=issues, 3=partial repair
+    if result.ok:
+        sys.exit(0)
+    elif repair and result.repaired_count > 0:
+        sys.exit(3)
+    else:
+        sys.exit(1)
+
+
+def cmd_onboard(args):
+    """First-time onboarding wizard."""
+    use_json = getattr(args, "json", False)
+    subcmd = getattr(args, "onboard_cmd", None)
+
+    if subcmd == "status":
+        result = show_onboard_status()
+        if use_json:
+            result.setdefault("ok", True)
+            result.setdefault("command", "onboard status")
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"\n  Onboarding: {result.get('status', 'unknown')}")
+            if result.get("progress"):
+                print(f"  Progress: {result['progress']}")
+            if result.get("agent"):
+                print(f"  Agent: {result['agent']}")
+            print()
+        return
+
+    if subcmd == "reset":
+        result = reset_onboard()
+        if use_json:
+            result.setdefault("ok", True)
+            result.setdefault("command", "onboard reset")
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"\n  {result['message']}\n")
+        return
+
+    # Main onboard flow
+    agent = getattr(args, "agent", "") or ""
+    quick = getattr(args, "quick", False)
+    auto_yes = getattr(args, "yes", False)
+
+    result = run_onboard(agent=agent, quick=quick, auto_yes=auto_yes, use_json=use_json)
+
+    if use_json:
+        print(json.dumps(result, indent=2))
+
+    if result.get("ok"):
+        sys.exit(0)
+    else:
+        sys.exit(1)
+
+
+def cmd_logs(args):
+    """View service logs."""
+    use_json = getattr(args, "json", False)
+    log_dir = Path(os.environ.get("SPARK_LOG_DIR", Path.home() / ".spark" / "logs"))
+    service = getattr(args, "service", None)
+    tail_n = getattr(args, "tail", 50)
+    follow = getattr(args, "follow", False)
+
+    if not log_dir.exists():
+        if use_json:
+            print(json.dumps({"ok": False, "error": f"No log directory at {log_dir}"}, indent=2))
+        else:
+            print(f"  No log directory found at {log_dir}")
+            print("  Start services first: spark up")
+        sys.exit(1)
+
+    # Determine which files to read
+    if service:
+        targets = [log_dir / f"{service}.log"]
+    else:
+        targets = sorted(log_dir.glob("*.log"), key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
+
+    if not targets:
+        if use_json:
+            print(json.dumps({"ok": True, "logs": []}, indent=2))
+        else:
+            print("  No log files found.")
+        sys.exit(0)
+
+    json_logs = []
+    for log_file in targets:
+        if not log_file.exists():
+            if not use_json:
+                print(f"  [{log_file.stem}] No log file")
+            continue
+
+        try:
+            lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception as e:
+            if not use_json:
+                print(f"  [{log_file.stem}] Error reading: {e}")
+            continue
+
+        # Apply --since filter
+        since = getattr(args, "since", None)
+        if since:
+            cutoff = _parse_since(since)
+            if cutoff:
+                lines = [l for l in lines if _line_after(l, cutoff)]
+
+        # Tail
+        if tail_n and len(lines) > tail_n:
+            lines = lines[-tail_n:]
+
+        if use_json:
+            json_logs.append({"service": log_file.stem, "lines": lines, "count": len(lines)})
+        elif lines:
+            print(f"\n  === {log_file.stem} ({len(lines)} lines) ===")
+            for line in lines:
+                print(f"  {line}")
+
+    if use_json:
+        print(json.dumps({"ok": True, "command": "logs", "logs": json_logs}, indent=2))
+    else:
+        if follow:
+            print("\n  [--follow is not yet implemented -- showing latest snapshot]")
+        print()
+
+
+def _parse_since(since_str: str) -> float | None:
+    """Parse a relative time string like '1h', '30m', '2d' to epoch timestamp."""
+    import re
+    m = re.match(r"^(\d+)([smhd])$", since_str.strip())
+    if not m:
+        return None
+    val, unit = int(m.group(1)), m.group(2)
+    multipliers = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    return time.time() - val * multipliers.get(unit, 1)
+
+
+def _line_after(line: str, cutoff: float) -> bool:
+    """Heuristic: check if a log line timestamp is after cutoff.
+
+    Most Spark service logs do not include timestamps in a consistent format,
+    so we attempt a few common patterns and default to including the line
+    if we cannot parse it (safer than silently dropping content).
+    """
+    import re
+    # Try ISO-style: 2026-02-24T12:34:56 or 2026-02-24 12:34:56
+    m = re.match(r"(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})", line)
+    if m:
+        try:
+            from datetime import datetime, timezone
+            dt = datetime.fromisoformat(m.group(1)).replace(tzinfo=timezone.utc)
+            return dt.timestamp() >= cutoff
+        except (ValueError, OSError):
+            pass
+    # Try epoch float at start of line
+    m = re.match(r"^(\d{10,13}(?:\.\d+)?)\b", line)
+    if m:
+        try:
+            ts = float(m.group(1))
+            if ts > 1e12:  # milliseconds
+                ts /= 1000
+            return ts >= cutoff
+        except (ValueError, OverflowError):
+            pass
+    # Cannot parse — include the line
+    return True
+
+
+def cmd_config(args):
+    """Get, set, or inspect tuneables configuration."""
+    runtime_path = Path.home() / ".spark" / "tuneables.json"
+    versioned_path = Path(__file__).resolve().parent.parent / "config" / "tuneables.json"
+
+    def _load_json(p):
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8-sig"))
+        return {}
+
+    def _resolve_dot(data, key):
+        """Resolve dot-path like 'advisor.max_emit' -> nested value."""
+        parts = key.split(".")
+        cur = data
+        for part in parts:
+            if isinstance(cur, dict) and part in cur:
+                cur = cur[part]
+            else:
+                return None, False
+        return cur, True
+
+    def _set_dot(data, key, value):
+        """Set a value at dot-path, creating intermediate dicts."""
+        parts = key.split(".")
+        cur = data
+        for part in parts[:-1]:
+            if part not in cur or not isinstance(cur[part], dict):
+                cur[part] = {}
+            cur = cur[part]
+        cur[parts[-1]] = value
+
+    def _del_dot(data, key):
+        """Delete a value at dot-path. Returns True if found."""
+        parts = key.split(".")
+        cur = data
+        for part in parts[:-1]:
+            if isinstance(cur, dict) and part in cur:
+                cur = cur[part]
+            else:
+                return False
+        if isinstance(cur, dict) and parts[-1] in cur:
+            del cur[parts[-1]]
+            return True
+        return False
+
+    sub = getattr(args, "config_cmd", None)
+
+    if sub == "get":
+        key = args.key
+        runtime = _load_json(runtime_path)
+        val, found = _resolve_dot(runtime, key)
+        if not found:
+            # Fall back to versioned defaults
+            versioned = _load_json(versioned_path)
+            val, found = _resolve_dot(versioned, key)
+        if not found:
+            print(f"  Key not found: {key}")
+            sys.exit(1)
+        if isinstance(val, (dict, list)):
+            print(json.dumps(val, indent=2))
+        else:
+            print(val)
+
+    elif sub == "set":
+        key = args.key
+        raw = args.value
+        # Auto-parse types
+        try:
+            value = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            value = raw
+
+        runtime = _load_json(runtime_path)
+        # Backup before write
+        if runtime_path.exists():
+            backup = runtime_path.with_suffix(".json.bak")
+            backup.write_text(runtime_path.read_text(encoding="utf-8"), encoding="utf-8")
+        _set_dot(runtime, key, value)
+        runtime_path.parent.mkdir(parents=True, exist_ok=True)
+        runtime_path.write_text(json.dumps(runtime, indent=2), encoding="utf-8")
+        print(f"  {key} = {json.dumps(value)}")
+        print(f"  Saved to {runtime_path}")
+
+    elif sub == "unset":
+        key = args.key
+        runtime = _load_json(runtime_path)
+        if not _del_dot(runtime, key):
+            print(f"  Key not found in runtime config: {key}")
+            sys.exit(1)
+        # Backup before write
+        backup = runtime_path.with_suffix(".json.bak")
+        if runtime_path.exists():
+            backup.write_text(runtime_path.read_text(encoding="utf-8"), encoding="utf-8")
+        runtime_path.write_text(json.dumps(runtime, indent=2), encoding="utf-8")
+        print(f"  Removed: {key}")
+
+    elif sub == "validate":
+        runtime = _load_json(runtime_path)
+        versioned = _load_json(versioned_path)
+        known_sections = set(versioned.keys())
+        runtime_sections = set(runtime.keys())
+        unknown = runtime_sections - known_sections
+        errors = []
+        if unknown:
+            errors.append(f"Unknown sections in runtime: {', '.join(sorted(unknown))}")
+        if errors:
+            print("  Validation issues:")
+            for e in errors:
+                print(f"    - {e}")
+            sys.exit(1)
+        else:
+            print(f"  Config valid ({len(runtime_sections)} sections, {len(known_sections)} known)")
+
+    elif sub == "diff":
+        runtime = _load_json(runtime_path)
+        versioned = _load_json(versioned_path)
+        diffs = []
+        for section in sorted(set(list(runtime.keys()) + list(versioned.keys()))):
+            r_val = runtime.get(section, {})
+            v_val = versioned.get(section, {})
+            if not isinstance(r_val, dict) or not isinstance(v_val, dict):
+                if r_val != v_val:
+                    diffs.append((section, v_val, r_val))
+                continue
+            for key in sorted(set(list(r_val.keys()) + list(v_val.keys()))):
+                rv = r_val.get(key)
+                vv = v_val.get(key)
+                if rv != vv:
+                    diffs.append((f"{section}.{key}", vv, rv))
+        if not diffs:
+            print("  No differences between runtime and versioned config.")
+        else:
+            print(f"  {len(diffs)} difference(s):")
+            for path, ver, run in diffs:
+                ver_s = json.dumps(ver) if ver is not None else "(missing)"
+                run_s = json.dumps(run) if run is not None else "(missing)"
+                print(f"    {path}")
+                print(f"      versioned: {ver_s}")
+                print(f"      runtime:   {run_s}")
+
+    elif sub == "show":
+        runtime = _load_json(runtime_path)
+        if getattr(args, "json", False):
+            print(json.dumps({"ok": True, "command": "config", "config": runtime}, indent=2))
+        else:
+            print(f"  Runtime config: {runtime_path}")
+            print(f"  Versioned config: {versioned_path}")
+            print(f"  Sections: {', '.join(sorted(runtime.keys())) if runtime else '(empty)'}")
+            for section in sorted(runtime.keys()):
+                vals = runtime[section]
+                if isinstance(vals, dict):
+                    print(f"\n  [{section}] ({len(vals)} keys)")
+                    for k, v in sorted(vals.items()):
+                        print(f"    {k} = {json.dumps(v)}")
+                else:
+                    print(f"\n  [{section}] = {json.dumps(vals)}")
+
+    else:
+        # Default: show summary
+        runtime = _load_json(runtime_path)
+        print(f"  Runtime: {runtime_path} ({'exists' if runtime_path.exists() else 'not found'})")
+        print(f"  Versioned: {versioned_path} ({'exists' if versioned_path.exists() else 'not found'})")
+        if runtime:
+            print(f"  Sections: {', '.join(sorted(runtime.keys()))}")
+        print("  Use: spark config get <key> | set <key> <value> | unset <key> | diff | validate | show")
+
+
+def cmd_run(args):
+    """Convenience wrapper: start services, run health check, optionally sync context."""
+    use_json = getattr(args, "json", False)
+    steps = []
+
+    # Step 1: Start services
+    if not use_json:
+        print("\n  [1/3] Starting services...")
+    lite_env = os.environ.get("SPARK_LITE", "").lower() in ("1", "true", "yes")
+    lite = bool(getattr(args, "lite", False)) or lite_env
+    try:
+        results = start_services(
+            include_mind=True,
+            include_pulse=not lite,
+            include_watchdog=True,
+        )
+        steps.append({"step": "services", "ok": True, "detail": results})
+        if not use_json:
+            for name, result in results.items():
+                print(f"    {name}: {result}")
+    except Exception as e:
+        steps.append({"step": "services", "ok": False, "error": str(e)})
+        if not use_json:
+            print(f"    Error starting services: {e}")
+
+    # Step 2: Health check
+    if not use_json:
+        print("  [2/3] Running health check...")
+    try:
+        from lib.doctor import run_doctor
+        doc_result = run_doctor(deep=False)
+        ok = doc_result.ok
+        issues = [c.message for c in doc_result.checks if c.status in ("fail", "warn")]
+        steps.append({"step": "health", "ok": ok, "command": "run", "issues": issues})
+        if not use_json:
+            status_icon = "[+]" if ok else "[!]"
+            print(f"    {status_icon} {'Healthy' if ok else f'{len(issues)} issue(s)'}")
+            for iss in issues[:3]:
+                print(f"      - {iss}")
+    except Exception as e:
+        steps.append({"step": "health", "ok": False, "error": str(e)})
+        if not use_json:
+            print(f"    Error running health check: {e}")
+
+    # Step 3: Sync context (optional)
+    if getattr(args, "sync", True):
+        if not use_json:
+            print("  [3/3] Syncing context...")
+        try:
+            project_dir = Path.cwd()
+            sync_context(project_dir=project_dir)
+            steps.append({"step": "sync_context", "ok": True, "project": str(project_dir)})
+            if not use_json:
+                print(f"    Synced: {project_dir}")
+        except Exception as e:
+            steps.append({"step": "sync_context", "ok": False, "error": str(e)})
+            if not use_json:
+                print(f"    Error syncing: {e}")
+    else:
+        steps.append({"step": "sync_context", "ok": True, "skipped": True})
+
+    all_ok = all(s["ok"] for s in steps)
+    if use_json:
+        print(json.dumps({"ok": all_ok, "command": "run", "steps": steps}, indent=2))
+    else:
+        print(f"\n  {'Ready!' if all_ok else 'Started with issues — run spark doctor for details.'}\n")
+    sys.exit(0 if all_ok else 1)
+
+
+def cmd_update(args):
+    """Pull latest Spark, install deps, restart services."""
+    import subprocess
+
+    use_json = getattr(args, "json", False)
+    no_restart = getattr(args, "no_restart", False)
+    check_only = getattr(args, "check", False)
+    repo_root = Path(__file__).resolve().parent.parent
+
+    result = {"ok": True, "command": "update", "updated": False, "commits": [], "services_restarted": False}
+
+    def _git(*cmd):
+        r = subprocess.run(["git"] + list(cmd), capture_output=True, text=True, cwd=str(repo_root))
+        return r.returncode, r.stdout.strip(), r.stderr.strip()
+
+    # Get current state
+    rc, branch, _ = _git("rev-parse", "--abbrev-ref", "HEAD")
+    if rc != 0:
+        result["ok"] = False
+        result["error"] = "Not a git repository"
+        if use_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print("\n  [X] Not a git repository\n")
+        sys.exit(1)
+
+    rc, old_sha, _ = _git("rev-parse", "HEAD")
+
+    # Check for uncommitted changes
+    rc, diff_out, _ = _git("status", "--porcelain")
+    has_local_changes = bool(diff_out)
+
+    # Fetch latest
+    if not use_json:
+        print(f"\n  Checking for updates on {branch}...")
+    rc, _, fetch_err = _git("fetch", "origin", branch)
+    if rc != 0:
+        result["ok"] = False
+        result["error"] = f"Fetch failed: {fetch_err}"
+        if use_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"  [X] Fetch failed: {fetch_err}\n")
+        sys.exit(1)
+
+    # Count commits behind
+    rc, count_str, _ = _git("rev-list", "--count", f"HEAD..origin/{branch}")
+    behind = int(count_str) if rc == 0 and count_str.isdigit() else 0
+
+    if behind == 0:
+        result["updated"] = False
+        if use_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print("  [+] Already up to date.\n")
+        sys.exit(0)
+
+    # Check-only mode: report and exit
+    if check_only:
+        rc, log_out, _ = _git("log", "--oneline", f"HEAD..origin/{branch}")
+        commits = [line for line in log_out.splitlines() if line.strip()]
+        result["behind"] = behind
+        result["commits"] = commits
+        if use_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"  {behind} update(s) available:")
+            for c in commits[:10]:
+                print(f"    {c}")
+            if behind > 10:
+                print(f"    ... and {behind - 10} more")
+            print()
+        sys.exit(0)
+
+    # Warn about local changes
+    if has_local_changes and not use_json:
+        print("  [!] You have uncommitted changes. They will be preserved (pull uses merge).")
+
+    # Pull
+    if not use_json:
+        print(f"  Pulling {behind} update(s)...")
+    rc, pull_out, pull_err = _git("pull", "origin", branch)
+    if rc != 0:
+        result["ok"] = False
+        result["error"] = f"Pull failed: {pull_err}"
+        if use_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"  [X] Pull failed: {pull_err}\n")
+        sys.exit(1)
+
+    # Show what changed
+    rc, new_sha, _ = _git("rev-parse", "HEAD")
+    rc, log_out, _ = _git("log", "--oneline", f"{old_sha}..{new_sha}")
+    commits = [line for line in log_out.splitlines() if line.strip()]
+    result["updated"] = True
+    result["commits"] = commits
+
+    if not use_json:
+        print(f"  [+] Updated ({len(commits)} commit(s)):")
+        for c in commits[:10]:
+            print(f"    {c}")
+        if len(commits) > 10:
+            print(f"    ... and {len(commits) - 10} more")
+
+    # Install deps
+    if not use_json:
+        print("  Installing dependencies...")
+    pip_result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-e", ".[services]", "--quiet"],
+        capture_output=True, text=True, cwd=str(repo_root),
+    )
+    if pip_result.returncode != 0:
+        result["dep_error"] = pip_result.stderr.strip()
+        if not use_json:
+            print(f"  [!] Dependency install warning: {pip_result.stderr.strip()[:200]}")
+
+    # Restart services if running
+    if not no_restart:
+        try:
+            status = service_status(include_pulse_probe=False)
+            running = [name for name, info in status.items() if info.get("running")]
+            if running:
+                if not use_json:
+                    print("  Restarting services...")
+                stop_services()
+                start_services()
+                result["services_restarted"] = True
+                if not use_json:
+                    print(f"  [+] Services restarted ({len(running)} services)")
+            else:
+                if not use_json:
+                    print("  No services were running (skipping restart).")
+        except Exception as e:
+            result["restart_error"] = str(e)
+            if not use_json:
+                print(f"  [!] Service restart error: {e}")
+
+    if use_json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"\n  Spark updated to latest.\n")
+    sys.exit(0 if result["ok"] else 1)
 
 
 def cmd_services(args):
     """Show daemon/service status."""
+    use_json = getattr(args, "json", False)
     status = service_status(bridge_stale_s=args.bridge_stale_s)
-    print("")
-    for line in format_status_lines(status, bridge_stale_s=args.bridge_stale_s):
-        print(line)
-    print("")
+
+    if use_json:
+        print(json.dumps({"ok": True, "command": "services", "services": status}, indent=2))
+    else:
+        print("")
+        for line in format_status_lines(status, bridge_stale_s=args.bridge_stale_s):
+            print(line)
+        print("")
 
 
 def _should_start_watchdog(args) -> bool:
-    lite_env = os.environ.get("SPARK_LITE", "").lower() in ("1", "true", "yes")
-    if getattr(args, "lite", False) or lite_env:
-        return False
     if args.no_watchdog:
         return False
     return os.environ.get("SPARK_NO_WATCHDOG", "") == ""
@@ -501,9 +1080,9 @@ def cmd_up(args):
         bridge_interval=args.bridge_interval,
         bridge_query=args.bridge_query,
         watchdog_interval=args.watchdog_interval,
-        include_mind=(not args.no_mind) and (not lite),
+        include_mind=not args.no_mind,
         include_pulse=(not args.no_pulse) and (not lite),
-        include_watchdog=include_watchdog and (not lite),
+        include_watchdog=include_watchdog,
         bridge_stale_s=args.bridge_stale_s,
     )
 
@@ -2561,37 +3140,43 @@ def main():
         description="Spark CLI - Self-evolving intelligence layer",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Commands:
+Getting Started:
+  onboard     First-time setup wizard (start here!)
+  run         Start services + health check in one step
+  update      Pull latest Spark and restart services
+  doctor      Diagnose and repair system issues
+  health      Quick health check (5 subsystems)
   status      Show overall system status
-  services    Show daemon/service status
+
+Services:
   up          Start background services
-  ensure      Start missing services if not running
   down        Stop background services
-  sync        Sync cognitive insights to Mind
-  queue       Process offline queue
-  process     Run bridge worker cycle or drain backlog
-  validate    Run validation scan on recent events
+  services    Show daemon/service status
+  logs        View service logs (--service, --tail, --since)
+
+Configuration:
+  config      Get/set/diff tuneables (config get advisor.max_items)
+  advisory    Configure advisory preferences
+
+Intelligence:
   learnings   Show recent cognitive insights
   promote     Run promotion check
-  write       Write learnings to markdown files
-  health      Run health check
-  events      Show recent events from queue
-  capture     Memory capture suggestions (portable)
+  capture     Memory capture suggestions
+  process     Run bridge worker cycle / drain backlog
 
 Examples:
-  spark status
-  spark services
-  spark up --sync-context
-  spark sync
-  spark promote --dry-run
-  spark learnings --limit 20
-  spark capture --list
-  spark capture --accept <id>
-  spark advisory
-  spark advisory on
-  spark advisory doctor
-  spark advisory repair
-  spark advisory quality --profile enhanced
+  spark onboard                         # First-time setup
+  spark run                             # Start everything + health check
+  spark update                          # Pull latest + restart services
+  spark update --check                  # Check if updates available
+  spark doctor --deep                   # Full diagnostics
+  spark health --json                   # Machine-readable health
+  spark config get meta_ralph.quality_threshold
+  spark config diff                     # Runtime vs versioned config
+  spark logs -s sparkd --tail 100       # Last 100 sparkd log lines
+  spark services --json                 # Service status as JSON
+  spark advisory doctor                 # Advisory system diagnostics
+  spark learnings --limit 20            # Recent learnings
 """
     )
     
@@ -2602,34 +3187,101 @@ Examples:
         p.add_argument("--bridge-query", default=None, help="optional fixed query for bridge_worker")
         p.add_argument("--watchdog-interval", type=int, default=60, help="watchdog interval (seconds)")
         p.add_argument("--bridge-stale-s", type=int, default=90, help="bridge_worker stale threshold (seconds)")
-        p.add_argument("--lite", action="store_true", help="start only core services (no dashboards/pulse/watchdog)")
+        p.add_argument("--lite", action="store_true", help="skip Pulse dashboard")
         p.add_argument("--no-mind", action="store_true", help="do not start mind server")
         p.add_argument("--no-watchdog", action="store_true", help="do not start watchdog")
         p.add_argument("--no-pulse", action="store_true", help="do not start spark pulse")
         p.add_argument("--sync-context", action="store_true", help="run sync-context after start")
         p.add_argument("--project", "-p", default=None, help="project root for sync-context")
 
+    # === GETTING STARTED (beginner-first) ===
+
+    # onboard - first-time wizard
+    onboard_parser = subparsers.add_parser("onboard", help="First-time setup wizard (start here!)")
+    onboard_parser.add_argument("--agent", choices=["claude", "cursor", "openclaw"], help="Agent type for hook setup")
+    onboard_parser.add_argument("--quick", action="store_true", help="Non-interactive fast path (lite mode)")
+    onboard_parser.add_argument("--yes", "-y", action="store_true", help="Auto-confirm prompts")
+    onboard_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+    onboard_sub = onboard_parser.add_subparsers(dest="onboard_cmd")
+    onboard_status = onboard_sub.add_parser("status", help="Show onboarding progress")
+    onboard_status.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+    onboard_reset = onboard_sub.add_parser("reset", help="Reset onboarding state")
+    onboard_reset.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    # run - convenience start + health + sync
+    run_parser = subparsers.add_parser("run", help="Start services + health check in one step")
+    run_parser.add_argument("--lite", action="store_true", help="Lite mode (skip Pulse dashboard)")
+    run_parser.add_argument("--no-sync", dest="sync", action="store_false", help="Skip context sync step")
+    run_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    # update - pull latest and restart
+    update_parser = subparsers.add_parser("update", help="Pull latest Spark and restart services")
+    update_parser.add_argument("--no-restart", action="store_true", help="Skip service restart after update")
+    update_parser.add_argument("--check", action="store_true", help="Check for updates without installing")
+    update_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    # doctor - comprehensive diagnostics and repair
+    doctor_parser = subparsers.add_parser("doctor", help="Diagnose and repair system issues")
+    doctor_parser.add_argument("--deep", action="store_true", help="Run deep checks (port conflicts, recent events)")
+    doctor_parser.add_argument("--repair", "--fix", action="store_true", help="Attempt safe auto-repair of issues")
+    doctor_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    # health
+    health_parser = subparsers.add_parser("health", help="Quick health check (5 subsystems)")
+    health_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
     # status
     subparsers.add_parser("status", help="Show overall system status")
 
-    # services
-    services_parser = subparsers.add_parser("services", help="Show daemon/service status")
-    services_parser.add_argument("--bridge-stale-s", type=int, default=90, help="bridge_worker stale threshold (seconds)")
+    # === SERVICES ===
 
     # up
     up_parser = subparsers.add_parser("up", help="Start background services")
     _add_up_args(up_parser)
 
+    # down
+    subparsers.add_parser("down", help="Stop background services")
+
+    # services
+    services_parser = subparsers.add_parser("services", help="Show daemon/service status")
+    services_parser.add_argument("--bridge-stale-s", type=int, default=90, help="bridge_worker stale threshold (seconds)")
+    services_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
     # ensure
     ensure_parser = subparsers.add_parser("ensure", help="Start missing services if not running")
     _add_up_args(ensure_parser)
 
-    # down
-    subparsers.add_parser("down", help="Stop background services")
-    
+    # logs - unified log access
+    logs_parser = subparsers.add_parser("logs", help="View service logs")
+    logs_parser.add_argument("--service", "-s", choices=["sparkd", "bridge_worker", "mind", "pulse", "watchdog", "scheduler"],
+                             help="Show logs for specific service")
+    logs_parser.add_argument("--tail", "-n", type=int, default=50, help="Number of lines to show (default: 50)")
+    logs_parser.add_argument("--follow", "-f", action="store_true", help="Follow log output (live tail)")
+    logs_parser.add_argument("--since", help="Show logs since time (e.g., 1h, 30m, 2d)")
+    logs_parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    # === CONFIGURATION ===
+
+    # config - tuneables management
+    config_parser = subparsers.add_parser("config", help="Get/set/diff tuneables configuration")
+    config_sub = config_parser.add_subparsers(dest="config_cmd")
+    config_get = config_sub.add_parser("get", help="Get a config value by dot-path (e.g., advisor.max_emit)")
+    config_get.add_argument("key", help="Dot-path key (e.g., meta_ralph.quality_threshold)")
+    config_set = config_sub.add_parser("set", help="Set a config value")
+    config_set.add_argument("key", help="Dot-path key")
+    config_set.add_argument("value", help="Value to set (auto-parsed: numbers, booleans, JSON)")
+    config_unset = config_sub.add_parser("unset", help="Remove a key from runtime config")
+    config_unset.add_argument("key", help="Dot-path key to remove")
+    config_sub.add_parser("validate", help="Validate runtime config against known sections")
+    config_sub.add_parser("diff", help="Show differences between runtime and versioned config")
+    config_show = config_sub.add_parser("show", help="Show full runtime config")
+    config_show.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    # === INTELLIGENCE ===
+
     # sync
     subparsers.add_parser("sync", help="Sync insights to Mind")
-    
+
     # queue
     subparsers.add_parser("queue", help="Process offline queue")
 
@@ -2646,16 +3298,16 @@ Examples:
     # validate
     validate_parser = subparsers.add_parser("validate", help="Run validation scan on recent events")
     validate_parser.add_argument("--limit", "-n", type=int, default=200, help="Events to scan")
-    
+
     # learnings
     learnings_parser = subparsers.add_parser("learnings", help="Show recent learnings")
     learnings_parser.add_argument("--limit", "-n", type=int, default=10, help="Number to show")
-    
+
     # promote
     promote_parser = subparsers.add_parser("promote", help="Run promotion check")
     promote_parser.add_argument("--dry-run", action="store_true", help="Don't actually promote")
     promote_parser.add_argument("--no-project", action="store_true", help="Skip PROJECT.md update")
-    
+
     # write
     subparsers.add_parser("write", help="Write learnings to markdown")
 
@@ -2675,9 +3327,6 @@ Examples:
     decay.add_argument("--limit", type=int, default=20, help="Max candidates to show in dry-run")
     decay.add_argument("--apply", action="store_true", help="Actually prune stale insights")
 
-    # health
-    subparsers.add_parser("health", help="Health check")
-    
     # events
     events_parser = subparsers.add_parser("events", help="Show recent events")
     events_parser.add_argument("--limit", "-n", type=int, default=20, help="Number to show")
@@ -3059,6 +3708,12 @@ Examples:
         "sync-context": cmd_sync_context,
         "decay": cmd_decay,
         "health": cmd_health,
+        "doctor": cmd_doctor,
+        "onboard": cmd_onboard,
+        "logs": cmd_logs,
+        "config": cmd_config,
+        "run": cmd_run,
+        "update": cmd_update,
         "events": cmd_events,
         "opportunities": cmd_opportunities,
         "advisory": cmd_advisory,

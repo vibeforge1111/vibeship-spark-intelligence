@@ -40,8 +40,28 @@ from lib.cognitive_learner import get_cognitive_learner
 from lib.feedback import update_skill_effectiveness, update_self_awareness_reliability
 from lib.diagnostics import log_debug
 from lib.outcome_checkin import record_checkin_request
-# EIDOS Integration
-EIDOS_ENABLED = os.environ.get("SPARK_EIDOS_ENABLED", "1") == "1"
+# EIDOS Integration — resolve from config-authority
+try:
+    from lib.config_authority import resolve_section, env_bool, env_int, env_float
+    _hook_cfg = resolve_section(
+        "observe_hook",
+        env_overrides={
+            "eidos_enabled": env_bool("SPARK_EIDOS_ENABLED"),
+            "outcome_checkin_min_s": env_int("SPARK_OUTCOME_CHECKIN_MIN_S"),
+            "advice_feedback_enabled": env_bool("SPARK_ADVICE_FEEDBACK"),
+            "advice_feedback_prompt": env_bool("SPARK_ADVICE_FEEDBACK_PROMPT"),
+            "advice_feedback_min_s": env_int("SPARK_ADVICE_FEEDBACK_MIN_S"),
+            "pretool_budget_ms": env_float("SPARK_OBSERVE_PRETOOL_BUDGET_MS"),
+            "eidos_enforce_block": env_bool("SPARK_EIDOS_ENFORCE_BLOCK"),
+            "hook_payload_text_limit": env_int("SPARK_HOOK_PAYLOAD_TEXT_LIMIT"),
+            "outcome_checkin_enabled": env_bool("SPARK_OUTCOME_CHECKIN"),
+            "outcome_checkin_prompt": env_bool("SPARK_OUTCOME_CHECKIN_PROMPT"),
+        },
+    ).data
+except Exception:
+    _hook_cfg = {}
+
+EIDOS_ENABLED = bool(_hook_cfg.get("eidos_enabled", os.environ.get("SPARK_EIDOS_ENABLED", "1") == "1"))
 
 if EIDOS_ENABLED:
     try:
@@ -65,13 +85,15 @@ else:
 # We track predictions made at PreToolUse to compare at PostToolUse
 
 PREDICTION_FILE = Path.home() / ".spark" / "active_predictions.json"
-CHECKIN_MIN_S = int(os.environ.get("SPARK_OUTCOME_CHECKIN_MIN_S", "1800"))
-ADVICE_FEEDBACK_ENABLED = os.environ.get("SPARK_ADVICE_FEEDBACK", "1") == "1"
-ADVICE_FEEDBACK_PROMPT = os.environ.get("SPARK_ADVICE_FEEDBACK_PROMPT", "1") == "1"
-ADVICE_FEEDBACK_MIN_S = int(os.environ.get("SPARK_ADVICE_FEEDBACK_MIN_S", "600"))
-PRETOOL_BUDGET_MS = float(os.environ.get("SPARK_OBSERVE_PRETOOL_BUDGET_MS", "2500"))
-EIDOS_ENFORCE_BLOCK = os.environ.get("SPARK_EIDOS_ENFORCE_BLOCK", "0") == "1"
-HOOK_PAYLOAD_TEXT_LIMIT = int(os.environ.get("SPARK_HOOK_PAYLOAD_TEXT_LIMIT", "3000"))
+CHECKIN_MIN_S = int(_hook_cfg.get("outcome_checkin_min_s", 1800))
+ADVICE_FEEDBACK_ENABLED = bool(_hook_cfg.get("advice_feedback_enabled", True))
+ADVICE_FEEDBACK_PROMPT = bool(_hook_cfg.get("advice_feedback_prompt", True))
+ADVICE_FEEDBACK_MIN_S = int(_hook_cfg.get("advice_feedback_min_s", 600))
+PRETOOL_BUDGET_MS = float(_hook_cfg.get("pretool_budget_ms", 2500.0))
+EIDOS_ENFORCE_BLOCK = bool(_hook_cfg.get("eidos_enforce_block", False))
+HOOK_PAYLOAD_TEXT_LIMIT = int(_hook_cfg.get("hook_payload_text_limit", 3000))
+_OUTCOME_CHECKIN_ENABLED = bool(_hook_cfg.get("outcome_checkin_enabled", False))
+_OUTCOME_CHECKIN_PROMPT = bool(_hook_cfg.get("outcome_checkin_prompt", False))
 
 # ===== Session Failure Tracking =====
 # Track which tools failed in this session so we can detect recovery patterns.
@@ -940,14 +962,14 @@ def main():
     # to keep the hook fast. Removed synchronous aggregator call.
 
     # Optional: emit a lightweight outcome check-in request at session end.
-    if hook_event in ("Stop", "SessionEnd") and os.environ.get("SPARK_OUTCOME_CHECKIN") == "1":
+    if hook_event in ("Stop", "SessionEnd") and _OUTCOME_CHECKIN_ENABLED:
         recorded = record_checkin_request(
             session_id=session_id,
             event=hook_event,
             reason="session_end",
             min_interval_s=CHECKIN_MIN_S,
         )
-        if recorded and os.environ.get("SPARK_OUTCOME_CHECKIN_PROMPT") == "1":
+        if recorded and _OUTCOME_CHECKIN_PROMPT:
             sys.stderr.write("[SPARK] Outcome check-in: run `spark outcome`\\n")
 
     # Optional: prompt for advice feedback at session end.

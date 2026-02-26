@@ -67,6 +67,31 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "queue_batch_size": TuneableSpec("int", 100, 50, 1000, "Event queue batch processing size"),
     },
 
+    # ---- pipeline: runtime pipeline behavior ----
+    "pipeline": {
+        "importance_sampling_enabled": TuneableSpec(
+            "bool", False, None, None, "Enable backlog importance sampling",
+        ),
+        "low_priority_keep_rate": TuneableSpec(
+            "float", 0.25, 0.0, 1.0, "Retention rate for low-priority events when sampling",
+        ),
+        "macros_enabled": TuneableSpec(
+            "bool", False, None, None, "Enable macro workflow mining",
+        ),
+        "macro_min_count": TuneableSpec(
+            "int", 3, 2, 20, "Min pattern count for macro extraction",
+        ),
+        "min_insights_floor": TuneableSpec(
+            "int", 1, 0, 3, "Minimum insights generated on high-volume cycles",
+        ),
+        "floor_events_threshold": TuneableSpec(
+            "int", 20, 1, 200, "Event threshold to apply min_insights_floor",
+        ),
+        "floor_soft_min_events": TuneableSpec(
+            "int", 2, 1, 50, "Soft minimum events for floor eligibility",
+        ),
+    },
+
     # ---- semantic: semantic retrieval tuning ----
     "semantic": {
         "enabled": TuneableSpec("bool", True, None, None, "Enable semantic retrieval"),
@@ -138,6 +163,14 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "global_dedupe_cooldown_s": TuneableSpec("float", 600, 0, 86400,
             "Cross-session global dedupe cooldown (s). Prevents same insight across sessions. "
             "Distinct from text_repeat (exact text) and advice_repeat (same ID)"),
+        "global_dedupe_scope": TuneableSpec(
+            "str",
+            "global",
+            None,
+            None,
+            "Scope for global dedupe ('global', 'tree', or 'contextual').",
+            ["global", "tree", "contextual"],
+        ),
         "actionability_enforce": TuneableSpec("bool", True, None, None, "Enforce actionability scoring"),
         "force_programmatic_synth": TuneableSpec("bool", False, None, None, "Force programmatic synthesis"),
         "selective_ai_synth_enabled": TuneableSpec("bool", True, None, None, "Enable selective AI synthesis"),
@@ -148,6 +181,10 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
             "Max fallback emissions per budget window. 0 = unlimited (old behavior)"),
         "fallback_budget_window": TuneableSpec("int", 5, 1, 100,
             "Number of tool calls per fallback budget window"),
+        "emit_enabled": TuneableSpec("bool", True, None, None, "Enable stdout advisory emission"),
+        "emit_max_chars": TuneableSpec("int", 500, 50, 5000, "Max characters per emission"),
+        "emit_format": TuneableSpec("str", "inline", None, None, "Emission format style",
+                                     ["inline", "block"]),
     },
 
     # ---- advisory_gate: emission gating ----
@@ -158,6 +195,13 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
             "Repeated advice cooldown (s). Prevents same advice_id from re-emitting. "
             "See also: advisory_engine.advisory_text_repeat_cooldown_s (exact text), "
             "shown_advice_ttl_s (shown-state marker with source TTL scaling)"),
+        "agreement_gate_enabled": TuneableSpec(
+            "bool", False, None, None,
+            "Escalate warnings only when multiple sources agree",
+        ),
+        "agreement_min_sources": TuneableSpec(
+            "int", 2, 1, 5, "Minimum agreeing sources for escalation when agreement gate is enabled",
+        ),
         "shown_advice_ttl_s": TuneableSpec("int", 600, 5, 86400,
             "Shown-advice suppression TTL (s). Base TTL for shown-state markers; "
             "scaled per-source via source_ttl_multipliers and per-category via "
@@ -207,7 +251,7 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "obsidian_enabled": TuneableSpec("bool", False, None, None, "Enable advisory packet export to Obsidian"),
         "obsidian_auto_export": TuneableSpec("bool", False, None, None, "Auto-export packet payloads to Obsidian"),
         "obsidian_export_max_packets": TuneableSpec("int", 300, 1, 5000, "Max Obsidian packet exports to retain"),
-        "obsidian_export_dir": TuneableSpec("str", str(Path.home() / ".spark" / "advice_packets" / "obsidian"), None, None, "Override Obsidian export directory"),
+        "obsidian_export_dir": TuneableSpec("str", "", None, None, "Override Obsidian export directory (empty = ~/.spark/advice_packets/obsidian)"),
     },
 
     # ---- advisory_prefetch: prefetch worker ----
@@ -251,6 +295,17 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "overrides": TuneableSpec("dict", {}, None, None, "Retrieval parameter overrides"),
         "domain_profile_enabled": TuneableSpec("bool", True, None, None, "Enable domain-specific profiles"),
         "domain_profiles": TuneableSpec("dict", {}, None, None, "Per-domain retrieval profiles"),
+        "mode": TuneableSpec("str", "auto", None, None, "Retrieval mode",
+                             ["auto", "embeddings_only", "hybrid_agentic"]),
+        "minimax_fast_rerank": TuneableSpec("bool", False, None, None, "Enable MiniMax fast reranking"),
+        "minimax_fast_rerank_top_k": TuneableSpec("int", 8, 4, 50, "Top K items for MiniMax reranking"),
+        "minimax_fast_rerank_min_items": TuneableSpec("int", 6, 1, 50, "Min items before triggering rerank"),
+        "minimax_fast_rerank_min_complexity": TuneableSpec("int", 3, 0, 20, "Min complexity for rerank"),
+        "minimax_fast_rerank_high_volume_min_items": TuneableSpec("int", 0, 0, 100, "Min items for high-volume rerank"),
+        "minimax_fast_rerank_require_agentic": TuneableSpec("bool", False, None, None, "Require agentic mode for rerank"),
+        "minimax_fast_rerank_model": TuneableSpec("str", "MiniMax-M2.5", None, None, "MiniMax model for reranking"),
+        "minimax_fast_rerank_timeout_s": TuneableSpec("float", 5.0, 2.0, 30.0, "MiniMax rerank timeout (s)"),
+        "minimax_fast_rerank_cooldown_s": TuneableSpec("float", 0.0, 0.0, 300.0, "MiniMax rerank cooldown (s)"),
     },
 
     # ---- meta_ralph: quality gate ----
@@ -264,6 +319,19 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "min_source_samples": TuneableSpec("int", 15, 1, 200, "Min samples per source"),
         "attribution_window_s": TuneableSpec("int", 1800, 60, 86400, "Time window for attribution (s)"),
         "strict_attribution_require_trace": TuneableSpec("bool", True, None, None, "Require trace for strict attribution"),
+        "runtime_refiner_llm_enabled": TuneableSpec(
+            "bool", False, None, None, "Enable runtime LLM assist for Meta-Ralph NEEDS_WORK refinement",
+        ),
+        "runtime_refiner_llm_timeout_s": TuneableSpec(
+            "float", 6.0, 0.5, 60.0, "Runtime LLM timeout for Meta-Ralph refinement",
+        ),
+        "runtime_refiner_llm_max_chars": TuneableSpec(
+            "int", 260, 80, 2000, "Max chars for runtime LLM-refined Meta-Ralph learning text",
+        ),
+        "runtime_refiner_llm_provider": TuneableSpec(
+            "str", "auto", None, None, "Runtime LLM provider for Meta-Ralph refinement",
+            ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"],
+        ),
     },
 
     # ---- eidos: episode/distillation budget ----
@@ -273,18 +341,28 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "max_retries_per_error": TuneableSpec("int", 3, 1, 20, "Retry limit per error type"),
         "max_file_touches": TuneableSpec("int", 5, 1, 50, "Max times to modify same file"),
         "no_evidence_limit": TuneableSpec("int", 6, 1, 30, "Force DIAGNOSE after N steps without evidence"),
-    },
-
-    # ---- scheduler ----
-    "scheduler": {
-        "enabled": TuneableSpec("bool", True, None, None, "Enable the scheduler"),
-    },
-
-    # ---- source_roles: role definitions (mostly documentation, typed as dict) ----
-    "source_roles": {
-        "distillers": TuneableSpec("dict", {}, None, None, "Sources that distill/learn (not advisory)"),
-        "direct_advisory": TuneableSpec("dict", {}, None, None, "Sources that advise directly"),
-        "disabled_from_advisory": TuneableSpec("dict", {}, None, None, "Sources removed from advisory"),
+        "safety_guardrails_enabled": TuneableSpec("bool", True, None, None, "Enable safety guardrails for tool use"),
+        "safety_allow_secrets": TuneableSpec("bool", False, None, None, "Allow reading secret/credential files"),
+        "trace_strict": TuneableSpec("bool", False, None, None, "Make missing trace_id blocking (vs warning)"),
+        "tool_distillation_enabled": TuneableSpec("bool", True, None, None, "Enable tool-pattern distillation"),
+        "llm_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for distillation",
+                                      ["minimax", "ollama", "gemini", "openai", "anthropic"]),
+        "runtime_refiner_llm_enabled": TuneableSpec(
+            "bool", False, None, None, "Enable runtime LLM assist in distillation_refiner for low-quality statements",
+        ),
+        "runtime_refiner_llm_min_unified_score": TuneableSpec(
+            "float", 0.45, 0.0, 1.0, "Invoke runtime LLM refiner when unified score is below this threshold",
+        ),
+        "runtime_refiner_llm_timeout_s": TuneableSpec(
+            "float", 6.0, 0.5, 60.0, "Runtime LLM timeout for distillation refinement",
+        ),
+        "runtime_refiner_llm_max_chars": TuneableSpec(
+            "int", 280, 80, 2000, "Max chars for runtime LLM-refined distillation text",
+        ),
+        "runtime_refiner_llm_provider": TuneableSpec(
+            "str", "auto", None, None, "Runtime LLM provider for distillation refinement",
+            ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"],
+        ),
     },
 
     # ---- auto_tuner: self-tuning engine ----
@@ -296,13 +374,21 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "run_interval_s": TuneableSpec("int", 43200, 3600, 604800, "Run interval (s, default 12h)"),
         "max_change_per_run": TuneableSpec("float", 0.15, 0.01, 0.5, "Max boost change per run"),
         "source_boosts": TuneableSpec("dict", {}, None, None, "Per-source boost multipliers"),
-        "min_boost": TuneableSpec("float", 0.8, 0.0, 5.0,
+        "min_boost": TuneableSpec("float", 0.2, 0.0, 2.0,
             "Floor for source boost — prevents auto-tuner from dampening proven sources below this value"),
-        "max_boost": TuneableSpec("float", 1.1, 0.5, 10.0,
+        "max_boost": TuneableSpec("float", 2.0, 0.5, 2.0,
             "Ceiling for source boost — prevents runaway amplification of any single source"),
         "source_effectiveness": TuneableSpec("dict", {}, None, None, "Computed effectiveness rates"),
         "tuning_log": TuneableSpec("list", [], None, None, "Recent tuning events (max 50)"),
         "max_changes_per_cycle": TuneableSpec("int", 4, 1, 20, "Max source adjustments per cycle"),
+        "apply_cross_section_recommendations": TuneableSpec(
+            "bool", False, None, None,
+            "Allow auto-tuner to write recommendations outside auto_tuner.source_boosts",
+        ),
+        "recommendation_sections_allowlist": TuneableSpec(
+            "list", [], None, None,
+            "Optional allowlist of sections auto-tuner may update when cross-section writes are enabled",
+        ),
     },
 
     # ---- chip_merge: chip deduplication ----
@@ -364,17 +450,59 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
     "bridge_worker": {
         "enabled": TuneableSpec("bool", True, None, None, "Enable bridge worker"),
         "mind_sync_enabled": TuneableSpec("bool", True, None, None, "Enable incremental Mind sync each cycle"),
-        "mind_sync_limit": TuneableSpec("int", 8, 0, 200, "Max cognitive insights to sync to Mind per cycle"),
+        "mind_sync_limit": TuneableSpec("int", 20, 0, 200, "Max cognitive insights to sync to Mind per cycle"),
         "mind_sync_min_readiness": TuneableSpec("float", 0.45, 0.0, 1.0, "Min advisory readiness for Mind sync"),
         "mind_sync_min_reliability": TuneableSpec("float", 0.35, 0.0, 1.0, "Min reliability for Mind sync"),
         "mind_sync_max_age_s": TuneableSpec("int", 1209600, 0, 31536000, "Max insight age for Mind sync (s)"),
         "mind_sync_drain_queue": TuneableSpec("bool", True, None, None, "Drain bounded Mind offline queue each cycle"),
-        "mind_sync_queue_budget": TuneableSpec("int", 2, 0, 1000, "Max offline queue entries drained per cycle"),
+        "mind_sync_queue_budget": TuneableSpec("int", 25, 0, 1000, "Max offline queue entries drained per cycle"),
+        "openclaw_notify": TuneableSpec("bool", True, None, None, "Enable OpenClaw workspace notifications"),
+        "step_timeout_s": TuneableSpec("float", 45.0, 5.0, 300.0, "Per-step execution timeout (s)"),
+        "disable_timeouts": TuneableSpec("bool", False, None, None, "Disable all step timeouts"),
+        "gc_every": TuneableSpec("int", 3, 1, 100, "Run GC every N bridge cycles"),
+        "step_executor_workers": TuneableSpec("int", 4, 1, 16, "Thread pool size for step execution"),
+        "context_mind_reserved_slots": TuneableSpec("int", 1, 0, 10, "Reserved Mind slots in bridge context"),
+        "context_advisor_include_mind": TuneableSpec("bool", True, None, None, "Include Mind in advisor bridge context"),
+    },
+
+    # ---- sync ----
+    "sync": {
+        "mode": TuneableSpec("str", "core", None, None, "Sync adapter mode", ["core", "all"]),
+        "adapters_enabled": TuneableSpec("list", [], None, None, "Optional explicit sync target allowlist"),
+        "adapters_disabled": TuneableSpec("list", [], None, None, "Optional sync target denylist"),
+        "mind_limit": TuneableSpec("int", 2, 0, 6, "Max Mind highlights included in sync context"),
+    },
+
+    # ---- queue ----
+    "queue": {
+        "max_events": TuneableSpec("int", 10000, 100, 1000000, "Rotate queue after this many events"),
+        "max_queue_bytes": TuneableSpec("int", 10485760, 1048576, 1073741824, "Max queue file size in bytes"),
+        "compact_head_bytes": TuneableSpec("int", 5242880, 1048576, 134217728, "Head compaction target size in bytes"),
+        "tail_chunk_bytes": TuneableSpec("int", 65536, 4096, 4194304, "Tail read chunk size in bytes"),
     },
 
     # ---- memory_capture ----
     "memory_capture": {
         "enabled": TuneableSpec("bool", True, None, None, "Enable memory capture"),
+        "auto_save_threshold": TuneableSpec(
+            "float", 0.78, 0.1, 1.0, "Importance threshold for auto-save",
+        ),
+        "suggest_threshold": TuneableSpec(
+            "float", 0.68, 0.05, 0.99, "Importance threshold for suggestion queue",
+        ),
+        "max_capture_chars": TuneableSpec(
+            "int", 1200, 200, 20000, "Max characters captured from source text",
+        ),
+        "context_capture_chars": TuneableSpec(
+            "int", 520, 80, 2000, "Max characters retained for capture context snippets",
+        ),
+    },
+
+    # ---- request_tracker ----
+    "request_tracker": {
+        "max_pending": TuneableSpec("int", 50, 10, 500, "Max pending requests tracked"),
+        "max_completed": TuneableSpec("int", 200, 50, 5000, "Max completed requests retained"),
+        "max_age_seconds": TuneableSpec("float", 3600.0, 60.0, 604800.0, "Pending request timeout window"),
     },
 
     # ---- observatory: Obsidian pipeline visualization ----
@@ -395,6 +523,111 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "explore_tuning_max": TuneableSpec("int", 200, 1, 5000, "Max tuneable evolution entries to export"),
         "explore_decisions_max": TuneableSpec("int", 200, 1, 5000, "Max advisory decision ledger entries to export"),
         "explore_feedback_max": TuneableSpec("int", 200, 1, 5000, "Max implicit feedback entries to export"),
+        "eidos_curriculum_enabled": TuneableSpec("bool", True, None, None, "Enable EIDOS curriculum export into observatory"),
+        "eidos_curriculum_interval_s": TuneableSpec("int", 86400, 600, 604800, "Min seconds between curriculum rebuilds"),
+        "eidos_curriculum_max_rows": TuneableSpec("int", 300, 20, 5000, "Max EIDOS rows scanned per curriculum run"),
+        "eidos_curriculum_max_cards": TuneableSpec("int", 120, 10, 1000, "Max curriculum cards retained in latest report"),
+        "eidos_curriculum_include_archive": TuneableSpec("bool", True, None, None, "Include archived distillations in curriculum"),
+    },
+
+    # ---- feature_flags: cross-module boolean toggles ----
+    "feature_flags": {
+        "premium_tools": TuneableSpec("bool", False, None, None, "Enable premium/paid features"),
+        "chips_enabled": TuneableSpec("bool", False, None, None, "Enable chip insight system"),
+        "advisory_disable_chips": TuneableSpec("bool", False, None, None, "Disable chips for advisory only"),
+    },
+
+    # ---- observe_hook: Claude Code hook settings ----
+    "observe_hook": {
+        "eidos_enabled": TuneableSpec("bool", True, None, None, "Enable EIDOS episode tracking"),
+        "outcome_checkin_min_s": TuneableSpec("int", 1800, 60, 86400, "Min seconds between outcome check-ins"),
+        "advice_feedback_enabled": TuneableSpec("bool", True, None, None, "Enable advice feedback collection"),
+        "advice_feedback_prompt": TuneableSpec("bool", True, None, None, "Prompt user for advice feedback at session end"),
+        "advice_feedback_min_s": TuneableSpec("int", 600, 60, 86400, "Min seconds between feedback prompts"),
+        "pretool_budget_ms": TuneableSpec("float", 2500.0, 100.0, 10000.0, "Pre-tool advisory time budget (ms)"),
+        "eidos_enforce_block": TuneableSpec("bool", False, None, None, "Enforce EIDOS blocking on risky actions"),
+        "hook_payload_text_limit": TuneableSpec("int", 3000, 500, 50000, "Max text chars in hook payload"),
+        "outcome_checkin_enabled": TuneableSpec("bool", False, None, None, "Enable outcome check-in at session end"),
+        "outcome_checkin_prompt": TuneableSpec("bool", False, None, None, "Prompt user for outcome check-in"),
+    },
+
+    # ---- chips_runtime: chip execution settings ----
+    "chips_runtime": {
+        "observer_only": TuneableSpec("bool", True, None, None, "Run chips in observer-only mode"),
+        "min_score": TuneableSpec("float", 0.35, 0.0, 1.0, "Min insight score for chip output"),
+        "min_confidence": TuneableSpec("float", 0.7, 0.0, 1.0, "Min confidence for chip output"),
+        "gate_mode": TuneableSpec("str", "balanced", None, None, "Chip gate mode",
+                                   ["balanced", "strict", "permissive"]),
+        "min_learning_evidence": TuneableSpec("int", 1, 1, 50, "Min learning evidence count"),
+        "blocked_ids": TuneableSpec("str", "", None, None, "Comma-separated blocked chip IDs"),
+        "telemetry_observer_blocklist": TuneableSpec("str", "", None, None, "Comma-separated telemetry observer blocklist"),
+        "max_active_per_event": TuneableSpec("int", 6, 1, 20, "Max active chips per event"),
+        "preferred_format": TuneableSpec("str", "multifile", None, None, "Chip file format",
+                                          ["single", "multifile", "hybrid"]),
+        "schema_validation": TuneableSpec("str", "warn", None, None, "Schema validation mode",
+                                           ["warn", "block", "strict", "error", "off"]),
+    },
+
+    # ---- opportunity_scanner: self-evolution scanner ----
+    "opportunity_scanner": {
+        "enabled": TuneableSpec("bool", True, None, None, "Enable opportunity scanner"),
+        "self_max_items": TuneableSpec("int", 3, 1, 20, "Max self-scan items per cycle"),
+        "user_max_items": TuneableSpec("int", 2, 1, 20, "Max user-facing items per cycle"),
+        "max_history_lines": TuneableSpec("int", 500, 50, 10000, "Max history lines to scan"),
+        "self_dedup_window_s": TuneableSpec("float", 14400.0, 0.0, 604800.0, "Self dedup window (s)"),
+        "self_recent_lookback": TuneableSpec("int", 240, 20, 5000, "Self recent lookback count"),
+        "self_category_cap": TuneableSpec("int", 1, 1, 10, "Max items per self category"),
+        "user_scan_enabled": TuneableSpec("bool", False, None, None, "Enable user-facing scan"),
+        "scan_event_limit": TuneableSpec("int", 120, 0, 10000, "Max events per scan"),
+        "outcome_window_s": TuneableSpec("float", 21600.0, 300.0, 604800.0, "Outcome observation window (s)"),
+        "outcome_lookback": TuneableSpec("int", 200, 20, 10000, "Outcome lookback count"),
+        "promotion_min_successes": TuneableSpec("int", 2, 1, 50, "Min successes for promotion"),
+        "promotion_min_effectiveness": TuneableSpec("float", 0.66, 0.0, 1.0, "Min effectiveness for promotion"),
+        "promotion_lookback": TuneableSpec("int", 400, 20, 10000, "Promotion lookback count"),
+        "llm_enabled": TuneableSpec("bool", True, None, None, "Enable LLM-assisted scanning"),
+        "llm_provider": TuneableSpec("str", "", None, None, "LLM provider override"),
+        "llm_timeout_s": TuneableSpec("float", 2.5, 0.3, 30.0, "LLM call timeout (s)"),
+        "llm_max_items": TuneableSpec("int", 3, 1, 20, "Max LLM items per call"),
+        "llm_min_context_chars": TuneableSpec("int", 140, 0, 5000, "Min context chars for LLM"),
+        "llm_cooldown_s": TuneableSpec("float", 300.0, 0.0, 86400.0, "LLM call cooldown (s)"),
+        "decision_lookback": TuneableSpec("int", 500, 50, 10000, "Decision lookback count"),
+        "dismiss_ttl_s": TuneableSpec("float", 604800.0, 0.0, 2592000.0, "Dismiss TTL (s, default 7d)"),
+    },
+
+    # ---- prediction: prediction loop budget + auto-link ----
+    "prediction": {
+        "total_budget": TuneableSpec("int", 50, 20, 2000, "Total prediction budget"),
+        "default_source_budget": TuneableSpec("int", 30, 1, 2000, "Default per-source budget"),
+        "source_budgets": TuneableSpec("str", "", None, None, "CSV source=budget overrides (e.g. chip_merge=80,spark_inject=60)"),
+        "auto_link_enabled": TuneableSpec("bool", True, None, None, "Enable auto-linking predictions to outcomes"),
+        "auto_link_interval_s": TuneableSpec("float", 60.0, 30.0, 86400.0, "Auto-link interval (s)"),
+        "auto_link_limit": TuneableSpec("int", 200, 10, 1000, "Auto-link max items per run"),
+        "auto_link_min_sim": TuneableSpec("float", 0.20, 0.05, 0.95, "Auto-link min similarity threshold"),
+    },
+
+    # ---- memory_deltas: delta/patchified memory storage ----
+    "memory_deltas": {
+        "patchified_enabled": TuneableSpec("bool", False, None, None, "Enable patchified (chunked) memory storage"),
+        "deltas_enabled": TuneableSpec("bool", False, None, None, "Enable delta memory compaction"),
+        "delta_min_similarity": TuneableSpec("float", 0.86, 0.0, 1.0, "Min similarity for delta compaction"),
+        "patch_max_chars": TuneableSpec("int", 600, 120, 2000, "Max chars per memory patch"),
+        "patch_min_chars": TuneableSpec("int", 120, 40, 400, "Min chars per memory patch"),
+    },
+
+    # ---- orchestration: agent context injection ----
+    "orchestration": {
+        "inject_enabled": TuneableSpec("bool", False, None, None, "Enable Spark context injection into agent prompts"),
+        "context_max_chars": TuneableSpec("int", 1200, 50, 50000, "Max chars for injected context"),
+        "context_item_limit": TuneableSpec("int", 3, 1, 50, "Max context items to inject"),
+    },
+
+    # ---- feature_gates: per-module boolean feature toggles ----
+    "feature_gates": {
+        "personality_evolution": TuneableSpec("bool", False, None, None, "Enable personality evolution v1"),
+        "personality_observer": TuneableSpec("bool", False, None, None, "Enable personality evolution observer mode"),
+        "outcome_predictor": TuneableSpec("bool", False, None, None, "Enable outcome predictor for advisory gate"),
+        "cognitive_emotion_capture": TuneableSpec("bool", True, None, None, "Capture emotion state in cognitive snapshots"),
+        "learning_bridge": TuneableSpec("bool", True, None, None, "Enable learning systems bridge ingress"),
     },
 
     # ---- production_gates: quality enforcement ----
@@ -410,38 +643,210 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "max_advisory_store_queue_depth": TuneableSpec("int", 1200, 0, 100000, "Max advisory prefetch queue depth"),
         "max_advisory_top_category_concentration": TuneableSpec("float", 0.85, 0.0, 1.0, "Max top category concentration"),
     },
+
+    # ---- llm_areas: per-area LLM assist toggles ----
+    # 30 areas (20 learning + 10 architecture), each with _enabled/_provider/_timeout_s/_max_chars.
+    # All default to enabled=False (opt-in). Provider enum shared across all areas.
+    "llm_areas": {
+        # -- Learning System (20) --
+        "archive_rewrite_enabled": TuneableSpec("bool", False, None, None, "Enable LLM rewrite of suppressed archive statements"),
+        "archive_rewrite_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for archive rewrite", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "archive_rewrite_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for archive rewrite LLM call"),
+        "archive_rewrite_max_chars": TuneableSpec("int", 300, 50, 2000, "Max output chars for archive rewrite"),
+
+        "archive_rescue_enabled": TuneableSpec("bool", False, None, None, "Enable LLM rescue pass for low-unified items"),
+        "archive_rescue_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for archive rescue", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "archive_rescue_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for archive rescue LLM call"),
+        "archive_rescue_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for archive rescue"),
+
+        "system28_reformulate_enabled": TuneableSpec("bool", False, None, None, "Enable LLM reformulation to condition-action-reason"),
+        "system28_reformulate_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for reformulation", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "system28_reformulate_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for reformulation LLM call"),
+        "system28_reformulate_max_chars": TuneableSpec("int", 300, 50, 2000, "Max output chars for reformulation"),
+
+        "conflict_resolve_enabled": TuneableSpec("bool", False, None, None, "Enable LLM resolution of contradicting statements"),
+        "conflict_resolve_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for conflict resolution", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "conflict_resolve_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for conflict resolution LLM call"),
+        "conflict_resolve_max_chars": TuneableSpec("int", 500, 50, 3000, "Max output chars for conflict resolution"),
+
+        "evidence_compress_enabled": TuneableSpec("bool", False, None, None, "Enable LLM compression of verbose evidence"),
+        "evidence_compress_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for evidence compression", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "evidence_compress_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for evidence compression LLM call"),
+        "evidence_compress_max_chars": TuneableSpec("int", 300, 50, 2000, "Max output chars for evidence compression"),
+
+        "novelty_score_enabled": TuneableSpec("bool", False, None, None, "Enable LLM novelty scoring for memory capture"),
+        "novelty_score_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for novelty scoring", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "novelty_score_timeout_s": TuneableSpec("float", 4.0, 0.5, 60.0, "Timeout for novelty scoring LLM call"),
+        "novelty_score_max_chars": TuneableSpec("int", 100, 50, 1000, "Max output chars for novelty scoring"),
+
+        "missed_signal_detect_enabled": TuneableSpec("bool", False, None, None, "Enable LLM detection of missed high-signal prompts"),
+        "missed_signal_detect_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for missed signal detection", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "missed_signal_detect_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for missed signal detection LLM call"),
+        "missed_signal_detect_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for missed signal detection"),
+
+        "retrieval_rewrite_enabled": TuneableSpec("bool", False, None, None, "Enable LLM query rewriting for weak retrieval"),
+        "retrieval_rewrite_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for retrieval rewriting", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "retrieval_rewrite_timeout_s": TuneableSpec("float", 4.0, 0.5, 60.0, "Timeout for retrieval rewriting LLM call"),
+        "retrieval_rewrite_max_chars": TuneableSpec("int", 200, 50, 1000, "Max output chars for retrieval rewriting"),
+
+        "retrieval_explain_enabled": TuneableSpec("bool", False, None, None, "Enable LLM explanation of retrieval results"),
+        "retrieval_explain_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for retrieval explanation", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "retrieval_explain_timeout_s": TuneableSpec("float", 4.0, 0.5, 60.0, "Timeout for retrieval explanation LLM call"),
+        "retrieval_explain_max_chars": TuneableSpec("int", 200, 50, 1000, "Max output chars for retrieval explanation"),
+
+        "generic_demotion_enabled": TuneableSpec("bool", False, None, None, "Enable LLM demotion of generic memories"),
+        "generic_demotion_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for generic demotion", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "generic_demotion_timeout_s": TuneableSpec("float", 4.0, 0.5, 60.0, "Timeout for generic demotion LLM call"),
+        "generic_demotion_max_chars": TuneableSpec("int", 100, 50, 1000, "Max output chars for generic demotion"),
+
+        "meta_ralph_remediate_enabled": TuneableSpec("bool", False, None, None, "Enable LLM remediation for Meta-Ralph NEEDS_WORK"),
+        "meta_ralph_remediate_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for Meta-Ralph remediation", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "meta_ralph_remediate_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for Meta-Ralph remediation LLM call"),
+        "meta_ralph_remediate_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for Meta-Ralph remediation"),
+
+        "actionability_boost_enabled": TuneableSpec("bool", False, None, None, "Enable LLM actionability boost for low-action insights"),
+        "actionability_boost_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for actionability boost", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "actionability_boost_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for actionability boost LLM call"),
+        "actionability_boost_max_chars": TuneableSpec("int", 300, 50, 2000, "Max output chars for actionability boost"),
+
+        "specificity_augment_enabled": TuneableSpec("bool", False, None, None, "Enable LLM augmentation for vague statements"),
+        "specificity_augment_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for specificity augmentation", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "specificity_augment_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for specificity augmentation LLM call"),
+        "specificity_augment_max_chars": TuneableSpec("int", 300, 50, 2000, "Max output chars for specificity augmentation"),
+
+        "reasoning_patch_enabled": TuneableSpec("bool", False, None, None, "Enable LLM patching of weak reasoning chains"),
+        "reasoning_patch_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for reasoning patches", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "reasoning_patch_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for reasoning patch LLM call"),
+        "reasoning_patch_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for reasoning patches"),
+
+        "unsuppression_score_enabled": TuneableSpec("bool", False, None, None, "Enable LLM scoring of suppressed items for rescue"),
+        "unsuppression_score_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for unsuppression scoring", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "unsuppression_score_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for unsuppression scoring LLM call"),
+        "unsuppression_score_max_chars": TuneableSpec("int", 200, 50, 1000, "Max output chars for unsuppression scoring"),
+
+        "soft_promotion_triage_enabled": TuneableSpec("bool", False, None, None, "Enable LLM triage for archive recovery promotion"),
+        "soft_promotion_triage_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for soft promotion triage", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "soft_promotion_triage_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for soft promotion triage LLM call"),
+        "soft_promotion_triage_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for soft promotion triage"),
+
+        "outcome_link_reconstruct_enabled": TuneableSpec("bool", False, None, None, "Enable LLM reconstruction of outcome-action links"),
+        "outcome_link_reconstruct_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for outcome link reconstruction", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "outcome_link_reconstruct_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for outcome link reconstruction LLM call"),
+        "outcome_link_reconstruct_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for outcome link reconstruction"),
+
+        "implicit_feedback_interpret_enabled": TuneableSpec("bool", False, None, None, "Enable LLM interpretation of implicit user feedback"),
+        "implicit_feedback_interpret_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for implicit feedback interpretation", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "implicit_feedback_interpret_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for implicit feedback LLM call"),
+        "implicit_feedback_interpret_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for implicit feedback interpretation"),
+
+        "curriculum_gap_summarize_enabled": TuneableSpec("bool", False, None, None, "Enable LLM summarization of curriculum gaps"),
+        "curriculum_gap_summarize_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for curriculum gap summary", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "curriculum_gap_summarize_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for curriculum gap summary LLM call"),
+        "curriculum_gap_summarize_max_chars": TuneableSpec("int", 600, 50, 3000, "Max output chars for curriculum gap summary"),
+
+        "policy_autotuner_recommend_enabled": TuneableSpec("bool", False, None, None, "Enable LLM recommendations for policy autotuning"),
+        "policy_autotuner_recommend_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for policy autotuner", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "policy_autotuner_recommend_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for policy autotuner LLM call"),
+        "policy_autotuner_recommend_max_chars": TuneableSpec("int", 600, 50, 3000, "Max output chars for policy autotuner"),
+
+        # -- Architecture (10) --
+        "suppression_triage_enabled": TuneableSpec("bool", False, None, None, "Enable LLM triage of advisory suppressions"),
+        "suppression_triage_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for suppression triage", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "suppression_triage_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for suppression triage LLM call"),
+        "suppression_triage_max_chars": TuneableSpec("int", 200, 50, 1000, "Max output chars for suppression triage"),
+
+        "dedupe_optimize_enabled": TuneableSpec("bool", False, None, None, "Enable LLM-assisted dedupe key optimization"),
+        "dedupe_optimize_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for dedupe optimization", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "dedupe_optimize_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for dedupe optimization LLM call"),
+        "dedupe_optimize_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for dedupe optimization"),
+
+        "packet_rerank_enabled": TuneableSpec("bool", False, None, None, "Enable LLM reranking of advisory packets"),
+        "packet_rerank_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for packet reranking", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "packet_rerank_timeout_s": TuneableSpec("float", 4.0, 0.5, 60.0, "Timeout for packet reranking LLM call"),
+        "packet_rerank_max_chars": TuneableSpec("int", 200, 50, 1000, "Max output chars for packet reranking"),
+
+        "operator_now_synth_enabled": TuneableSpec("bool", False, None, None, "Enable LLM synthesis of operator briefings"),
+        "operator_now_synth_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for operator synthesis", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "operator_now_synth_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for operator synthesis LLM call"),
+        "operator_now_synth_max_chars": TuneableSpec("int", 600, 50, 3000, "Max output chars for operator synthesis"),
+
+        "drift_diagnose_enabled": TuneableSpec("bool", False, None, None, "Enable LLM diagnosis of cross-surface metric drift"),
+        "drift_diagnose_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for drift diagnosis", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "drift_diagnose_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for drift diagnosis LLM call"),
+        "drift_diagnose_max_chars": TuneableSpec("int", 500, 50, 3000, "Max output chars for drift diagnosis"),
+
+        "dead_widget_plan_enabled": TuneableSpec("bool", False, None, None, "Enable LLM planning for dead widget remediation"),
+        "dead_widget_plan_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for dead widget planning", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "dead_widget_plan_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for dead widget planning LLM call"),
+        "dead_widget_plan_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for dead widget planning"),
+
+        "error_translate_enabled": TuneableSpec("bool", False, None, None, "Enable LLM translation of errors to fix steps"),
+        "error_translate_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for error translation", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "error_translate_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for error translation LLM call"),
+        "error_translate_max_chars": TuneableSpec("int", 300, 50, 2000, "Max output chars for error translation"),
+
+        "config_advise_enabled": TuneableSpec("bool", False, None, None, "Enable LLM-assisted config change advice"),
+        "config_advise_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for config advice", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "config_advise_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for config advice LLM call"),
+        "config_advise_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for config advice"),
+
+        "canary_decide_enabled": TuneableSpec("bool", False, None, None, "Enable LLM-assisted canary pass/fail/hold decisions"),
+        "canary_decide_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for canary decisions", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "canary_decide_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for canary decision LLM call"),
+        "canary_decide_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for canary decisions"),
+
+        "canvas_enrich_enabled": TuneableSpec("bool", False, None, None, "Enable LLM enrichment of mission canvas task nodes"),
+        "canvas_enrich_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for canvas enrichment", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
+        "canvas_enrich_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for canvas enrichment LLM call"),
+        "canvas_enrich_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for canvas enrichment"),
+    },
 }
 
 # Sections with internal _doc keys that should not trigger unknown-key warnings
-_DOC_KEY_SECTIONS = {"source_roles"}
+_DOC_KEY_SECTIONS: set = {"source_roles", "scheduler"}
 
 # Module consumer map (which module reads which section)
 SECTION_CONSUMERS: Dict[str, List[str]] = {
     "values": ["lib/pipeline.py", "lib/advisor.py", "lib/eidos/models.py"],
+    "pipeline": ["lib/pipeline.py"],
     "semantic": ["lib/semantic_retriever.py", "lib/advisor.py"],
     "triggers": ["lib/advisor.py"],
     "promotion": ["lib/promoter.py", "lib/auto_promote.py"],
     "synthesizer": ["lib/advisory_synthesizer.py"],
-    "advisory_engine": ["lib/advisory_engine.py"],
+    "advisory_engine": ["lib/advisory_engine.py", "lib/advisory_emitter.py"],
     "advisory_gate": ["lib/advisory_gate.py", "lib/advisory_state.py"],
     "advisory_packet_store": ["lib/advisory_packet_store.py"],
     "advisory_prefetch": ["lib/advisory_prefetch_worker.py"],
     "advisor": ["lib/advisor.py"],
     "retrieval": ["lib/advisor.py", "lib/semantic_retriever.py"],
     "meta_ralph": ["lib/meta_ralph.py"],
-    "eidos": ["lib/eidos/models.py"],
-    "scheduler": ["lib/bridge_cycle.py"],
-    "source_roles": ["lib/advisory_engine.py", "lib/auto_tuner.py"],
+    "eidos": ["lib/eidos/models.py", "lib/eidos/guardrails.py", "lib/eidos/control_plane.py",
+              "lib/eidos/elevated_control.py", "lib/pattern_detection/distiller.py", "lib/llm.py"],
     "auto_tuner": ["lib/auto_tuner.py"],
-    "chip_merge": ["lib/chips/runtime.py"],
+    "chip_merge": ["lib/chips/runtime.py", "lib/chip_merger.py"],
     "advisory_quality": ["lib/advisory_synthesizer.py"],
     "advisory_preferences": ["lib/advisory_preferences.py"],
-    "memory_emotion": ["lib/memory_store.py"],
+    "memory_emotion": ["lib/memory_store.py", "lib/memory_banks.py"],
     "memory_learning": ["lib/memory_store.py"],
     "memory_retrieval_guard": ["lib/memory_store.py"],
-    "bridge_worker": ["lib/bridge_cycle.py"],
+    "bridge_worker": ["lib/bridge_cycle.py", "lib/bridge.py", "lib/bridge.py (context slots)"],
+    "sync": ["lib/context_sync.py"],
+    "queue": ["lib/queue.py"],
     "memory_capture": ["lib/memory_capture.py"],
+    "request_tracker": ["lib/pattern_detection/request_tracker.py"],
+    "observatory": ["lib/observatory/config.py"],
+    "feature_flags": ["lib/feature_flags.py", "lib/advisor.py", "lib/bridge_cycle.py",
+                      "lib/cognitive_learner.py", "lib/chips/runtime.py"],
     "production_gates": ["lib/production_gates.py"],
+    "observe_hook": ["hooks/observe.py"],
+    "chips_runtime": ["lib/chips/runtime.py", "lib/chips/loader.py"],
+    "opportunity_scanner": ["lib/opportunity_scanner.py"],
+    "prediction": ["lib/prediction_loop.py"],
+    "memory_deltas": ["lib/memory_store.py"],
+    "orchestration": ["lib/orchestration.py"],
+    "feature_gates": ["lib/personality_evolver.py", "lib/outcome_predictor.py",
+                      "lib/cognitive_learner.py", "lib/learning_systems_bridge.py"],
+    "llm_areas": ["lib/llm_dispatch.py"],
 }
 
 

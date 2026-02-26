@@ -134,6 +134,34 @@ def test_engine_config_exposes_global_dedupe_cooldown(monkeypatch):
     assert cfg["global_dedupe_cooldown_s"] == 180.0
 
 
+def test_engine_config_exposes_global_dedupe_scope(monkeypatch):
+    monkeypatch.setattr(advisory_engine, "GLOBAL_DEDUPE_SCOPE", "global")
+    advisory_engine.apply_engine_config({"global_dedupe_scope": "contextual"})
+    cfg = advisory_engine.get_engine_config()
+    assert cfg["global_dedupe_scope"] == "contextual"
+
+
+def test_engine_config_exposes_global_dedupe_scope_tree(monkeypatch):
+    monkeypatch.setattr(advisory_engine, "GLOBAL_DEDUPE_SCOPE", "global")
+    advisory_engine.apply_engine_config({"global_dedupe_scope": "tree"})
+    cfg = advisory_engine.get_engine_config()
+    assert cfg["global_dedupe_scope"] == "tree"
+
+
+def test_record_rejection_flushes_global_dedupe_suppressed(monkeypatch, tmp_path):
+    telemetry_file = tmp_path / "advisory_rejection_telemetry.json"
+    monkeypatch.setattr(advisory_engine, "REJECTION_TELEMETRY_FILE", telemetry_file)
+    monkeypatch.setattr(advisory_engine, "_rejection_counts", {})
+    monkeypatch.setattr(advisory_engine, "_rejection_flush_counter", 0)
+    monkeypatch.setattr(advisory_engine, "_rejection_flush_interval", 50)
+
+    advisory_engine._record_rejection("global_dedupe_suppressed")
+
+    assert telemetry_file.exists()
+    payload = json.loads(telemetry_file.read_text(encoding="utf-8"))
+    assert int(payload.get("global_dedupe_suppressed", 0)) >= 1
+
+
 def test_fallback_rate_guard_blocks_when_recent_ratio_exceeded(monkeypatch, tmp_path):
     log_path = tmp_path / "advisory_engine.jsonl"
     rows = []
