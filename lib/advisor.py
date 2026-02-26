@@ -2405,7 +2405,7 @@ class SparkAdvisor:
             query_tokens = {t for t in re.findall(r"[a-z0-9_]+", (context or "").lower()) if len(t) >= 3}
         tool = str(tool_name or "").strip().lower()
         scored: List[Tuple[float, str, Any]] = []
-        fallback: List[Tuple[float, str, Any]] = []
+        readiness_backstop: List[Tuple[float, str, Any]] = []
         for key, insight in working_set.items():
             blob_tokens, blob = self._prefilter_cached_blob_tokens(str(key), insight)
             if drop_low_signal and self._should_drop_low_signal_candidate(blob):
@@ -2416,19 +2416,16 @@ class SparkAdvisor:
             metadata_boost = 2.0 if tool and tool in blob else 0.0
             reliability = float(getattr(insight, "reliability", 0.5) or 0.5)
             readiness = self._insight_readiness_score(insight)
+            readiness_backstop.append((readiness + (reliability * 0.15), key, insight))
             score = (overlap * 3.5) + (intent_coverage * 2.0) + metadata_boost + reliability + (readiness * 1.4)
             if overlap > 0 or metadata_boost > 0 or intent_coverage >= 0.2:
                 scored.append((score, key, insight))
-            else:
-                fallback.append((reliability + (readiness * 0.6), key, insight))
 
         ranked: List[Tuple[float, str, Any]] = sorted(scored, key=lambda row: row[0], reverse=True)
-        if len(ranked) < limit:
-            ranked.extend(sorted(fallback, key=lambda row: row[0], reverse=True)[: max(0, limit - len(ranked))])
+        if not ranked:
+            ranked = sorted(readiness_backstop, key=lambda row: row[0], reverse=True)
 
         selected = ranked[:limit]
-        if not selected:
-            return working_set
         return {key: insight for _, key, insight in selected}
 
     def _get_allowed_domains(self, tool_name: str, context: str) -> set:
