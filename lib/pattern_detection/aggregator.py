@@ -59,7 +59,7 @@ def _log_pattern(pattern: DetectedPattern):
     """Append pattern to log file."""
     try:
         PATTERNS_LOG.parent.mkdir(parents=True, exist_ok=True)
-        with open(PATTERNS_LOG, "a") as f:
+        with open(PATTERNS_LOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(pattern.to_dict()) + "\n")
     except Exception:
         pass

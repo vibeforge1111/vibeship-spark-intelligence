@@ -227,7 +227,7 @@ Review and validate this insight. If confirmed, consider promoting to CLAUDE.md 
         entry = self.insight_to_markdown(insight)
         learnings_file = self.learnings_dir / "LEARNINGS.md"
         
-        with open(learnings_file, "a") as f:
+        with open(learnings_file, "a", encoding="utf-8") as f:
             f.write(entry)
         
         entry_id = entry.split("]")[0].split("[")[1]
@@ -241,7 +241,7 @@ Review and validate this insight. If confirmed, consider promoting to CLAUDE.md 
         entry = self.error_to_markdown(tool_name, error, context or {})
         errors_file = self.learnings_dir / "ERRORS.md"
         
-        with open(errors_file, "a") as f:
+        with open(errors_file, "a", encoding="utf-8") as f:
             f.write(entry)
         
         entry_id = entry.split("]")[0].split("[")[1]
@@ -271,7 +271,7 @@ Review and validate this insight. If confirmed, consider promoting to CLAUDE.md 
         
         # Update written tracker
         if new_hashes:
-            with open(written_file, "a") as f:
+            with open(written_file, "a", encoding="utf-8") as f:
                 f.write("\n".join(new_hashes) + "\n")
         
         print(f"[SPARK] Markdown write complete: {stats}")

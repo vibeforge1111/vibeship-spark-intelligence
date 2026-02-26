@@ -1502,7 +1502,7 @@ class SparkAdvisor:
                 suffix=".tmp"
             )
             try:
-                with os.fdopen(fd, 'w') as f:
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
                     json.dump(merged, f, indent=2)
                 # Atomic replace (os.replace works on Windows without separate unlink)
                 os.replace(temp_path, str(EFFECTIVENESS_FILE))

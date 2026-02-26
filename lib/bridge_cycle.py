@@ -811,11 +811,11 @@ def run_bridge_cycle(
             counter = 0
             if _eidos_counter_file.exists():
                 try:
-                    counter = int(_eidos_counter_file.read_text().strip())
+                    counter = int(_eidos_counter_file.read_text(encoding="utf-8").strip())
                 except Exception:
                     counter = 0
             counter += 1
-            _eidos_counter_file.write_text(str(counter))
+            _eidos_counter_file.write_text(str(counter), encoding="utf-8")
 
             opp_stats = stats.get("opportunity_scanner") or {}
             opp_promotions = (opp_stats.get("promoted_candidates") or []) if isinstance(opp_stats, dict) else []

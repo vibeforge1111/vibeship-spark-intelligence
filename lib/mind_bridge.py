@@ -371,7 +371,7 @@ class MindBridge:
             "advisory_readiness": memory_data.get("advisory_readiness") if isinstance(memory_data, dict) else None,
         }
         
-        with open(OFFLINE_QUEUE_FILE, "a") as f:
+        with open(OFFLINE_QUEUE_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
     
     def sync_insight(self, insight: CognitiveInsight) -> SyncResult:
@@ -644,7 +644,7 @@ class MindBridge:
         """Get bridge statistics."""
         queue_size = 0
         if OFFLINE_QUEUE_FILE.exists():
-            with open(OFFLINE_QUEUE_FILE, "r") as f:
+            with open(OFFLINE_QUEUE_FILE, "r", encoding="utf-8") as f:
                 queue_size = sum(1 for _ in f)
         
         return {

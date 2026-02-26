@@ -326,7 +326,7 @@ class DepthAnswerGenerator:
             "status": "success" if answer else "failure",
         }
         try:
-            with open(_DEEPSEEK_LOG_PATH, "a") as f:
+            with open(_DEEPSEEK_LOG_PATH, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry) + "\n")
         except Exception:
             pass
