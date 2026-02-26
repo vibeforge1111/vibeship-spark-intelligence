@@ -23,6 +23,15 @@ INTENT_PATTERNS: List[Tuple[str, float, str]] = [
     (r"\bprefer\b", 0.65, "preference"),
     (r"\bswitch\s+to\b", 0.65, "redirect"),
     (r"\boption\s+[a-z0-9]\b", 0.6, "choice"),
+    (r"\bnon[-\s]?negotiable\b", 0.8, "constraint"),
+    (r"\bmust\s+not\b", 0.8, "constraint"),
+    (r"\bconstraint\b", 0.75, "constraint"),
+    (r"\bdeadline\b", 0.72, "constraint"),
+    (r"\bscope\b", 0.68, "constraint"),
+    (r"\btrade[\s-]?off\b", 0.72, "tradeoff"),
+    (r"\brisk\b", 0.68, "tradeoff"),
+    (r"\bdecision\b", 0.68, "decision"),
+    (r"\bwe\s+decided\b", 0.75, "decision"),
 ]
 
 
@@ -46,6 +55,11 @@ def _extract_preference(text: str) -> Dict[str, str]:
     m = re.search(r"\boption\s+([a-z0-9]+)\b", text, re.I)
     if m:
         return {"wanted": f"option {m.group(1).lower()}"}
+
+    # "non-negotiable: X", "constraint: X", "decision: X"
+    m = re.search(r"\b(?:non[-\s]?negotiable|constraint|decision)\s*[:\-]\s*(.+?)(?:[.!?]|$)", text, re.I)
+    if m:
+        return {"wanted": m.group(1).strip()}
 
     return {}
 
@@ -136,10 +150,20 @@ class SemanticIntentDetector(PatternDetector):
 
         suggested_insight = None
         if confidence >= 0.7 and wanted:
-            if rejected:
+            if best_label == "constraint":
+                suggested_insight = f"Constraint: {wanted}"
+            elif best_label in {"decision", "tradeoff"}:
+                suggested_insight = f"Decision signal: {wanted}"
+            elif rejected:
                 suggested_insight = f"User prefers '{wanted}' over '{rejected}'"
             else:
                 suggested_insight = f"User prefers: {wanted}"
+
+        suggested_category = "user_understanding"
+        if best_label == "constraint":
+            suggested_category = "context"
+        elif best_label in {"decision", "tradeoff"}:
+            suggested_category = "reasoning"
 
         patterns.append(DetectedPattern(
             pattern_type=PatternType.CORRECTION,
@@ -148,7 +172,7 @@ class SemanticIntentDetector(PatternDetector):
             context=context,
             session_id=session_id,
             suggested_insight=suggested_insight,
-            suggested_category="user_understanding",
+            suggested_category=suggested_category,
         ))
 
         return patterns

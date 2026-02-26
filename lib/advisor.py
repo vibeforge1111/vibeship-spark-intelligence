@@ -17,30 +17,32 @@ The Solution:
 KISS Principle: Single file, simple API, maximum impact.
 """
 
+import hashlib
 import json
 import logging
+import math
+import os
+import re
+import sys
 import threading
 import time
-import hashlib
-import os
-import sys
-import re
-import math
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, List, Any, Tuple
-from dataclasses import dataclass, field, asdict
+from typing import Any, Dict, List, Optional, Tuple
+
+from .advisory_quarantine import record_quarantine_item
 
 # Import existing Spark components
-from .cognitive_learner import get_cognitive_learner, CognitiveCategory
-from .mind_bridge import get_mind_bridge, HAS_REQUESTS
-from .memory_banks import retrieve as bank_retrieve, infer_project_key
-from .advisory_quarantine import record_quarantine_item
+from .cognitive_learner import get_cognitive_learner
 from .distillation_transformer import transform_for_advisory as _transform_distillation
+from .memory_banks import infer_project_key
+from .memory_banks import retrieve as bank_retrieve
+from .mind_bridge import HAS_REQUESTS, get_mind_bridge
 
 # EIDOS integration for distillation retrieval
 try:
-    from .eidos import get_retriever, StructuralRetriever
+    from .eidos import StructuralRetriever, get_retriever
     HAS_EIDOS = True
 except ImportError:
     HAS_EIDOS = False
@@ -85,39 +87,32 @@ _TRANSCRIPT_ARTIFACT_PATTERNS = (
     re.compile(r"^\s*#\s*spark\s", re.I),
 )
 RECENT_OUTCOMES_MAX = 5000
-REPLAY_ADVISORY_ENABLED = os.environ.get("SPARK_ADVISORY_REPLAY_ENABLED", "1") != "0"
-REPLAY_MIN_STRICT_SAMPLES = int(os.environ.get("SPARK_ADVISORY_REPLAY_MIN_STRICT", "4") or 4)
-REPLAY_MIN_IMPROVEMENT_DELTA = float(
-    os.environ.get("SPARK_ADVISORY_REPLAY_MIN_DELTA", "0.20") or 0.20
-)
-REPLAY_MAX_RECORDS = int(os.environ.get("SPARK_ADVISORY_REPLAY_MAX_RECORDS", "3500") or 3500)
-REPLAY_MAX_AGE_S = int(os.environ.get("SPARK_ADVISORY_REPLAY_MAX_AGE_S", str(21 * 86400)) or (21 * 86400))
-REPLAY_STRICT_WINDOW_S = int(os.environ.get("SPARK_ADVISORY_REPLAY_STRICT_WINDOW_S", "1200") or 1200)
-REPLAY_MIN_CONTEXT_MATCH = float(os.environ.get("SPARK_ADVISORY_REPLAY_MIN_CONTEXT", "0.12") or 0.12)
-REPLAY_MODE = "replay" if REPLAY_ADVISORY_ENABLED else "off"
+# Defaults — overridden by config-authority resolution in _load_advisor_config().
+REPLAY_ADVISORY_ENABLED = True
+REPLAY_MIN_STRICT_SAMPLES = 4
+REPLAY_MIN_IMPROVEMENT_DELTA = 0.20
+REPLAY_MAX_RECORDS = 3500
+REPLAY_MAX_AGE_S = 21 * 86400
+REPLAY_STRICT_WINDOW_S = 1200
+REPLAY_MIN_CONTEXT_MATCH = 0.12
+REPLAY_MODE = "replay"
 GUIDANCE_STYLE = "balanced"
 
-# Thresholds (Improvement #8: Advisor Integration tuneables)
-# Defaults — overridden by ~/.spark/tuneables.json → "advisor" section at module load.
-MIN_RELIABILITY_FOR_ADVICE = 0.5  # Lowered from 0.6 for more advice coverage
+# Thresholds — overridden by config-authority resolution in _load_advisor_config().
+MIN_RELIABILITY_FOR_ADVICE = 0.5
 MIN_VALIDATIONS_FOR_STRONG_ADVICE = 2
-# Default to a wider surface area; ranking/gates should keep quality high.
-# Some experiments may tune this lower via config.
 MAX_ADVICE_ITEMS = 8
-ADVICE_CACHE_TTL_SECONDS = 120  # 2 minutes (lowered from 5 for fresher advice)
-MIN_RANK_SCORE = 0.35  # Additive 3-factor scoring: avg good insight ~0.50, weak ~0.35
+ADVICE_CACHE_TTL_SECONDS = 120
+MIN_RANK_SCORE = 0.35
 CATEGORY_EFFECTIVENESS_MIN_SURFACE = 6
 CATEGORY_EFFECTIVENESS_DECAY_SECONDS = 14 * 24 * 3600
 CATEGORY_EFFECTIVENESS_STALE_SECONDS = 180 * 24 * 3600
 AUTO_TUNER_SOURCE_BOOSTS: Dict[str, float] = {}
-MIND_MAX_STALE_SECONDS = float(os.environ.get("SPARK_ADVISOR_MIND_MAX_STALE_S", "0"))
-MIND_STALE_ALLOW_IF_EMPTY = os.environ.get("SPARK_ADVISOR_MIND_STALE_ALLOW_IF_EMPTY", "1") != "0"
-MIND_MIN_SALIENCE = float(os.environ.get("SPARK_ADVISOR_MIND_MIN_SALIENCE", "0.5"))
-MIND_RESERVE_SLOTS = max(0, int(os.environ.get("SPARK_ADVISOR_MIND_RESERVE_SLOTS", "1") or 1))
-MIND_RESERVE_MIN_RANK = max(
-    0.0,
-    min(1.0, float(os.environ.get("SPARK_ADVISOR_MIND_RESERVE_MIN_RANK", "0.45") or 0.45)),
-)
+MIND_MAX_STALE_SECONDS: float = 0.0
+MIND_STALE_ALLOW_IF_EMPTY: bool = True
+MIND_MIN_SALIENCE: float = 0.5
+MIND_RESERVE_SLOTS: int = 1
+MIND_RESERVE_MIN_RANK: float = 0.45
 RETRIEVAL_ROUTE_LOG = ADVISOR_DIR / "retrieval_router.jsonl"
 RETRIEVAL_ROUTE_LOG_MAX = 800
 
@@ -621,28 +616,28 @@ def _chips_disabled() -> bool:
 
 
 def _chips_enabled() -> bool:
+    """Check if chip insights are enabled.
+
+    Advisor uses default-ON semantics for local OSS dev (empty env = enabled).
+    This differs from bridge_cycle/chips which use default-OFF via feature_flags.
+    Reads env directly since this is called per-request and must reflect current state.
+    """
     if str(os.environ.get("SPARK_ADVISORY_DISABLE_CHIPS", "")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
+        "1", "true", "yes", "on",
     }:
         return False
     chips_raw = str(os.environ.get("SPARK_CHIPS_ENABLED", "")).strip().lower()
     premium_raw = str(os.environ.get("SPARK_PREMIUM_TOOLS", "")).strip().lower()
     truthy = {"1", "true", "yes", "on"}
-    # Default-on for local OSS behavior unless explicitly disabled.
     chips_switch = True if not chips_raw else chips_raw in truthy
     premium_switch = True if not premium_raw else premium_raw in truthy
     return chips_switch and premium_switch
 
 
 def _premium_tools_enabled() -> bool:
+    """Check if premium tools are enabled. Reads env directly per-request."""
     return str(os.environ.get("SPARK_PREMIUM_TOOLS", "")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
+        "1", "true", "yes", "on",
     }
 
 
@@ -679,17 +674,31 @@ def _load_advisor_config() -> None:
                     return
             except Exception:
                 return
+        from .config_authority import env_bool, env_float, env_int, resolve_section
         tuneables = Path.home() / ".spark" / "tuneables.json"
         if not tuneables.exists():
             return
-        try:
-            data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-        except Exception:
-            data = json.loads(tuneables.read_text(encoding="utf-8"))
-        cfg = data.get("advisor") or {}
+        cfg = resolve_section(
+            "advisor",
+            runtime_path=tuneables,
+            env_overrides={
+                "replay_enabled": env_bool("SPARK_ADVISORY_REPLAY_ENABLED"),
+                "replay_min_strict": env_int("SPARK_ADVISORY_REPLAY_MIN_STRICT"),
+                "replay_min_delta": env_float("SPARK_ADVISORY_REPLAY_MIN_DELTA"),
+                "replay_max_records": env_int("SPARK_ADVISORY_REPLAY_MAX_RECORDS"),
+                "replay_max_age_s": env_int("SPARK_ADVISORY_REPLAY_MAX_AGE_S"),
+                "replay_strict_window_s": env_int("SPARK_ADVISORY_REPLAY_STRICT_WINDOW_S"),
+                "replay_min_context": env_float("SPARK_ADVISORY_REPLAY_MIN_CONTEXT"),
+                "mind_max_stale_s": env_float("SPARK_ADVISOR_MIND_MAX_STALE_S"),
+                "mind_stale_allow_if_empty": env_bool("SPARK_ADVISOR_MIND_STALE_ALLOW_IF_EMPTY"),
+                "mind_min_salience": env_float("SPARK_ADVISOR_MIND_MIN_SALIENCE"),
+                "mind_reserve_slots": env_int("SPARK_ADVISOR_MIND_RESERVE_SLOTS"),
+                "mind_reserve_min_rank": env_float("SPARK_ADVISOR_MIND_RESERVE_MIN_RANK"),
+            },
+        ).data
         if not isinstance(cfg, dict):
             cfg = {}
-        auto_cfg = data.get("auto_tuner") or {}
+        auto_cfg = resolve_section("auto_tuner", runtime_path=tuneables).data
         if isinstance(auto_cfg, dict):
             raw_boosts = auto_cfg.get("source_boosts")
             if isinstance(raw_boosts, dict):
@@ -707,9 +716,9 @@ def _load_advisor_config() -> None:
                     parsed[source] = max(0.0, min(2.0, boost))
                 AUTO_TUNER_SOURCE_BOOSTS = parsed
         # Fall back to top-level "values" for advice_cache_ttl (backward compat)
-        values = data.get("values") or {}
-        if isinstance(values, dict) and "advice_cache_ttl" in values and "cache_ttl" not in cfg:
-            cfg["cache_ttl"] = values["advice_cache_ttl"]
+        values_cfg = resolve_section("values", runtime_path=tuneables).data
+        if isinstance(values_cfg, dict) and "advice_cache_ttl" in values_cfg and "cache_ttl" not in cfg:
+            cfg["cache_ttl"] = values_cfg["advice_cache_ttl"]
         if "min_reliability" in cfg:
             MIN_RELIABILITY_FOR_ADVICE = float(cfg["min_reliability"])
         if "min_validations_strong" in cfg:
@@ -1409,8 +1418,8 @@ class SparkAdvisor:
         2. Merge with in-memory deltas
         3. Write atomically via temp file
         """
-        import tempfile
         import os
+        import tempfile
 
         try:
             # Read current disk state to merge (handles multiple processes)
@@ -1787,20 +1796,46 @@ class SparkAdvisor:
         return policy
 
     def _load_retrieval_policy(self) -> Dict[str, Any]:
-        """Load retrieval routing policy from tuneables + env."""
-        level = str(os.getenv("SPARK_RETRIEVAL_LEVEL", "1") or "1").strip()
+        """Load retrieval routing policy from tuneables + env via config-authority."""
+        level = "1"
+        policy: Dict[str, Any] = {}
+
+        # Resolve retrieval section via config-authority (handles env overrides).
+        retrieval_cfg: Dict[str, Any] = {}
+        try:
+            from .config_authority import env_bool, env_float, env_int, env_str, resolve_section
+            retrieval_cfg = resolve_section(
+                "retrieval",
+                env_overrides={
+                    "mode": env_str("SPARK_RETRIEVAL_MODE"),
+                    "level": env_str("SPARK_RETRIEVAL_LEVEL"),
+                    "minimax_fast_rerank": env_bool("SPARK_ADVISORY_MINIMAX_FAST_RERANK"),
+                    "minimax_fast_rerank_top_k": env_int("SPARK_ADVISORY_MINIMAX_TOP_K"),
+                    "minimax_fast_rerank_min_items": env_int("SPARK_ADVISORY_MINIMAX_MIN_ITEMS"),
+                    "minimax_fast_rerank_min_complexity": env_int("SPARK_ADVISORY_MINIMAX_MIN_COMPLEXITY"),
+                    "minimax_fast_rerank_high_volume_min_items": env_int("SPARK_ADVISORY_MINIMAX_HIGH_VOLUME_ITEMS"),
+                    "minimax_fast_rerank_require_agentic": env_bool("SPARK_ADVISORY_MINIMAX_REQUIRE_AGENTIC"),
+                    "minimax_fast_rerank_model": env_str("SPARK_ADVISORY_MINIMAX_MODEL"),
+                    "minimax_fast_rerank_timeout_s": env_float("SPARK_ADVISORY_MINIMAX_TIMEOUT_S"),
+                    "minimax_fast_rerank_cooldown_s": env_float("SPARK_ADVISORY_MINIMAX_COOLDOWN_S"),
+                },
+            ).data
+        except Exception:
+            pass
+
+        # Determine level from resolved config.
+        level = str(retrieval_cfg.get("level") or "1").strip()
         if level not in DEFAULT_RETRIEVAL_PROFILES:
             level = "1"
         policy = dict(DEFAULT_RETRIEVAL_PROFILES[level])
         policy["level"] = level
 
-        # Optional overrides from tuneables.json -> retrieval section.
+        # Apply overrides from tuneables.json -> retrieval section (file-based).
         advisor_policy: Optional[Dict[str, Any]] = None
         retrieval_keys_present: set = set()
         try:
             tuneables = Path.home() / ".spark" / "tuneables.json"
             if tuneables.exists():
-                # Windows editors commonly write UTF-8 with BOM; accept both.
                 data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
                 advisor = data.get("advisor") or {}
                 if isinstance(advisor, dict):
@@ -1824,84 +1859,42 @@ class SparkAdvisor:
                         policy["domain_profiles"] = domain_profiles
                     overrides = retrieval.get("overrides") or {}
                     if isinstance(overrides, dict):
-                        for key in (
-                            "semantic_context_min",
-                            "semantic_lexical_min",
-                            "semantic_strong_override",
-                            "lexical_weight",
-                            "semantic_intent_min",
-                            "intent_coverage_weight",
-                            "support_boost_weight",
-                            "reliability_weight",
-                            "minimax_fast_rerank",
-                            "minimax_fast_rerank_top_k",
-                            "minimax_fast_rerank_min_items",
-                            "minimax_fast_rerank_min_complexity",
+                        minimax_keys = {
+                            "minimax_fast_rerank", "minimax_fast_rerank_top_k",
+                            "minimax_fast_rerank_min_items", "minimax_fast_rerank_min_complexity",
                             "minimax_fast_rerank_high_volume_min_items",
-                            "minimax_fast_rerank_require_agentic",
-                            "minimax_fast_rerank_model",
-                            "minimax_fast_rerank_timeout_s",
-                            "minimax_fast_rerank_cooldown_s",
-                        ):
+                            "minimax_fast_rerank_require_agentic", "minimax_fast_rerank_model",
+                            "minimax_fast_rerank_timeout_s", "minimax_fast_rerank_cooldown_s",
+                        }
+                        tracked = {
+                            "semantic_context_min", "semantic_lexical_min",
+                            "semantic_strong_override", "lexical_weight",
+                            "semantic_intent_min", "intent_coverage_weight",
+                            "support_boost_weight", "reliability_weight",
+                        } | minimax_keys
+                        for key in tracked:
                             if key in overrides:
                                 retrieval_keys_present.add(key)
                         policy.update(overrides)
-                    # Flat top-level retrieval keys are also treated as overrides.
                     for key in (
-                        "mode",
-                        "gate_strategy",
-                        "semantic_limit",
-                        "semantic_context_min",
-                        "semantic_lexical_min",
-                        "semantic_strong_override",
-                        "max_queries",
-                        "agentic_query_limit",
-                        "agentic_deadline_ms",
-                        "agentic_rate_limit",
-                        "agentic_rate_window",
-                        "fast_path_budget_ms",
-                        "deny_escalation_when_over_budget",
-                        "prefilter_enabled",
-                        "prefilter_max_insights",
-                        "prefilter_drop_low_signal",
-                        "lexical_weight",
-                        "intent_coverage_weight",
-                        "support_boost_weight",
-                        "reliability_weight",
-                        "bm25_k1",
-                        "bm25_b",
-                        "bm25_mix",
-                        "semantic_intent_min",
-                        "complexity_threshold",
-                        "min_results_no_escalation",
-                        "min_top_score_no_escalation",
-                        "escalate_on_weak_primary",
-                        "escalate_on_high_risk",
-                        "escalate_on_trigger",
-                        "domain_profile_enabled",
+                        "mode", "gate_strategy", "semantic_limit",
+                        "semantic_context_min", "semantic_lexical_min",
+                        "semantic_strong_override", "max_queries",
+                        "agentic_query_limit", "agentic_deadline_ms",
+                        "agentic_rate_limit", "agentic_rate_window",
+                        "fast_path_budget_ms", "deny_escalation_when_over_budget",
+                        "prefilter_enabled", "prefilter_max_insights",
+                        "prefilter_drop_low_signal", "lexical_weight",
+                        "intent_coverage_weight", "support_boost_weight",
+                        "reliability_weight", "bm25_k1", "bm25_b", "bm25_mix",
+                        "semantic_intent_min", "complexity_threshold",
+                        "min_results_no_escalation", "min_top_score_no_escalation",
+                        "escalate_on_weak_primary", "escalate_on_high_risk",
+                        "escalate_on_trigger", "domain_profile_enabled",
                         "domain_profiles",
                     ):
                         if key in retrieval:
                             policy[key] = retrieval.get(key)
-                        if key in {
-                            "semantic_context_min",
-                            "semantic_lexical_min",
-                            "semantic_strong_override",
-                            "lexical_weight",
-                            "semantic_intent_min",
-                            "intent_coverage_weight",
-                            "support_boost_weight",
-                            "reliability_weight",
-                            "minimax_fast_rerank",
-                            "minimax_fast_rerank_top_k",
-                            "minimax_fast_rerank_min_items",
-                            "minimax_fast_rerank_min_complexity",
-                            "minimax_fast_rerank_high_volume_min_items",
-                            "minimax_fast_rerank_require_agentic",
-                            "minimax_fast_rerank_model",
-                            "minimax_fast_rerank_timeout_s",
-                            "minimax_fast_rerank_cooldown_s",
-                        }:
                             retrieval_keys_present.add(key)
         except Exception:
             pass
@@ -1912,59 +1905,20 @@ class SparkAdvisor:
             effective_policy=policy,
         )
 
-        env_mode = str(os.getenv("SPARK_RETRIEVAL_MODE", "") or "").strip().lower()
-        if env_mode in {"auto", "embeddings_only", "hybrid_agentic"}:
-            policy["mode"] = env_mode
-
-        env_minimax_fast = str(os.getenv("SPARK_ADVISORY_MINIMAX_FAST_RERANK", "") or "").strip().lower()
-        if env_minimax_fast in {"1", "true", "yes", "on"}:
-            policy["minimax_fast_rerank"] = True
-        elif env_minimax_fast in {"0", "false", "no", "off"}:
-            policy["minimax_fast_rerank"] = False
-        env_minimax_top_k = os.getenv("SPARK_ADVISORY_MINIMAX_TOP_K")
-        if env_minimax_top_k is not None:
-            try:
-                policy["minimax_fast_rerank_top_k"] = max(4, int(env_minimax_top_k))
-            except Exception:
-                pass
-        env_minimax_min_items = os.getenv("SPARK_ADVISORY_MINIMAX_MIN_ITEMS")
-        if env_minimax_min_items is not None:
-            try:
-                policy["minimax_fast_rerank_min_items"] = max(6, int(env_minimax_min_items))
-            except Exception:
-                pass
-        env_minimax_min_complexity = os.getenv("SPARK_ADVISORY_MINIMAX_MIN_COMPLEXITY")
-        if env_minimax_min_complexity is not None:
-            try:
-                policy["minimax_fast_rerank_min_complexity"] = max(0, int(env_minimax_min_complexity))
-            except Exception:
-                pass
-        env_minimax_high_volume_items = os.getenv("SPARK_ADVISORY_MINIMAX_HIGH_VOLUME_ITEMS")
-        if env_minimax_high_volume_items is not None:
-            try:
-                policy["minimax_fast_rerank_high_volume_min_items"] = max(0, int(env_minimax_high_volume_items))
-            except Exception:
-                pass
-        env_minimax_require_agentic = str(os.getenv("SPARK_ADVISORY_MINIMAX_REQUIRE_AGENTIC") or "").strip().lower()
-        if env_minimax_require_agentic in {"1", "true", "yes", "on"}:
-            policy["minimax_fast_rerank_require_agentic"] = True
-        elif env_minimax_require_agentic in {"0", "false", "no", "off"}:
-            policy["minimax_fast_rerank_require_agentic"] = False
-        env_minimax_model = str(os.getenv("SPARK_ADVISORY_MINIMAX_MODEL") or "").strip()
-        if env_minimax_model:
-            policy["minimax_fast_rerank_model"] = env_minimax_model
-        env_minimax_timeout = os.getenv("SPARK_ADVISORY_MINIMAX_TIMEOUT_S")
-        if env_minimax_timeout is not None:
-            try:
-                policy["minimax_fast_rerank_timeout_s"] = max(2.0, float(env_minimax_timeout))
-            except Exception:
-                pass
-        env_minimax_cooldown = os.getenv("SPARK_ADVISORY_MINIMAX_COOLDOWN_S")
-        if env_minimax_cooldown is not None:
-            try:
-                policy["minimax_fast_rerank_cooldown_s"] = max(0.0, float(env_minimax_cooldown))
-            except Exception:
-                pass
+        # Apply resolved config-authority values for minimax + mode (env wins).
+        if retrieval_cfg:
+            env_mode = str(retrieval_cfg.get("mode") or "").strip().lower()
+            if env_mode in {"auto", "embeddings_only", "hybrid_agentic"}:
+                policy["mode"] = env_mode
+            for mk in (
+                "minimax_fast_rerank", "minimax_fast_rerank_top_k",
+                "minimax_fast_rerank_min_items", "minimax_fast_rerank_min_complexity",
+                "minimax_fast_rerank_high_volume_min_items",
+                "minimax_fast_rerank_require_agentic", "minimax_fast_rerank_model",
+                "minimax_fast_rerank_timeout_s", "minimax_fast_rerank_cooldown_s",
+            ):
+                if mk in retrieval_cfg:
+                    policy[mk] = retrieval_cfg[mk]
 
         # Normalize types.
         policy["mode"] = str(policy.get("mode") or "auto").strip().lower()
@@ -2068,33 +2022,26 @@ class SparkAdvisor:
 
         cfg = dict(MEMORY_EMOTION_DEFAULTS)
         try:
-            if tuneables.exists():
-                data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-                section = data.get("memory_emotion") if isinstance(data, dict) else None
-                if isinstance(section, dict):
-                    cfg["enabled"] = _parse_bool(section.get("enabled"), cfg["enabled"])
-                    if "advisory_rerank_weight" in section:
-                        cfg["advisory_rerank_weight"] = _safe_float(
-                            section.get("advisory_rerank_weight"),
-                            cfg["advisory_rerank_weight"],
-                        )
-                    if "advisory_min_state_similarity" in section:
-                        cfg["advisory_min_state_similarity"] = _safe_float(
-                            section.get("advisory_min_state_similarity"),
-                            cfg["advisory_min_state_similarity"],
-                        )
+            from .config_authority import env_bool, env_float, resolve_section
+            section = resolve_section(
+                "memory_emotion",
+                env_overrides={
+                    "enabled": env_bool("SPARK_ADVISORY_MEMORY_EMOTION_ENABLED"),
+                    "retrieval_state_match_weight": env_float("SPARK_ADVISORY_MEMORY_EMOTION_WEIGHT"),
+                    "retrieval_min_state_similarity": env_float("SPARK_ADVISORY_MEMORY_EMOTION_MIN_SIM"),
+                },
+            ).data
+            cfg["enabled"] = _parse_bool(section.get("enabled"), cfg["enabled"])
+            cfg["advisory_rerank_weight"] = _safe_float(
+                section.get("retrieval_state_match_weight"),
+                cfg["advisory_rerank_weight"],
+            )
+            cfg["advisory_min_state_similarity"] = _safe_float(
+                section.get("retrieval_min_state_similarity"),
+                cfg["advisory_min_state_similarity"],
+            )
         except Exception:
             pass
-
-        env_enabled = os.getenv("SPARK_ADVISORY_MEMORY_EMOTION_ENABLED")
-        if env_enabled is not None:
-            cfg["enabled"] = _parse_bool(env_enabled, cfg["enabled"])
-        env_weight = os.getenv("SPARK_ADVISORY_MEMORY_EMOTION_WEIGHT")
-        if env_weight is not None:
-            cfg["advisory_rerank_weight"] = _safe_float(env_weight, cfg["advisory_rerank_weight"])
-        env_min_sim = os.getenv("SPARK_ADVISORY_MEMORY_EMOTION_MIN_SIM")
-        if env_min_sim is not None:
-            cfg["advisory_min_state_similarity"] = _safe_float(env_min_sim, cfg["advisory_min_state_similarity"])
 
         cfg["advisory_rerank_weight"] = max(0.0, float(cfg.get("advisory_rerank_weight", 0.0)))
         cfg["advisory_min_state_similarity"] = _clamp_01(
@@ -2805,6 +2752,59 @@ class SparkAdvisor:
             merged.append(a)
         return merged
 
+    # -- LLM area hooks (opt-in via llm_areas tuneable section) --
+
+    @staticmethod
+    def _llm_area_retrieval_rewrite(query: str, tool_name: str) -> str:
+        """LLM area: rewrite retrieval query for better recall.
+
+        When disabled (default), returns query unchanged.
+        """
+        try:
+            from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
+
+            prompt = format_prompt(
+                "retrieval_rewrite",
+                query=query[:300],
+                tool_name=tool_name or "unknown",
+            )
+            result = llm_area_call("retrieval_rewrite", prompt, fallback=query)
+            if result.used_llm and result.text and result.text != query:
+                return result.text
+            return query
+        except Exception:
+            return query
+
+    @staticmethod
+    def _llm_area_retrieval_explain(
+        base_reason: str,
+        insight_text: str,
+        query: str,
+        context_match: float,
+    ) -> str:
+        """LLM area: annotate retrieval result with relevance explanation.
+
+        When disabled (default), returns base_reason unchanged.
+        """
+        try:
+            from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
+
+            prompt = format_prompt(
+                "retrieval_explain",
+                insight=insight_text[:300],
+                query=query[:200],
+                match_score=f"{context_match:.2f}",
+                base_reason=base_reason[:200],
+            )
+            result = llm_area_call("retrieval_explain", prompt, fallback=base_reason)
+            if result.used_llm and result.text:
+                return result.text
+            return base_reason
+        except Exception:
+            return base_reason
+
     def _get_semantic_cognitive_advice(
         self,
         tool_name: str,
@@ -2885,6 +2885,10 @@ class SparkAdvisor:
         should_escalate = False
         escalate_reasons: List[str] = []
         primary_results: List[Any] = []
+
+        # LLM area: retrieval_rewrite — enhance query before retrieval
+        context = self._llm_area_retrieval_rewrite(context, tool_name)
+
         primary_start = time.perf_counter()
         try:
             primary_results = list(retriever.retrieve(context, active_insights, limit=semantic_limit))
@@ -3129,6 +3133,11 @@ class SparkAdvisor:
                 reason = base_reason or f"Hybrid-agentic route: {route_reason}"
             else:
                 reason = base_reason or "Semantic route (embeddings primary)"
+
+            # LLM area: retrieval_explain — annotate result with relevance explanation
+            reason = self._llm_area_retrieval_explain(
+                reason, r.insight_text, context, context_match,
+            )
 
             # Propagate advisory_quality from cognitive insight if available
             _adv_q = {}
@@ -3961,16 +3970,29 @@ class SparkAdvisor:
             for d in distillations[:5]:
                 # Determine advice type label based on distillation type
                 type_label = d.type.value.upper() if hasattr(d.type, 'value') else str(d.type)
+                advisory_quality = {}
+                base_statement = (getattr(d, "refined_statement", "") or d.statement or "").strip()
+                stored_quality = getattr(d, "advisory_quality", None) or {}
+                advice_text = base_statement or d.statement
 
-                # Transform raw statement into advisory-ready text
-                try:
-                    aq = _transform_distillation(d.statement, source="eidos")
-                    if aq.suppressed:
-                        continue  # Skip distillations that fail advisory quality
-                    # Prefer composed advisory text over raw template
-                    advice_text = aq.advisory_text or d.statement
-                except Exception:
-                    advice_text = d.statement
+                # Prefer persisted advisory quality from EIDOS store.
+                if isinstance(stored_quality, dict) and stored_quality:
+                    if stored_quality.get("suppressed"):
+                        continue
+                    if float(stored_quality.get("unified_score", 0.0) or 0.0) < 0.35:
+                        continue
+                    advisory_quality = stored_quality
+                    advice_text = str(stored_quality.get("advisory_text") or advice_text or d.statement)
+                else:
+                    # Fallback for legacy rows without persisted quality metadata.
+                    try:
+                        aq = _transform_distillation(advice_text or d.statement, source="eidos")
+                        if aq.suppressed:
+                            continue  # Skip distillations that fail advisory quality
+                        advice_text = aq.advisory_text or advice_text or d.statement
+                        advisory_quality = aq.to_dict()
+                    except Exception:
+                        advice_text = advice_text or d.statement
 
                 # Add reason from distillation confidence and proven effectiveness
                 reason = f"Confidence: {d.confidence:.0%}"
@@ -3985,7 +4007,7 @@ class SparkAdvisor:
                 # Bridge emotional priority: try exact match on action text,
                 # else try substring match on statement
                 ep = 0.0
-                stmt_lower = (d.statement or "").strip().lower()
+                stmt_lower = (advice_text or d.statement or "").strip().lower()
                 if stmt_lower in priority_map:
                     ep = priority_map[stmt_lower]
                 else:
@@ -4011,6 +4033,7 @@ class SparkAdvisor:
                     context_match=eidos_match,
                     reason=reason,
                     emotional_priority=ep,
+                    advisory_quality=advisory_quality,
                 ))
                 # Usage tracking now handled by meta_ralph outcome feedback loop
                 # (see _apply_outcome_to_cognitive in meta_ralph.py)
@@ -4183,7 +4206,7 @@ class SparkAdvisor:
             from lib.convo_analyzer import get_convo_analyzer
 
             analyzer = get_convo_analyzer()
-            stats = analyzer.get_stats()
+            analyzer.get_stats()
 
             # Surface top DNA patterns as advice
             for dna_key, dna in list(analyzer.dna_patterns.items())[:3]:
@@ -5494,24 +5517,6 @@ Output only JSON with `order` as a list of 0-based indices (descending by releva
         except Exception:
             pass  # Don't break outcome flow if tracking fails
 
-        # Route EIDOS-sourced outcomes back to EIDOS store
-        # This closes the distillation feedback loop — confidence evolves
-        try:
-            if ik and isinstance(ik, str) and ik.startswith("eidos:"):
-                # insight_key format: "eidos:{type}:{id_prefix}"
-                parts = ik.split(":", 2)
-                if len(parts) >= 3:
-                    id_prefix = parts[2]
-                    from .eidos.store import get_store
-                    eidos_store = get_store()
-                    full_id = eidos_store.find_distillation_by_prefix(id_prefix)
-                    if full_id:
-                        eidos_store.record_distillation_usage(
-                            full_id,
-                            helped=(was_helpful is True),
-                        )
-        except Exception:
-            pass  # Don't break outcome flow
 
         # Log outcome
         with open(ADVICE_LOG, "a", encoding="utf-8") as f:

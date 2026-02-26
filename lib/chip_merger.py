@@ -16,6 +16,7 @@ from typing import Dict, List, Any
 from datetime import datetime
 
 from lib.cognitive_learner import get_cognitive_learner, CognitiveCategory
+from lib.config_authority import resolve_section
 from lib.exposure_tracker import record_exposures
 from lib.queue import _tail_lines
 from lib.chips.registry import get_registry
@@ -206,12 +207,8 @@ def _load_merge_tuneables() -> Dict[str, float]:
                 use_host_tuneables = TUNEABLES_FILE.resolve() != (Path.home() / ".spark" / "tuneables.json").resolve()
             except Exception:
                 use_host_tuneables = False
-        if use_host_tuneables and TUNEABLES_FILE.exists():
-            # Accept UTF-8 with BOM (common on Windows).
-            data = json.loads(TUNEABLES_FILE.read_text(encoding="utf-8-sig"))
-            section = data.get("chip_merge") or {}
-            if isinstance(section, dict):
-                cfg = section
+        if use_host_tuneables:
+            cfg = resolve_section("chip_merge", runtime_path=TUNEABLES_FILE).data
     except Exception:
         cfg = {}
 
@@ -660,24 +657,35 @@ def merge_chip_insights(
         if not dry_run:
             # Add distilled statement through unified validation.
             from lib.validate_and_store import validate_and_store_insight
-            added = validate_and_store_insight(
+            store_result = validate_and_store_insight(
                 text=learning_statement,
                 category=category,
                 context=context,
                 confidence=max(float(confidence or 0.0), float(quality_total or 0.0)),
                 source=f"chip:{chip_id}:distilled",
                 record_exposure=False,
+                return_details=True,
             )
+            if isinstance(store_result, dict):
+                added = bool(store_result.get("stored"))
+                stored_statement = str(store_result.get("stored_text") or learning_statement)
+                key = str(store_result.get("insight_key") or "")
+            else:
+                # Backward-compat for test monkeypatches returning bool.
+                added = bool(store_result)
+                stored_statement = learning_statement
+                key = ""
             if not added:
                 stats["skipped_non_learning"] += 1
                 continue
 
             # Track for exposure recording
-            key = cog._generate_key(category, learning_statement[:40].replace(" ", "_").lower())
+            if not key:
+                key = cog._generate_key(category, stored_statement[:40].replace(" ", "_").lower())
             exposures_to_record.append({
                 "insight_key": key,
                 "category": category.value,
-                "text": learning_statement,
+                "text": stored_statement,
             })
 
             # Append distillation audit trail.
@@ -690,6 +698,7 @@ def merge_chip_insights(
                             "chip_id": chip_id,
                             "category": category.value,
                             "learning_statement": learning_statement,
+                            "stored_statement": stored_statement,
                             "source_content": content[:240],
                             "quality_score": quality,
                         }
@@ -757,3 +766,16 @@ def get_merge_stats() -> Dict[str, Any]:
         "chip_insight_counts": chip_counts,
         "learning_distillation_count": learning_distillations,
     }
+
+
+def _reload_chip_merge_from(_cfg):
+    """Hot-reload callback — config is read fresh each merge call."""
+    pass
+
+
+try:
+    from .tuneables_reload import register_reload as _cm_register
+
+    _cm_register("chip_merge", _reload_chip_merge_from, label="chip_merger.reload")
+except Exception:
+    pass

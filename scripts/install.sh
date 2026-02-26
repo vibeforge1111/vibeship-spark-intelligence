@@ -121,65 +121,7 @@ echo "Setting up Spark config..."
 mkdir -p "$HOME/.spark"
 echo "Config directory: ~/.spark"
 
-# Set up Claude Code hooks (if Claude Code is installed)
-if [ -d "$CLAUDE_CONFIG_DIR" ]; then
-  echo ""
-  read -r -p "Set up Claude Code hooks for auto-capture? [Y/n]: " hook_reply
-  echo ""
-  if [[ ! "$hook_reply" =~ ^[Nn]$ ]]; then
-    cat > "$CLAUDE_CONFIG_DIR/spark-hooks.json" <<'HOOKS'
-{
-  "hooks": {
-    "PostToolUse": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "python3 $SPARK_DIR/hooks/observe.py"
-      }]
-    }],
-    "PostToolUseFailure": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "python3 $SPARK_DIR/hooks/observe.py"
-      }]
-    }]
-  }
-}
-HOOKS
-    echo "Claude Code hooks configured"
-    echo "  Note: Merge with your existing settings.json if you have custom hooks"
-  fi
-fi
-
-# Test installation
+# Run onboard wizard (starts services, checks health, verifies hooks, shows next steps)
 echo ""
-echo "Testing installation..."
 cd "$SPARK_DIR"
-if "$PYTHON_BIN" -m spark.cli health > /dev/null 2>&1; then
-  echo "Spark is working!"
-else
-  echo "Some components may need configuration"
-fi
-
-# Print summary
-echo ""
-echo "========================================"
-echo "  Installation Complete!"
-echo "========================================"
-echo ""
-echo "Spark directory: $SPARK_DIR"
-echo ""
-echo "Quick start:"
-echo "  cd $SPARK_DIR"
-echo "  $PYTHON_BIN -m spark.cli status    # Check status"
-echo "  $PYTHON_BIN -m spark.cli health    # Health check"
-echo "  $PYTHON_BIN -m spark.cli learnings # View learnings"
-echo ""
-echo "For Mind integration (recommended):"
-echo "  $PYTHON_BIN -m pip install vibeship-mind"
-echo "  $PYTHON_BIN -m mind.lite_tier  # Start Mind server"
-echo "  $PYTHON_BIN -m spark.cli sync   # Sync learnings"
-echo ""
-echo "Documentation: $SPARK_DIR/README.md"
-echo ""
+"$PYTHON_BIN" -m spark.cli onboard --quick --yes

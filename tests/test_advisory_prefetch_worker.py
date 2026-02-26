@@ -13,6 +13,7 @@ def _patch_store_paths(monkeypatch, tmp_path):
 
 def test_process_prefetch_queue_creates_packets(monkeypatch, tmp_path):
     _patch_store_paths(monkeypatch, tmp_path)
+    worker.apply_prefetch_config({"worker_enabled": True})
     store.enqueue_prefetch_job(
         {
             "session_id": "s1",
@@ -35,6 +36,7 @@ def test_process_prefetch_queue_creates_packets(monkeypatch, tmp_path):
 
 def test_prefetch_worker_pause_resume(monkeypatch, tmp_path):
     _patch_store_paths(monkeypatch, tmp_path)
+    worker.apply_prefetch_config({"worker_enabled": True})
     worker.set_worker_paused(True, reason="test")
     store.enqueue_prefetch_job(
         {

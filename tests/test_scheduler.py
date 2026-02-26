@@ -32,6 +32,7 @@ class TestLoadConfig(unittest.TestCase):
         self.assertEqual(cfg["advisory_review_interval"], 43200)
         self.assertTrue(cfg["advisory_review_enabled"])
         self.assertEqual(cfg["advisory_review_window_hours"], 12)
+        self.assertTrue(cfg["memory_quality_observatory_enabled"])
 
     def test_overrides_from_file(self, tmp_path=None):
         import tempfile
@@ -208,6 +209,7 @@ class TestRunDueTasks(unittest.TestCase):
             "niche_scan_enabled": True,
             "advisory_review_enabled": True,
             "advisory_review_window_hours": 12,
+            "memory_quality_observatory_enabled": True,
         }
 
     def test_task_runs_when_due(self):
@@ -405,6 +407,45 @@ class TestAdvisoryReviewTask(unittest.TestCase):
             out = sched.task_advisory_review({})
         self.assertEqual(out["status"], "ok")
         self.assertIn("Advisory self-review written", out["message"])
+
+    def test_advisory_review_runs_memory_observatory_when_due(self):
+        with patch.object(sched, "load_scheduler_config", return_value={"advisory_review_window_hours": 12}), \
+             patch("spark_scheduler.subprocess.run") as mock_run, \
+             patch("glob.glob", return_value=[]):
+            mock_run.side_effect = [
+                MagicMock(
+                    returncode=0,
+                    stdout="Advisory self-review written: docs/reports/x.md\n",
+                    stderr="",
+                ),
+                MagicMock(
+                    returncode=0,
+                    stdout="{\"grade\":{\"band\":\"YELLOW\"}}\n",
+                    stderr="",
+                ),
+            ]
+            out = sched.task_advisory_review({})
+        self.assertEqual(out["status"], "ok")
+        self.assertGreaterEqual(mock_run.call_count, 2)
+
+    def test_advisory_review_skips_memory_observatory_when_disabled(self):
+        with patch.object(
+            sched,
+            "load_scheduler_config",
+            return_value={
+                "advisory_review_window_hours": 12,
+                "memory_quality_observatory_enabled": False,
+            },
+        ), patch("spark_scheduler.subprocess.run") as mock_run, \
+             patch("glob.glob", return_value=[]):
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="Advisory self-review written: docs/reports/x.md\n",
+                stderr="",
+            )
+            out = sched.task_advisory_review({})
+        self.assertEqual(out["status"], "ok")
+        self.assertEqual(mock_run.call_count, 1)
 
 if __name__ == "__main__":
     unittest.main()

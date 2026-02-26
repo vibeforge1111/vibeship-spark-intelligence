@@ -233,7 +233,9 @@ for alert in ecp.watcher_engine.alert_history[-10:]:
 
 ### Dashboard Script
 
-Save this as `eidos_dashboard.py`:
+Use the built-in script at `scripts/eidos_dashboard.py`.
+
+If you want to customize a local variant, start from this template:
 
 ```python
 #!/usr/bin/env python3
@@ -421,36 +423,47 @@ if episodes:
 
 ## Configuration
 
-### Environment Variables
+EIDOS settings are managed through tuneables (`observe_hook` and `eidos` sections). Edit `~/.spark/tuneables.json`:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SPARK_EIDOS_ENABLED` | `1` | Enable/disable EIDOS |
-| `SPARK_OUTCOME_CHECKIN` | `0` | Enable outcome check-ins |
+```json
+{
+  "observe_hook": {
+    "eidos_enabled": true,
+    "outcome_checkin_enabled": false,
+    "outcome_checkin_min_s": 1800
+  },
+  "eidos": {
+    "max_steps": 25,
+    "max_time_seconds": 720,
+    "max_retries_per_error": 2,
+    "max_file_touches": 3,
+    "no_evidence_limit": 5
+  }
+}
+```
+
+Env var overrides (for CI/containers/temporary use):
+
+| Variable | Key | Default |
+|----------|-----|---------|
+| `SPARK_EIDOS_ENABLED` | `observe_hook.eidos_enabled` | `true` |
+| `SPARK_OUTCOME_CHECKIN` | `observe_hook.outcome_checkin_enabled` | `false` |
 
 ### Disable EIDOS (if needed)
 
 ```bash
-# Temporarily disable
+# Via env var (temporary)
 set SPARK_EIDOS_ENABLED=0
+```
 
-# Or in Python
-import os
-os.environ["SPARK_EIDOS_ENABLED"] = "0"
+Or permanently in `~/.spark/tuneables.json`:
+```json
+{ "observe_hook": { "eidos_enabled": false } }
 ```
 
 ### Adjust Budgets
 
-Edit episode creation in `lib/eidos/integration.py`:
-```python
-Budget(
-    max_steps=25,           # Max steps per episode
-    max_time_seconds=720,   # 12 minutes
-    max_retries_per_error=2,  # After 2, stop
-    max_file_touches=2,     # After 2, freeze file
-    no_evidence_limit=5,    # Force DIAGNOSE after 5
-)
-```
+Edit budget values in `~/.spark/tuneables.json` under the `eidos` section. Changes are picked up on the next bridge cycle (hot-reload). See `docs/CONFIG_AUTHORITY.md` for the full precedence model.
 
 ### Add Custom Policy Patch
 

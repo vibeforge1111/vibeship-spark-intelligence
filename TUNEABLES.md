@@ -6,6 +6,26 @@ Navigation hub: `docs/GLOSSARY.md`
 
 ---
 
+## Configuration Precedence (Canonical)
+
+Spark runtime now resolves tuneables using a single authority model:
+
+1. `lib/tuneables_schema.py` defaults
+2. `config/tuneables.json` baseline
+3. `~/.spark/tuneables.json` runtime overrides
+4. Explicit env overrides (allowlisted per key)
+
+Reference: `docs/CONFIG_AUTHORITY.md`
+
+Core runtime sections now routed through this model:
+- `advisory_engine`, `advisory_gate`, `advisor`, `synthesizer`, `semantic`, `triggers`
+- `meta_ralph`, `eidos`, `promotion`, `memory_emotion`, `memory_learning`, `memory_retrieval_guard`
+- `bridge_worker`, `queue`, `pipeline`, `values`
+- `advisory_packet_store`, `advisory_prefetch`, `sync`, `production_gates`
+- `chip_merge`, `memory_capture`, `request_tracker`, `observatory`, `advisory_preferences`
+
+---
+
 ## 0. Advisor Retrieval Router (Carmack Path)
 
 **File:** `lib/advisor.py`
@@ -285,7 +305,7 @@ These are **circuit breakers** - when tripped, they force the system to stop and
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `max_steps` | **25** (code) / **40** (tuneables) | **Step limit per episode.** After N actions without completing the goal, force DIAGNOSE phase. Wired to `tuneables.json` → `eidos.max_steps` (also reads `values.max_steps`). |
+| `max_steps` | **25** (code) / **40** (tuneables) | **Step limit per episode.** After N actions without completing the goal, force DIAGNOSE phase. Canonical key is `values.max_steps` (legacy `eidos.max_steps` may still be read if present in older runtime files). |
 | `max_time_seconds` | **720** (code) / **1200** (tuneables) | **Time limit.** Episodes taking longer than this are force-stopped. Wired to `eidos.max_time_seconds`. |
 | `max_retries_per_error` | **2** (code) / **3** (tuneables) | **Error retry limit.** Wired to `eidos.max_retries_per_error` (also reads `values.max_retries_per_error`). |
 | `max_file_touches` | **3** (code) / **5** (tuneables) | **File modification limit.** Wired to `eidos.max_file_touches` (also reads `values.max_file_touches`). |
@@ -1082,7 +1102,7 @@ Total = actionability + novelty + reasoning + specificity + outcome_linked
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `quality_threshold` | **4** | Items scoring >= 4 pass as QUALITY. Lowered from 7→5→4 after over-filtering detected. Wired to `tuneables.json` → `meta_ralph.quality_threshold`. |
+| `quality_threshold` | **3.8** (runtime baseline) / **4.5** (schema fallback) | Items scoring >= threshold pass as QUALITY. Runtime baseline was lowered after over-filtering; schema fallback remains conservative if runtime config is missing. Wired to `meta_ralph.quality_threshold`. |
 | `needs_work_threshold` | **2** | Items scoring 2-3 are NEEDS_WORK (refinable). Wired to `meta_ralph.needs_work_threshold`. |
 | `primitive_threshold` | **<2** | Items scoring < 2 are PRIMITIVE (rejected). |
 
@@ -1419,7 +1439,7 @@ This is the active hot-path advisory stack used by hooks:
     "max_change_per_run": 0.15
   },
   "meta_ralph": {
-    "quality_threshold": 4,
+    "quality_threshold": 3.8,
     "needs_work_threshold": 2,
     "needs_work_close_delta": 0.5,
     "min_outcome_samples": 5,
@@ -1436,7 +1456,6 @@ This is the active hot-path advisory stack used by hooks:
     "max_quality_rate": 0.60
   },
   "eidos": {
-    "max_steps": 40,
     "max_time_seconds": 1200,
     "max_retries_per_error": 3,
     "max_file_touches": 5,
@@ -1507,15 +1526,14 @@ Components fall back to hard-coded defaults when a key is absent.
 | `queue` | Queue growth + read safety limits (optional) | `max_events`, `tail_chunk_bytes` |
 | `meta_ralph` | Meta-Ralph scoring thresholds | `quality_threshold`, `needs_work_threshold`, `needs_work_close_delta`, `min_outcome_samples`, `min_tuneable_samples` |
 | `production_gates` | Production readiness gate thresholds | `enforce_meta_ralph_quality_band`, `min_quality_samples`, `min_quality_rate`, `max_quality_rate`, plus any `LoopThresholds` key override |
-| `eidos` | EIDOS Budget defaults | `max_steps`, `max_time_seconds`, `max_retries_per_error`, `max_file_touches`, `no_evidence_limit` |
+| `eidos` | EIDOS Budget defaults | `max_time_seconds`, `max_retries_per_error`, `max_file_touches`, `no_evidence_limit` |
 | `scheduler` | Spark scheduler automation | `enabled`, `mention_poll_interval`, `engagement_snapshot_interval`, `daily_research_interval`, `niche_scan_interval`, `advisory_review_interval`, `advisory_review_window_hours`, `*_enabled` task flags |
 
 ### Backward Compatibility
 
-Some keys exist in both the legacy `values` section and the new dedicated sections.
-The dedicated section always takes precedence:
+Some keys have legacy/fallback compatibility paths across sections:
 
-- `values.max_steps` -> `eidos.max_steps` (EIDOS reads both, prefers `eidos`)
+- `values.max_steps` -> EIDOS step budget (canonical key; legacy `eidos.max_steps` may still be read if present)
 - `values.max_retries_per_error` -> `eidos.max_retries_per_error`
 - `values.max_file_touches` -> `eidos.max_file_touches`
 - `values.no_evidence_steps` -> `eidos.no_evidence_limit` (key renamed)
@@ -1555,7 +1573,7 @@ The coordinator (`lib/tuneables_reload.py`) checks file mtime each bridge cycle.
 
 | Module | Purpose |
 |--------|---------|
-| `lib/tuneables_schema.py` | Central schema (25 sections, 153 keys). Validates types, bounds, defaults. Clamps out-of-bounds values. |
+| `lib/tuneables_schema.py` | Central schema. Validates types, bounds, defaults, and clamps out-of-bounds values. |
 | `lib/tuneables_reload.py` | Mtime-based hot-reload coordinator. Modules register callbacks; `check_and_reload()` dispatches changes. |
 | `lib/tuneables_drift.py` | Drift distance metric. Compares runtime vs `config/tuneables.json` baseline. Alerts when drift > 0.3. |
 
@@ -1564,7 +1582,7 @@ The coordinator (`lib/tuneables_reload.py`) checks file mtime each bridge cycle.
 | Section | Module | Callback |
 |---------|--------|----------|
 | `meta_ralph` | `lib/meta_ralph.py` | Quality thresholds, attribution window, suppression settings |
-| `eidos` | `lib/eidos/models.py` | Budget constraints (max_steps, max_time, max_retries) |
+| `eidos` | `lib/eidos/models.py` | Budget constraints (max_time, max_retries, file touch/no-evidence limits) |
 | `values` | `lib/pipeline.py` | Batch size (queue_batch_size) |
 | `queue` | `lib/queue.py` | Max events, tail chunk bytes |
 | `advisory_gate` | `lib/advisory_gate.py` | Emit limits, cooldowns, authority thresholds |

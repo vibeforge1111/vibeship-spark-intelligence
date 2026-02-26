@@ -12,6 +12,16 @@ from .diagnostics import log_debug
 from .openclaw_paths import discover_openclaw_workspaces, read_openclaw_config
 
 
+def _safe_gateway_port(raw_port: object, default: int = 18789) -> int:
+    try:
+        port = int(str(raw_port).strip())
+    except Exception:
+        return default
+    if 1 <= port <= 65535:
+        return port
+    return default
+
+
 def _read_openclaw_config() -> dict:
     """Read OpenClaw config from ~/.openclaw/openclaw.json."""
     return read_openclaw_config()
@@ -19,7 +29,7 @@ def _read_openclaw_config() -> dict:
 
 def _get_gateway_url() -> str:
     cfg = _read_openclaw_config()
-    port = cfg.get("gateway", {}).get("port", 18789)
+    port = _safe_gateway_port(cfg.get("gateway", {}).get("port", 18789))
     return f"http://127.0.0.1:{port}"
 
 

@@ -137,7 +137,7 @@ def generate_start_here(data: Dict[int, Dict[str, Any]], current_snapshot: Dict[
     lines.append("")
     lines.append("1. Open [[flow]] for current status.")
     lines.append("2. Check [[troubleshooting_by_symptom]] and [[system_flow_operator_playbook]] triage tables.")
-    lines.append("3. If advisory is weak, inspect [[explore/decisions/_index|Decision Ledger]] and [[explore/feedback/_index|Implicit Feedback]].")
+    lines.append("3. If advisory is weak, inspect [[explore/decisions/_index|Decision Ledger]], [[explore/feedback/_index|Implicit Feedback]], and [[explore/helpfulness/_index|Helpfulness Calibration]].")
     lines.append("4. If upstream quality is weak, inspect [[stages/05-meta-ralph|Meta-Ralph]] and [[stages/06-cognitive-learner|Cognitive]].")
     lines.append("5. Review [[changes_since_last_regen]] to validate whether fixes moved metrics.")
     lines.append("")
@@ -168,6 +168,7 @@ def generate_topic_finder() -> str:
     lines.append("| What did EIDOS distill recently? | [[stages/07-eidos|Stage 7 - EIDOS]] | latest distillations + confidence |")
     lines.append("| Why advice was blocked/suppressed? | [[explore/decisions/_index|Decision Ledger]] | outcome + suppressed reasons |")
     lines.append("| Are users following advisories? | [[explore/feedback/_index|Implicit Feedback]] | followed vs ignored signals |")
+    lines.append("| How accurate is helpfulness labeling? | [[explore/helpfulness/_index|Helpfulness Calibration]] | watcher labels, conflicts, and LLM review queue health |")
     lines.append("| Is Mind helping cross-session? | [[system_flow_comprehensive|System Flow Comprehensive]] | mind sync + mind source examples |")
     lines.append("| Where are advisory bottlenecks? | [[advisory_reverse_engineering|Advisory Reverse Engineering]] | suppression buckets + top reasons |")
     lines.append("| How do I debug by symptom? | [[troubleshooting_by_symptom|Troubleshooting by Symptom]] | symptom table + first commands |")
@@ -221,6 +222,8 @@ def generate_glossary() -> str:
         ("Fail-Open Quarantine", "On Meta-Ralph exception during validate_and_store: the insight is logged to `~/.spark/insight_quarantine.jsonl` AND still stored in cognitive (true fail-open)."),
         ("Rejection Telemetry", "Per-reason counters at every advisory exit path, flushed to `~/.spark/advisory_rejection_telemetry.json`."),
         ("Source Boosts", "Auto-tuner multipliers per advice source, clamped to [0.8, 1.1] and stored in tuneables `auto_tuner.source_boosts`."),
+        ("Pre-Alpha Era", "Fresh data start after Intelligence Flow Evolution. Legacy data archived to `~/.spark/archive/legacy_*/`. Era marker at `~/.spark/era.json`."),
+        ("Era Marker", "The file `~/.spark/era.json` records when the current era started and where legacy data was archived. Created by `scripts/start_alpha.py`. Current era: pre-alpha."),
     ]
     lines = []
     lines.append(_frontmatter("Glossary", ["observatory", "glossary", "reference"]))
@@ -295,7 +298,7 @@ def generate_troubleshooting_by_symptom(current_snapshot: Dict[str, Any]) -> str
     lines.append("")
     lines.append("1. Start at [[flow|Intelligence Flow]] for global health context.")
     lines.append("2. Jump to the relevant stage page from the table above.")
-    lines.append("3. Validate with [[explore/decisions/_index|Decision Ledger]] and [[explore/feedback/_index|Implicit Feedback]].")
+    lines.append("3. Validate with [[explore/decisions/_index|Decision Ledger]], [[explore/feedback/_index|Implicit Feedback]], and [[explore/helpfulness/_index|Helpfulness Calibration]].")
     lines.append("4. Apply tuneable/task changes and verify movement in [[changes_since_last_regen|Changes Since Last Regen]].")
     lines.append("")
     return "\n".join(lines)

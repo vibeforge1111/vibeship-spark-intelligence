@@ -167,7 +167,15 @@ class ChipLoader:
         self.chips_dir = Path(chips_dir or CHIPS_DIR)
         self._cache: Dict[str, Chip] = {}
         self._metrics: Dict[str, LoadMetrics] = {}
-        preferred = (preferred_format or os.getenv("SPARK_CHIP_PREFERRED_FORMAT", "multifile")).lower()
+        if preferred_format:
+            preferred = preferred_format.lower()
+        else:
+            try:
+                from lib.config_authority import resolve_section, env_str
+                _cc = resolve_section("chips_runtime", env_overrides={"preferred_format": env_str("SPARK_CHIP_PREFERRED_FORMAT")}).data
+                preferred = str(_cc.get("preferred_format", "multifile")).lower()
+            except Exception:
+                preferred = os.getenv("SPARK_CHIP_PREFERRED_FORMAT", "multifile").lower()
         self.preferred_format = preferred if preferred in {"single", "multifile", "hybrid"} else "multifile"
         self._disabled = not chips_enabled()
         self._warned_disabled = False
@@ -305,7 +313,12 @@ class ChipLoader:
             spec_for_validation = data if isinstance(data, dict) and "chip" in data else {"chip": data}
             errors = validate_chip_spec(spec_for_validation)
             if errors:
-                validation_mode = os.getenv("SPARK_CHIP_SCHEMA_VALIDATION", "warn").strip().lower()
+                try:
+                    from lib.config_authority import resolve_section, env_str as _es
+                    _vc = resolve_section("chips_runtime", env_overrides={"schema_validation": _es("SPARK_CHIP_SCHEMA_VALIDATION")}).data
+                    validation_mode = str(_vc.get("schema_validation", "warn")).strip().lower()
+                except Exception:
+                    validation_mode = os.getenv("SPARK_CHIP_SCHEMA_VALIDATION", "warn").strip().lower()
                 if validation_mode in ("block", "strict", "error"):
                     log.error(f"Chip spec validation failed for {source_path}: {errors}")
                     return None

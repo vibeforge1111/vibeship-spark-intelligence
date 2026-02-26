@@ -28,51 +28,33 @@ from .primitive_filter import is_primitive_text
 from .soul_upgrade import fetch_soul_state, soul_kernel_pass
 
 
-SCANNER_ENABLED = str(os.getenv("SPARK_OPPORTUNITY_SCANNER", "1")).strip().lower() not in {
-    "0",
-    "false",
-    "no",
-    "off",
-}
-SELF_MAX_ITEMS = max(1, int(os.getenv("SPARK_OPPORTUNITY_SELF_MAX", "3") or 3))
-USER_MAX_ITEMS = max(1, int(os.getenv("SPARK_OPPORTUNITY_USER_MAX", "2") or 2))
-MAX_HISTORY_LINES = max(50, int(os.getenv("SPARK_OPPORTUNITY_HISTORY_MAX", "500") or 500))
-SELF_DEDUP_WINDOW_S = max(0.0, float(os.getenv("SPARK_OPPORTUNITY_SELF_DEDUP_WINDOW_S", "14400") or 14400.0))
-SELF_RECENT_LOOKBACK = max(20, int(os.getenv("SPARK_OPPORTUNITY_SELF_RECENT_LOOKBACK", "240") or 240))
-SELF_CATEGORY_CAP = max(1, int(os.getenv("SPARK_OPPORTUNITY_SELF_CATEGORY_CAP", "1") or 1))
-USER_SCAN_ENABLED = str(os.getenv("SPARK_OPPORTUNITY_USER_SCAN", "0")).strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
-SCAN_EVENT_LIMIT = max(0, int(os.getenv("SPARK_OPPORTUNITY_SCAN_EVENT_LIMIT", "120") or 120))
+SCANNER_ENABLED: bool = True
+SELF_MAX_ITEMS: int = 3
+USER_MAX_ITEMS: int = 2
+MAX_HISTORY_LINES: int = 500
+SELF_DEDUP_WINDOW_S: float = 14400.0
+SELF_RECENT_LOOKBACK: int = 240
+SELF_CATEGORY_CAP: int = 1
+USER_SCAN_ENABLED: bool = False
+SCAN_EVENT_LIMIT: int = 120
 
 OPPORTUNITY_DIR = Path.home() / ".spark" / "opportunity_scanner"
 SELF_FILE = OPPORTUNITY_DIR / "self_opportunities.jsonl"
 USER_FILE = OPPORTUNITY_DIR / "user_opportunities.jsonl"
 OUTCOME_FILE = OPPORTUNITY_DIR / "outcomes.jsonl"
 DECISIONS_FILE = OPPORTUNITY_DIR / "decisions.jsonl"
-OUTCOME_WINDOW_S = max(300.0, float(os.getenv("SPARK_OPPORTUNITY_OUTCOME_WINDOW_S", "21600") or 21600.0))
-OUTCOME_LOOKBACK = max(20, int(os.getenv("SPARK_OPPORTUNITY_OUTCOME_LOOKBACK", "200") or 200))
+OUTCOME_WINDOW_S: float = 21600.0
+OUTCOME_LOOKBACK: int = 200
 PROMOTION_FILE = OPPORTUNITY_DIR / "promoted_opportunities.jsonl"
-PROMOTION_MIN_SUCCESSES = max(1, int(os.getenv("SPARK_OPPORTUNITY_PROMOTION_MIN_SUCCESSES", "2") or 2))
-PROMOTION_MIN_EFFECTIVENESS = max(
-    0.0,
-    min(1.0, float(os.getenv("SPARK_OPPORTUNITY_PROMOTION_MIN_EFFECTIVENESS", "0.66") or 0.66)),
-)
-PROMOTION_LOOKBACK = max(20, int(os.getenv("SPARK_OPPORTUNITY_PROMOTION_LOOKBACK", "400") or 400))
-LLM_ENABLED = str(os.getenv("SPARK_OPPORTUNITY_LLM_ENABLED", "1")).strip().lower() not in {
-    "0",
-    "false",
-    "no",
-    "off",
-}
-LLM_PROVIDER = str(os.getenv("SPARK_OPPORTUNITY_LLM_PROVIDER", "") or "").strip().lower()
-LLM_TIMEOUT_S = max(0.3, float(os.getenv("SPARK_OPPORTUNITY_LLM_TIMEOUT_S", "2.5") or 2.5))
-LLM_MAX_ITEMS = max(1, int(os.getenv("SPARK_OPPORTUNITY_LLM_MAX_ITEMS", "3") or 3))
-LLM_MIN_CONTEXT_CHARS = max(0, int(os.getenv("SPARK_OPPORTUNITY_LLM_MIN_CONTEXT_CHARS", "140") or 140))
-LLM_COOLDOWN_S = max(0.0, float(os.getenv("SPARK_OPPORTUNITY_LLM_COOLDOWN_S", "300") or 300))
+PROMOTION_MIN_SUCCESSES: int = 2
+PROMOTION_MIN_EFFECTIVENESS: float = 0.66
+PROMOTION_LOOKBACK: int = 400
+LLM_ENABLED: bool = True
+LLM_PROVIDER: str = ""
+LLM_TIMEOUT_S: float = 2.5
+LLM_MAX_ITEMS: int = 3
+LLM_MIN_CONTEXT_CHARS: int = 140
+LLM_COOLDOWN_S: float = 300.0
 
 _TELEMETRY_MARKERS = (
     "tool_",
@@ -113,11 +95,87 @@ _SELF_CATEGORY_ALLOWLIST = {
 _FORBIDDEN_LLM_PROVIDERS = {"deepseek", "deep-seek"}
 _LAST_LLM_ATTEMPT_BY_KEY: Dict[str, float] = {}
 
-_DECISION_LOOKBACK = max(50, int(os.getenv("SPARK_OPPORTUNITY_DECISION_LOOKBACK", "500") or 500))
-_DISMISS_TTL_S = max(0.0, float(os.getenv("SPARK_OPPORTUNITY_DISMISS_TTL_S", str(7 * 24 * 3600)) or (7 * 24 * 3600)))
+_DECISION_LOOKBACK: int = 500
+_DISMISS_TTL_S: float = 604800.0
 
 _GIT_ROOT_CACHE: Dict[str, str] = {}
 _GIT_ORIGIN_CACHE: Dict[str, str] = {}
+
+
+def _load_scanner_config() -> None:
+    """Load opportunity scanner config via config-authority."""
+    global SCANNER_ENABLED, SELF_MAX_ITEMS, USER_MAX_ITEMS, MAX_HISTORY_LINES
+    global SELF_DEDUP_WINDOW_S, SELF_RECENT_LOOKBACK, SELF_CATEGORY_CAP
+    global USER_SCAN_ENABLED, SCAN_EVENT_LIMIT
+    global OUTCOME_WINDOW_S, OUTCOME_LOOKBACK
+    global PROMOTION_MIN_SUCCESSES, PROMOTION_MIN_EFFECTIVENESS, PROMOTION_LOOKBACK
+    global LLM_ENABLED, LLM_PROVIDER, LLM_TIMEOUT_S, LLM_MAX_ITEMS
+    global LLM_MIN_CONTEXT_CHARS, LLM_COOLDOWN_S
+    global _DECISION_LOOKBACK, _DISMISS_TTL_S
+    try:
+        from .config_authority import resolve_section, env_bool, env_int, env_float, env_str
+        cfg = resolve_section(
+            "opportunity_scanner",
+            env_overrides={
+                "enabled": env_bool("SPARK_OPPORTUNITY_SCANNER"),
+                "self_max_items": env_int("SPARK_OPPORTUNITY_SELF_MAX"),
+                "user_max_items": env_int("SPARK_OPPORTUNITY_USER_MAX"),
+                "max_history_lines": env_int("SPARK_OPPORTUNITY_HISTORY_MAX"),
+                "self_dedup_window_s": env_float("SPARK_OPPORTUNITY_SELF_DEDUP_WINDOW_S"),
+                "self_recent_lookback": env_int("SPARK_OPPORTUNITY_SELF_RECENT_LOOKBACK"),
+                "self_category_cap": env_int("SPARK_OPPORTUNITY_SELF_CATEGORY_CAP"),
+                "user_scan_enabled": env_bool("SPARK_OPPORTUNITY_USER_SCAN"),
+                "scan_event_limit": env_int("SPARK_OPPORTUNITY_SCAN_EVENT_LIMIT"),
+                "outcome_window_s": env_float("SPARK_OPPORTUNITY_OUTCOME_WINDOW_S"),
+                "outcome_lookback": env_int("SPARK_OPPORTUNITY_OUTCOME_LOOKBACK"),
+                "promotion_min_successes": env_int("SPARK_OPPORTUNITY_PROMOTION_MIN_SUCCESSES"),
+                "promotion_min_effectiveness": env_float("SPARK_OPPORTUNITY_PROMOTION_MIN_EFFECTIVENESS"),
+                "promotion_lookback": env_int("SPARK_OPPORTUNITY_PROMOTION_LOOKBACK"),
+                "llm_enabled": env_bool("SPARK_OPPORTUNITY_LLM_ENABLED"),
+                "llm_provider": env_str("SPARK_OPPORTUNITY_LLM_PROVIDER"),
+                "llm_timeout_s": env_float("SPARK_OPPORTUNITY_LLM_TIMEOUT_S"),
+                "llm_max_items": env_int("SPARK_OPPORTUNITY_LLM_MAX_ITEMS"),
+                "llm_min_context_chars": env_int("SPARK_OPPORTUNITY_LLM_MIN_CONTEXT_CHARS"),
+                "llm_cooldown_s": env_float("SPARK_OPPORTUNITY_LLM_COOLDOWN_S"),
+                "decision_lookback": env_int("SPARK_OPPORTUNITY_DECISION_LOOKBACK"),
+                "dismiss_ttl_s": env_float("SPARK_OPPORTUNITY_DISMISS_TTL_S"),
+            },
+        ).data
+        SCANNER_ENABLED = bool(cfg.get("enabled", True))
+        SELF_MAX_ITEMS = int(cfg.get("self_max_items", 3))
+        USER_MAX_ITEMS = int(cfg.get("user_max_items", 2))
+        MAX_HISTORY_LINES = int(cfg.get("max_history_lines", 500))
+        SELF_DEDUP_WINDOW_S = float(cfg.get("self_dedup_window_s", 14400.0))
+        SELF_RECENT_LOOKBACK = int(cfg.get("self_recent_lookback", 240))
+        SELF_CATEGORY_CAP = int(cfg.get("self_category_cap", 1))
+        USER_SCAN_ENABLED = bool(cfg.get("user_scan_enabled", False))
+        SCAN_EVENT_LIMIT = int(cfg.get("scan_event_limit", 120))
+        OUTCOME_WINDOW_S = float(cfg.get("outcome_window_s", 21600.0))
+        OUTCOME_LOOKBACK = int(cfg.get("outcome_lookback", 200))
+        PROMOTION_MIN_SUCCESSES = int(cfg.get("promotion_min_successes", 2))
+        PROMOTION_MIN_EFFECTIVENESS = float(cfg.get("promotion_min_effectiveness", 0.66))
+        PROMOTION_LOOKBACK = int(cfg.get("promotion_lookback", 400))
+        LLM_ENABLED = bool(cfg.get("llm_enabled", True))
+        LLM_PROVIDER = str(cfg.get("llm_provider", "")).strip().lower()
+        LLM_TIMEOUT_S = float(cfg.get("llm_timeout_s", 2.5))
+        LLM_MAX_ITEMS = int(cfg.get("llm_max_items", 3))
+        LLM_MIN_CONTEXT_CHARS = int(cfg.get("llm_min_context_chars", 140))
+        LLM_COOLDOWN_S = float(cfg.get("llm_cooldown_s", 300.0))
+        _DECISION_LOOKBACK = int(cfg.get("decision_lookback", 500))
+        _DISMISS_TTL_S = float(cfg.get("dismiss_ttl_s", 604800.0))
+    except Exception:
+        pass  # keep module-level defaults
+
+
+# Load on import; hot-reload via tuneables_reload dispatcher
+_load_scanner_config()
+
+try:
+    from .tuneables_reload import register_reload
+    register_reload("opportunity_scanner", lambda _s: _load_scanner_config(), "opportunity_scanner")
+except Exception:
+    pass
+
 
 _QUESTION_STOPWORDS = {
     "the",

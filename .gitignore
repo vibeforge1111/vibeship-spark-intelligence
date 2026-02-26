@@ -95,6 +95,7 @@ docs/MINIMAX_KIMI_APPLICATION_IDEAS.md
 docs/MINIMAX_KIMI_48_PROJECTS.md
 docs/CARMACK_WEEK_OF_PAPERS.md
 docs/SPARK_CARMACK_OPTIMIZATION_IMPLEMENTATION.md
+docs/AUTOMATION_RUNBOOK.md
 
 # Launch hygiene / local artifacts
 .openclaw_last_health.txt
@@ -157,3 +158,43 @@ C?UsersUSER*
 *test_output.txt
 *test_out.txt
 *test_err.txt
+
+# Kanban/task-system workspace (not production-ready yet)
+projects/observability-kanban/
+projects/task-system/
+projects/*task-system*/
+docs/KANBAN_DASHBOARD.md
+docs/kanban_board.json
+
+# Local observatory/report artifacts
+_observatory/explore/
+_observatory/stages/
+_observatory/*.json
+_observatory/*.md
+_observatory/*.canvas
+SPARK_CONTEXT_FOR_CODEX.md
+SPARK_ADVISORY_PAYLOAD.json
+bandit_report.json
+scripts/.spark_openclaw_pids.json
+spark-alive/
+
+# Internal-only planning/ops docs (keep out of public PRs)
+docs/NO_BS_*.md
+docs/COMBAT_BOARD_MASTER.md
+docs/observability/*SELF_INTERROGATION*.md
+docs/reports/SELF_INTERROGATION_TRIPLE_TEMPLATE.md
+
+# Internal-only local automation script
+scripts/nightly_self_interrogation.py
+
+# Internal ops workflows/docs (maintain in private ops repo, not public OSS PRs)
+docs/CI_CD_STACK.md
+docs/observability/MEMORY_OBSERVABILITY.md
+scripts/apply_branch_protection.py
+scripts/cross_surface_drift_checker.py
+scripts/helpfulness_llm_adjudicator.py
+scripts/helpfulness_watcher.py
+scripts/run_eidos_curriculum_autofix.py
+tests/test_eidos_curriculum_autofix.py
+tests/test_helpfulness_llm_adjudicator.py
+tests/test_helpfulness_watcher.py

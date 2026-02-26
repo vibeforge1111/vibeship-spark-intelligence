@@ -155,25 +155,26 @@ def _load_prediction_budget_config() -> Tuple[int, int, Dict[str, int]]:
     default_source_budget = DEFAULT_SOURCE_BUDGET
     source_budgets = dict(DEFAULT_SOURCE_BUDGETS)
 
-    raw_total = os.environ.get("SPARK_PREDICTION_TOTAL_BUDGET")
-    if raw_total:
-        try:
-            total_budget = max(20, min(2000, int(raw_total)))
-        except Exception:
-            pass
+    try:
+        from lib.config_authority import resolve_section, env_int, env_str
+        cfg = resolve_section(
+            "prediction",
+            env_overrides={
+                "total_budget": env_int("SPARK_PREDICTION_TOTAL_BUDGET"),
+                "default_source_budget": env_int("SPARK_PREDICTION_DEFAULT_SOURCE_BUDGET"),
+                "source_budgets": env_str("SPARK_PREDICTION_SOURCE_BUDGETS"),
+            },
+        ).data
+        total_budget = int(cfg.get("total_budget", total_budget))
+        default_source_budget = int(cfg.get("default_source_budget", default_source_budget))
+        raw_csv = str(cfg.get("source_budgets", "") or "").strip()
+    except Exception:
+        raw_csv = os.environ.get("SPARK_PREDICTION_SOURCE_BUDGETS", "").strip()
 
-    raw_default = os.environ.get("SPARK_PREDICTION_DEFAULT_SOURCE_BUDGET")
-    if raw_default:
-        try:
-            default_source_budget = max(1, min(2000, int(raw_default)))
-        except Exception:
-            pass
-
-    raw = os.environ.get("SPARK_PREDICTION_SOURCE_BUDGETS", "").strip()
-    if not raw:
+    if not raw_csv:
         return total_budget, default_source_budget, source_budgets
 
-    for part in raw.split(","):
+    for part in raw_csv.split(","):
         token = part.strip()
         if not token or "=" not in token:
             continue
@@ -461,36 +462,28 @@ def collect_outcomes(limit: int = 200) -> Dict[str, int]:
 
 
 def _load_auto_link_config() -> Tuple[bool, float, int, float]:
-    enabled = str(os.environ.get("SPARK_PREDICTION_AUTO_LINK", "1")).strip().lower() not in {
-        "0",
-        "false",
-        "no",
-        "off",
-    }
+    enabled = True
     interval_s = 60.0
     limit = 200
     min_similarity = 0.20
 
-    raw_interval = os.environ.get("SPARK_PREDICTION_AUTO_LINK_INTERVAL_S")
-    if raw_interval:
-        try:
-            interval_s = max(30.0, min(24 * 3600.0, float(raw_interval)))
-        except Exception:
-            pass
-
-    raw_limit = os.environ.get("SPARK_PREDICTION_AUTO_LINK_LIMIT")
-    if raw_limit:
-        try:
-            limit = max(10, min(1000, int(raw_limit)))
-        except Exception:
-            pass
-
-    raw_sim = os.environ.get("SPARK_PREDICTION_AUTO_LINK_MIN_SIM")
-    if raw_sim:
-        try:
-            min_similarity = max(0.05, min(0.95, float(raw_sim)))
-        except Exception:
-            pass
+    try:
+        from lib.config_authority import resolve_section, env_bool, env_int, env_float
+        cfg = resolve_section(
+            "prediction",
+            env_overrides={
+                "auto_link_enabled": env_bool("SPARK_PREDICTION_AUTO_LINK"),
+                "auto_link_interval_s": env_float("SPARK_PREDICTION_AUTO_LINK_INTERVAL_S"),
+                "auto_link_limit": env_int("SPARK_PREDICTION_AUTO_LINK_LIMIT"),
+                "auto_link_min_sim": env_float("SPARK_PREDICTION_AUTO_LINK_MIN_SIM"),
+            },
+        ).data
+        enabled = bool(cfg.get("auto_link_enabled", True))
+        interval_s = float(cfg.get("auto_link_interval_s", 60.0))
+        limit = int(cfg.get("auto_link_limit", 200))
+        min_similarity = float(cfg.get("auto_link_min_sim", 0.20))
+    except Exception:
+        pass  # keep defaults
 
     return enabled, interval_s, limit, min_similarity
 

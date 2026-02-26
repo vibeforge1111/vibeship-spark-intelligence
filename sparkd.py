@@ -13,8 +13,10 @@ This is intentionally dependency-free.
 """
 
 import atexit
+import hmac
 import json
 import os
+import re
 import secrets
 import time
 from collections import defaultdict, deque
@@ -51,6 +53,13 @@ RATE_LIMIT_PER_MIN = int(os.environ.get("SPARKD_RATE_LIMIT_PER_MIN", "240"))
 RATE_LIMIT_WINDOW_S = int(os.environ.get("SPARKD_RATE_LIMIT_WINDOW_S", "60"))
 INVALID_EVENTS_MAX_LINES = int(os.environ.get("SPARKD_INVALID_EVENTS_MAX_LINES", "2000"))
 INVALID_EVENTS_MAX_PAYLOAD_CHARS = int(os.environ.get("SPARKD_INVALID_EVENTS_MAX_PAYLOAD_CHARS", "4000"))
+_REDACT_PATTERNS = (
+    (re.compile(r"(?i)\b(authorization\s*[:=]\s*bearer\s+)([A-Za-z0-9._\-]+)"), r"\1[REDACTED]"),
+    (re.compile(r'(?i)("authorization"\s*:\s*")bearer\s+[^"]+(")'), r'\1[REDACTED]\2'),
+    (re.compile(r'(?i)("?(api[_-]?key|token|secret|password)"?\s*:\s*")([^"]{8,})(")'), r"\1[REDACTED]\4"),
+    (re.compile(r"(?i)\b(api[_-]?key|token|secret|password)\s*[:=]\s*([A-Za-z0-9._\-]{8,})"), r"\1=[REDACTED]"),
+    (re.compile(r"\bsk-[A-Za-z0-9_\-]{8,}\b"), "[REDACTED_SK]"),
+)
 
 _RATE_LIMIT_BUCKETS = defaultdict(deque)
 _RATE_LIMIT_LOCK = Lock()
@@ -85,7 +94,16 @@ def _resolve_token() -> str:
     generated = secrets.token_urlsafe(24)
     try:
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-        TOKEN_FILE.write_text(generated, encoding="utf-8")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        if hasattr(os, "O_BINARY"):
+            flags |= os.O_BINARY
+        fd = os.open(str(TOKEN_FILE), flags, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(generated)
+        try:
+            os.chmod(TOKEN_FILE, 0o600)
+        except Exception:
+            pass
     except Exception:
         pass
     return generated
@@ -188,7 +206,17 @@ def _text(handler: BaseHTTPRequestHandler, code: int, body: str):
 def _is_authorized(handler: BaseHTTPRequestHandler) -> bool:
     """Require Bearer token for mutating POST endpoints."""
     auth = (handler.headers.get("Authorization") or "").strip()
-    return auth == f"Bearer {TOKEN}"
+    return hmac.compare_digest(auth, f"Bearer {TOKEN}")
+
+
+def _redact_sensitive_text(text: str) -> str:
+    out = str(text or "")
+    for pattern, repl in _REDACT_PATTERNS:
+        try:
+            out = pattern.sub(repl, out)
+        except Exception:
+            continue
+    return out
 
 
 def _allow_rate_limited_request(client_ip: str, now: float | None = None) -> tuple[bool, int]:
@@ -230,15 +258,17 @@ def _trim_jsonl_tail(path: Path, max_lines: int) -> None:
 def _truncate_payload(payload):
     """Limit payload size for invalid-event quarantine safety."""
     if isinstance(payload, str):
-        if len(payload) <= INVALID_EVENTS_MAX_PAYLOAD_CHARS:
-            return payload
-        return payload[:INVALID_EVENTS_MAX_PAYLOAD_CHARS] + "...<truncated>"
+        sanitized = _redact_sensitive_text(payload)
+        if len(sanitized) <= INVALID_EVENTS_MAX_PAYLOAD_CHARS:
+            return sanitized
+        return sanitized[:INVALID_EVENTS_MAX_PAYLOAD_CHARS] + "...<truncated>"
     if isinstance(payload, dict):
-        text = json.dumps(payload, ensure_ascii=False)
+        text = _redact_sensitive_text(json.dumps(payload, ensure_ascii=False))
         if len(text) <= INVALID_EVENTS_MAX_PAYLOAD_CHARS:
-            return payload
+            return text
         return text[:INVALID_EVENTS_MAX_PAYLOAD_CHARS] + "...<truncated>"
-    return str(payload)[:INVALID_EVENTS_MAX_PAYLOAD_CHARS]
+    sanitized = _redact_sensitive_text(str(payload))
+    return sanitized[:INVALID_EVENTS_MAX_PAYLOAD_CHARS]
 
 
 def _quarantine_invalid(payload, reason: str) -> None:
@@ -634,14 +664,17 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/agent":
             length = int(self.headers.get("Content-Length", "0") or 0)
+            if length > MAX_BODY_BYTES:
+                return _json(self, 413, {"ok": False, "error": "payload_too_large"})
             body = self.rfile.read(length) if length else b"{}"
             try:
                 data = json.loads(body.decode("utf-8") or "{}")
+                agent_id = data.get("agent_id") or data.get("name", "").lower().replace(" ", "-")
                 ok = register_agent(
-                    agent_id=data.get("agent_id") or data.get("name", "").lower().replace(" ", "-"),
-                    name=data.get("name"),
-                    capabilities=data.get("capabilities", []),
-                    specialization=data.get("specialization", "general"),
+                    agent_id=agent_id[:128],
+                    name=(data.get("name") or "")[:256],
+                    capabilities=data.get("capabilities", [])[:50],
+                    specialization=(data.get("specialization", "general") or "general")[:128],
                 )
                 return _json(self, 201 if ok else 400, {"ok": ok})
             except Exception as e:
@@ -649,12 +682,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/orchestration/recommend":
             length = int(self.headers.get("Content-Length", "0") or 0)
+            if length > MAX_BODY_BYTES:
+                return _json(self, 413, {"ok": False, "error": "payload_too_large"})
             body = self.rfile.read(length) if length else b"{}"
             try:
                 data = json.loads(body.decode("utf-8") or "{}")
                 agent_id, reason = recommend_agent(
-                    query=data.get("query", "") or data.get("task", ""),
-                    task_type=data.get("task_type", ""),
+                    query=(data.get("query", "") or data.get("task", ""))[:1024],
+                    task_type=(data.get("task_type", "") or "")[:256],
                 )
                 return _json(self, 200, {"ok": True, "recommended_agent": agent_id, "reason": reason})
             except Exception as e:
@@ -662,12 +697,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/handoff":
             length = int(self.headers.get("Content-Length", "0") or 0)
+            if length > MAX_BODY_BYTES:
+                return _json(self, 413, {"ok": False, "error": "payload_too_large"})
             body = self.rfile.read(length) if length else b"{}"
             try:
                 data = json.loads(body.decode("utf-8") or "{}")
                 hid = record_handoff(
-                    from_agent=data.get("from_agent"),
-                    to_agent=data.get("to_agent"),
+                    from_agent=(data.get("from_agent") or "")[:128],
+                    to_agent=(data.get("to_agent") or "")[:128],
                     context=data.get("context", {}),
                     success=data.get("success"),
                 )

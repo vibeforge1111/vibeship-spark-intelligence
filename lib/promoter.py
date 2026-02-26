@@ -2,7 +2,7 @@
 Spark Promoter: Auto-promote high-value insights to project files
 
 When a cognitive insight proves reliable enough (high validation count,
-high reliability score), it should be promoted to permanent project 
+high reliability score), it should be promoted to permanent project
 documentation where it will always be loaded.
 
 Promotion targets:
@@ -21,17 +21,17 @@ Promotion criteria:
 import json
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any
-from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
+
+from .chip_merger import merge_chip_insights
+from .cognitive_learner import CognitiveCategory, CognitiveInsight, get_cognitive_learner
+from .config_authority import resolve_section
+from .project_profile import load_profile
 
 log = logging.getLogger(__name__)
-
-from .cognitive_learner import CognitiveInsight, CognitiveCategory, get_cognitive_learner
-from .project_profile import load_profile
-from .chip_merger import merge_chip_insights
-
 
 # ============= Configuration =============
 DEFAULT_PROMOTION_THRESHOLD = 0.80  # 80% reliability default (raised from 0.7 to reduce noise)
@@ -157,16 +157,9 @@ def _clean_text_for_write(text: str) -> str:
         return text or ""
 
 
-def _load_promotion_config() -> Dict[str, Any]:
-    cfg: Dict[str, Any] = {}
-    try:
-        tuneables = Path.home() / ".spark" / "tuneables.json"
-        if tuneables.exists():
-            # Accept UTF-8 with BOM (common on Windows).
-            data = json.loads(tuneables.read_text(encoding="utf-8-sig"))
-            cfg = data.get("promotion") or data.get("promoter") or {}
-    except Exception:
-        return {}
+def _load_promotion_config(path: Optional[Path] = None) -> Dict[str, Any]:
+    tuneables = path or (Path.home() / ".spark" / "tuneables.json")
+    cfg = resolve_section("promotion", runtime_path=tuneables).data
     return cfg if isinstance(cfg, dict) else {}
 
 
@@ -319,7 +312,7 @@ PROMOTION_TARGETS = [
     ),
     PromotionTarget(
         filename="TOOLS.md",
-        section="## Spark Learnings", 
+        section="## Spark Learnings",
         categories=[
             CognitiveCategory.CONTEXT,
         ],
@@ -373,7 +366,7 @@ class Promoter:
         if isinstance(cfg, dict):
             self.confidence_floor = float(cfg.get("confidence_floor", self.confidence_floor))
             self.min_age_hours = float(cfg.get("min_age_hours", self.min_age_hours))
-    
+
     @staticmethod
     def _insight_age_hours(insight: CognitiveInsight) -> float:
         """Compute insight age in hours from created_at."""
@@ -443,24 +436,57 @@ class Promoter:
             if category in target.categories:
                 return target
         return None
-    
+
+    def _llm_area_soft_promotion_triage(
+        self, insight: "CognitiveInsight", target: "PromotionTarget",
+    ) -> bool:
+        """LLM area: verify an insight is genuinely worth promoting.
+
+        Returns True if promotion should proceed, False to skip.
+        When the area is disabled (default), always returns True (no-op).
+        """
+        try:
+            from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
+
+            prompt = format_prompt(
+                "soft_promotion_triage",
+                statement=str(insight.insight)[:500],
+                reliability=str(insight.reliability),
+                validations=str(insight.times_validated),
+                category=str(insight.category),
+            )
+            result = llm_area_call("soft_promotion_triage", prompt, fallback="")
+            if not result.used_llm:
+                return True  # Area disabled — proceed with promotion
+
+            import json as _json
+            try:
+                data = _json.loads(result.text)
+            except (ValueError, TypeError):
+                return True  # Parse error — default to promote
+
+            return bool(data.get("promote", True))
+        except Exception:
+            return True  # Any error — default to promote
+
     def _format_insight_for_promotion(self, insight: CognitiveInsight) -> str:
         """Format an insight as a concise rule for documentation."""
         # Extract the core insight without verbose details
         rule = _clean_text_for_write(insight.insight)
-        
+
         # Add reliability indicator
         reliability_str = f"({insight.reliability:.0%} reliable, {insight.times_validated} validations)"
-        
+
         # Add context if not generic
         if insight.context and insight.context not in ["General principle", "All interactions"]:
             ctx = _clean_text_for_write(insight.context[:50])
             context_note = f" *When: {ctx}*"
         else:
             context_note = ""
-        
+
         return _clean_text_for_write(f"- {rule}{context_note} {reliability_str}")
-    
+
     def _ensure_section_exists(self, file_path: Path, section: str) -> str:
         """Ensure the target section exists in the file. Returns file content."""
         try:
@@ -485,7 +511,7 @@ class Promoter:
         except OSError as e:
             log.warning("Failed to ensure section in %s: %s", file_path, e)
             return ""
-    
+
     def _get_budget(self, file_path: Path) -> int:
         budget = self.adapter_budgets.get(file_path.name, {})
         return int(budget.get("max_items", 0) or 0)
@@ -800,30 +826,34 @@ class Promoter:
             return safe_only
 
         return candidates
-    
-    def promote_insight(self, insight: CognitiveInsight, insight_key: str, 
+
+    def promote_insight(self, insight: CognitiveInsight, insight_key: str,
                        target: PromotionTarget) -> bool:
         """Promote a single insight to its target file."""
         file_path = self.project_dir / target.filename
-        
+
+        # LLM area: soft_promotion_triage — verify promotion worthiness
+        if not self._llm_area_soft_promotion_triage(insight, target):
+            return False
+
         try:
             # Format the insight
             formatted = self._format_insight_for_promotion(insight)
-            
+
             # Append to target file
             self._append_to_section(file_path, target.section, formatted)
-            
+
             # Mark as promoted
             cognitive = get_cognitive_learner()
             cognitive.mark_promoted(insight_key, target.filename)
-            
+
             print(f"[SPARK] Promoted to {target.filename}: {insight.insight[:50]}...")
             return True
-            
+
         except Exception as e:
             print(f"[SPARK] Promotion failed: {e}")
             return False
-    
+
     def promote_all(self, dry_run: bool = False, include_project: bool = True, include_chip_merge: bool = True) -> Dict[str, int]:
         """Promote all eligible insights (filters operational telemetry).
 
@@ -904,7 +934,7 @@ class Promoter:
                 self._log_promotion(key, target.filename, "failed")
 
         return stats
-    
+
     def get_promotion_status(self) -> Dict:
         """Get status of promotions (includes two-track + filter stats)."""
         cognitive = get_cognitive_learner()
@@ -957,3 +987,20 @@ def check_and_promote(
 def get_promotion_status(project_dir: Optional[Path] = None) -> Dict:
     """Get promotion status."""
     return get_promoter(project_dir).get_promotion_status()
+
+
+# ---------------------------------------------------------------------------
+# Hot-reload registration
+# ---------------------------------------------------------------------------
+
+def _reload_promotion_from(_cfg: Dict) -> None:
+    """Hot-reload callback — invalidate cached Promoter so next call picks up new config."""
+    global _promoter
+    _promoter = None
+
+
+try:
+    from .tuneables_reload import register_reload as _prom_register
+    _prom_register("promotion", _reload_promotion_from, label="promoter.reload")
+except Exception:
+    pass

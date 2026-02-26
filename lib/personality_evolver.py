@@ -211,11 +211,27 @@ class PersonalityEvolver:
 
 
 def feature_enabled() -> bool:
-    return str(os.environ.get("SPARK_PERSONALITY_EVOLUTION_V1", "")).strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        from lib.config_authority import resolve_section, env_bool
+        cfg = resolve_section(
+            "feature_gates",
+            env_overrides={"personality_evolution": env_bool("SPARK_PERSONALITY_EVOLUTION_V1")},
+        ).data
+        return bool(cfg.get("personality_evolution", False))
+    except Exception:
+        return str(os.environ.get("SPARK_PERSONALITY_EVOLUTION_V1", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def observer_mode_enabled() -> bool:
-    return str(os.environ.get("SPARK_PERSONALITY_EVOLUTION_OBSERVER", "")).strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        from lib.config_authority import resolve_section, env_bool
+        cfg = resolve_section(
+            "feature_gates",
+            env_overrides={"personality_observer": env_bool("SPARK_PERSONALITY_EVOLUTION_OBSERVER")},
+        ).data
+        return bool(cfg.get("personality_observer", False))
+    except Exception:
+        return str(os.environ.get("SPARK_PERSONALITY_EVOLUTION_OBSERVER", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def default_state_path() -> Path:

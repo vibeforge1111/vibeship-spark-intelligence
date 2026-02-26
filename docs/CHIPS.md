@@ -6,22 +6,28 @@ Navigation hub: `docs/GLOSSARY.md`
 ## Open-Source Launch Behavior
 
 Spark OSS ships the chip architecture, but chip processing is disabled by default.
-To keep the default launch minimal and safe, set:
+To keep the default launch minimal and safe, enable chips via tuneables:
+
+```json
+// ~/.spark/tuneables.json  (canonical method)
+{
+  "feature_flags": {
+    "premium_tools": true,
+    "chips_enabled": true
+  }
+}
+```
+
+Or via env vars (overrides for CI/containers):
 
 ```bash
 set SPARK_PREMIUM_TOOLS=1
 set SPARK_CHIPS_ENABLED=1
 ```
 
-This enables chip runtime for premium-capable deployments. In OSS default, either
-`SPARK_PREMIUM_TOOLS` or `SPARK_CHIPS_ENABLED` is missing, so chip loading and
-advice contributions are disabled.
+In OSS default, both flags are `false`, so chip loading and advice contributions are disabled.
 
-Premium social/tooling surfaces are not enabled at OSS default:
-
-```bash
-set SPARK_PREMIUM_TOOLS=1
-```
+See `docs/CONFIG_AUTHORITY.md` for the full precedence model (schema defaults → versioned baseline → runtime overrides → env overrides).
 
 ```
 +------------------+     +------------------+     +------------------+
@@ -64,7 +70,7 @@ Spark supports three chip formats:
 - `multifile`: `chip.yaml` plus modular `triggers.yaml`, `observers.yaml`, `outcomes.yaml`, etc.
 - `hybrid`: one `*.chip.yaml` with `includes:` to merge modular files
 
-Format preference can be controlled with `SPARK_CHIP_PREFERRED_FORMAT` (default: `multifile`).
+Format preference is controlled via `chips_runtime.preferred_format` in tuneables (default: `multifile`), or the env override `SPARK_CHIP_PREFERRED_FORMAT`.
 
 ## Quick Start
 

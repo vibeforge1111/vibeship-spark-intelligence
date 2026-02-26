@@ -30,7 +30,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TypedDict, Union
 
 from .diagnostics import log_debug
 
@@ -52,27 +52,43 @@ _flush_counter = 0
 _FLUSH_INTERVAL = 20
 
 
+class StoreDetails(TypedDict):
+    stored: bool
+    insight_key: str
+    stored_text: str
+
+
+StoreResult = Union[bool, StoreDetails]
+
+
 def _is_enabled() -> bool:
     """Check if unified validation is enabled (cached)."""
     global _ENABLED
     if _ENABLED is not None:
         return _ENABLED
-    # Check env var override first
-    env = os.getenv("SPARK_VALIDATE_AND_STORE", "")
-    if env == "0":
-        _ENABLED = False
-        return False
-    if env == "1":
-        _ENABLED = True
-        return True
-    # Check tuneables
     try:
-        from .tuneables_reload import get_section
-        flow_cfg = get_section("flow")
-        val = flow_cfg.get("validate_and_store_enabled", True)
-        _ENABLED = bool(val)
+        from .config_authority import resolve_section, env_bool
+        cfg = resolve_section(
+            "flow",
+            env_overrides={
+                "validate_and_store_enabled": env_bool("SPARK_VALIDATE_AND_STORE"),
+            },
+        ).data
+        _ENABLED = bool(cfg.get("validate_and_store_enabled", True))
     except Exception:
-        _ENABLED = True
+        # Fallback: check env var, then tuneables_reload
+        env = os.getenv("SPARK_VALIDATE_AND_STORE", "")
+        if env == "0":
+            _ENABLED = False
+        elif env == "1":
+            _ENABLED = True
+        else:
+            try:
+                from .tuneables_reload import get_section
+                flow_cfg = get_section("flow")
+                _ENABLED = bool(flow_cfg.get("validate_and_store_enabled", True))
+            except Exception:
+                _ENABLED = True
     return _ENABLED
 
 
@@ -104,7 +120,9 @@ def validate_and_store_insight(
     source: str = "unknown",
     *,
     record_exposure: bool = True,
-) -> bool:
+    return_details: bool = False,
+    roast_context: Optional[Dict[str, Any]] = None,
+) -> StoreResult:
     """
     Validate an insight through Meta-Ralph and store in cognitive learner.
 
@@ -116,11 +134,28 @@ def validate_and_store_insight(
         3. On Meta-Ralph exception → quarantine (fail-open)
 
     Returns:
-        True if stored, False if rejected by quality gate or noise filter.
+        Default: bool stored flag.
+        If return_details=True: dict with {stored, insight_key, stored_text}.
         On Meta-Ralph exception: quarantines for diagnostics AND stores (fail-open).
     """
+    def _result(stored: bool, *, insight_key: str = "", stored_text: str = "") -> StoreResult:
+        if not return_details:
+            return bool(stored)
+        return {
+            "stored": bool(stored),
+            "insight_key": str(insight_key or ""),
+            "stored_text": str(stored_text or ""),
+        }
+
+    def _derive_key(cog: Any, final_text: str) -> str:
+        try:
+            key_part = str(final_text or "")[:40].replace(" ", "_").lower()
+            return str(cog._generate_key(category, key_part) or "")
+        except Exception:
+            return ""
+
     if not text or not str(text).strip():
-        return False
+        return _result(False)
 
     # Rollback switch: bypass validation, direct write
     if not _is_enabled():
@@ -135,10 +170,13 @@ def validate_and_store_insight(
                 source=source,
                 record_exposure=record_exposure,
             )
-            return result is not None
+            if result is None:
+                return _result(False, stored_text=text)
+            final_text = str(getattr(result, "insight", text) or text)
+            return _result(True, insight_key=_derive_key(cog, final_text), stored_text=final_text)
         except Exception as e:
             log_debug("validate_and_store", "bypass_write_failed", e)
-            return False
+            return _result(False)
 
     _record("total_attempted")
 
@@ -146,7 +184,7 @@ def validate_and_store_insight(
     try:
         from .meta_ralph import get_meta_ralph, RoastVerdict
         ralph = get_meta_ralph()
-        roast_result = ralph.roast(text, source=source)
+        roast_result = ralph.roast(text, source=source, context=roast_context)
         verdict = roast_result.verdict
 
         if verdict == RoastVerdict.PRIMITIVE:
@@ -198,14 +236,15 @@ def validate_and_store_insight(
         )
         if result is not None:
             _record("stored")
-            return True
+            final_text = str(getattr(result, "insight", text) or text)
+            return _result(True, insight_key=_derive_key(cog, final_text), stored_text=final_text)
         else:
             _record("noise_filtered")
-            return False
+            return _result(False, stored_text=text)
     except Exception as e:
         _record("storage_failed")
         log_debug("validate_and_store", "cognitive_store_failed", e)
-        return False
+        return _result(False, stored_text=text)
 
 
 # Wire reload: reset cached _ENABLED when flow section changes in tuneables

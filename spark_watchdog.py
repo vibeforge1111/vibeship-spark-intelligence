@@ -9,8 +9,8 @@ import json
 import os
 import subprocess
 import sys
-import time
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 from urllib import request
@@ -21,7 +21,6 @@ from lib.ports import (
     PULSE_UI_URL,
     SPARKD_HEALTH_URL,
 )
-
 
 SPARK_DIR = Path(__file__).resolve().parent
 LOG_DIR = Path.home() / ".spark" / "logs"
@@ -38,6 +37,23 @@ LOG_MAX_BYTES = int(os.environ.get("SPARK_LOG_MAX_BYTES", "10485760"))
 LOG_BACKUPS = int(os.environ.get("SPARK_LOG_BACKUPS", "5"))
 
 
+def _is_watchdog_process_command(cmd: str) -> bool:
+    """Best-effort watchdog process matcher that avoids shell wrapper false positives."""
+    cmd_l = (cmd or "").lower()
+    if not cmd_l:
+        return False
+    # Ignore shell wrappers that *mention* watchdog in an inline command string.
+    if "powershell" in cmd_l and "-command" in cmd_l:
+        return False
+    if "cmd.exe" in cmd_l and "/c" in cmd_l and "spark_watchdog.py" in cmd_l:
+        return False
+    return (
+        "-m spark_watchdog" in cmd_l
+        or "spark_watchdog.py" in cmd_l
+        or "scripts/watchdog.py" in cmd_l
+    )
+
+
 def _check_single_instance() -> bool:
     """Ensure only one watchdog runs. Returns True if we can proceed, False if another is running."""
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -49,11 +65,7 @@ def _check_single_instance() -> bool:
         for pid, cmd in snapshot:
             if pid == os.getpid():
                 continue
-            if (
-                "-m spark_watchdog" in cmd
-                or "spark_watchdog.py" in cmd
-                or "scripts/watchdog.py" in cmd
-            ):
+            if _is_watchdog_process_command(cmd):
                 return False
     except Exception:
         # Fall back to PID file heuristics below.
@@ -64,11 +76,7 @@ def _check_single_instance() -> bool:
         for spid, cmd in snapshot:
             if spid != pid:
                 continue
-            if (
-                "-m spark_watchdog" in cmd
-                or "spark_watchdog.py" in cmd
-                or "scripts/watchdog.py" in cmd
-            ):
+            if _is_watchdog_process_command(cmd):
                 return True
         return False
 
@@ -326,10 +334,10 @@ def _start_process(
         if os.name == "nt":
             # CREATE_NO_WINDOW (0x08000000) prevents console windows from opening
             # DETACHED_PROCESS alone is NOT enough on Windows
-            CREATE_NO_WINDOW = 0x08000000
+            create_no_window = 0x08000000
             creationflags = (
                 getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                | CREATE_NO_WINDOW
+                | create_no_window
             )
         with open(log_path, "a", encoding="utf-8", errors="replace") as log_f:
             subprocess.Popen(
@@ -412,8 +420,8 @@ def _record_restart(state: dict, service: str) -> None:
 
 def _queue_counts() -> tuple[int, int]:
     sys.path.insert(0, str(SPARK_DIR))
-    from lib.queue import count_events
     from lib.pattern_detection.worker import get_pattern_backlog
+    from lib.queue import count_events
 
     return count_events(), get_pattern_backlog()
 
@@ -576,7 +584,7 @@ def main() -> None:
         if manage_pulse and (not pulse_ok):
             # Check PID file first (covers external pulse started by service_control)
             try:
-                from lib.service_control import _read_pid, _pid_alive, _get_pulse_command
+                from lib.service_control import _get_pulse_command, _pid_alive, _read_pid
                 pulse_pid_from_file = _read_pid("pulse")
                 pid_file_alive = _pid_alive(pulse_pid_from_file)
             except Exception:

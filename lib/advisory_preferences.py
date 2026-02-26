@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
+from .config_authority import resolve_section
+
 
 TUNEABLES_PATH = Path.home() / ".spark" / "tuneables.json"
 VALID_MEMORY_MODES = {"off", "standard", "replay"}
@@ -135,6 +137,18 @@ def _value_differs(actual: Any, expected: Any) -> bool:
     except Exception:
         pass
     return actual != expected
+
+
+def _load_runtime_only_keys(path: Path = TUNEABLES_PATH) -> Dict[str, Any]:
+    """Read the raw advisor section from the runtime file (no schema merge)."""
+    try:
+        if not path.exists():
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+        section = data.get("advisor")
+        return dict(section) if isinstance(section, dict) else {}
+    except Exception:
+        return {}
 
 
 def _detect_profile_drift(advisor_cfg: Dict[str, Any], baseline: Dict[str, Any]) -> Dict[str, Any]:
@@ -263,17 +277,21 @@ def setup_questions(current: Dict[str, Any] | None = None) -> Dict[str, Any]:
 
 
 def get_current_preferences(path: Path = TUNEABLES_PATH) -> Dict[str, Any]:
-    data = _read_json(path)
-    advisor = data.get("advisor") if isinstance(data.get("advisor"), dict) else {}
-    memory_mode = _normalize_memory_mode(advisor.get("replay_mode"))
-    guidance_style = _normalize_guidance_style(advisor.get("guidance_style"))
+    runtime_advisor = resolve_section("advisor", runtime_path=path).data
+    if not isinstance(runtime_advisor, dict):
+        runtime_advisor = {}
+    memory_mode = _normalize_memory_mode(runtime_advisor.get("replay_mode"))
+    guidance_style = _normalize_guidance_style(runtime_advisor.get("guidance_style"))
     baseline = _derived_overrides(memory_mode, guidance_style)
     effective = dict(baseline)
-    drift = _detect_profile_drift(advisor, baseline)
+    # Only compare keys the user explicitly set in runtime config to avoid
+    # false drift from schema defaults merged by resolve_section.
+    runtime_only_keys = _load_runtime_only_keys(path)
+    drift = _detect_profile_drift(runtime_only_keys, baseline)
     # Keep explicit overrides visible if present.
     for key in DRIFT_KEYS:
-        if key in advisor:
-            effective[key] = advisor.get(key)
+        if key in runtime_advisor:
+            effective[key] = runtime_advisor.get(key)
     return {
         "memory_mode": memory_mode,
         "guidance_style": guidance_style,
@@ -450,3 +468,20 @@ def repair_profile_drift(
         "after_drift": after.get("drift", {}),
         "applied": applied,
     }
+
+
+# ---------------------------------------------------------------------------
+# Hot-reload registration
+# ---------------------------------------------------------------------------
+
+def _reload_preferences_from(_cfg) -> None:
+    """Hot-reload callback — config is read fresh each call, no cached state."""
+    pass
+
+
+try:
+    from .tuneables_reload import register_reload as _pref_register
+    _pref_register("advisor", _reload_preferences_from, label="advisory_preferences.reload")
+    _pref_register("advisory_quality", _reload_preferences_from, label="advisory_preferences.reload.quality")
+except Exception:
+    pass

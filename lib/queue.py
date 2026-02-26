@@ -21,17 +21,18 @@ from typing import Optional, Dict, Any, List
 from enum import Enum
 from dataclasses import dataclass, asdict
 
+from lib.config_authority import env_int, resolve_section
 from lib.diagnostics import log_debug
 
 # ============= Configuration =============
 QUEUE_DIR = Path.home() / ".spark" / "queue"
 EVENTS_FILE = QUEUE_DIR / "events.jsonl"
-MAX_EVENTS = int(os.environ.get("SPARK_QUEUE_MAX_EVENTS", "10000"))  # Rotate after this many events
-MAX_QUEUE_BYTES = int(os.environ.get("SPARK_QUEUE_MAX_BYTES", "10485760"))  # 10 MB
+MAX_EVENTS = 10000  # Rotate after this many events
+MAX_QUEUE_BYTES = 10 * 1024 * 1024  # 10 MB
 LOCK_FILE = QUEUE_DIR / ".queue.lock"
 OVERFLOW_FILE = QUEUE_DIR / "events.overflow.jsonl"
 QUEUE_STATE_FILE = QUEUE_DIR / "state.json"
-QUEUE_COMPACT_HEAD_BYTES = int(os.environ.get("SPARK_QUEUE_COMPACT_HEAD_BYTES", str(5 * 1024 * 1024)))
+QUEUE_COMPACT_HEAD_BYTES = 5 * 1024 * 1024
 TUNEABLES_FILE = Path.home() / ".spark" / "tuneables.json"
 
 # Read the tail in chunks to avoid loading large files into memory.
@@ -46,21 +47,23 @@ _COUNT_CACHE_TTL_S: float = 1.0
 
 
 def _load_queue_config() -> Dict[str, Any]:
-    try:
-        if TUNEABLES_FILE.exists():
-            # Accept UTF-8 with BOM (common on Windows).
-            data = json.loads(TUNEABLES_FILE.read_text(encoding="utf-8-sig"))
-            if isinstance(data, dict):
-                cfg = data.get("queue") or {}
-                if isinstance(cfg, dict):
-                    return cfg
-    except Exception:
-        pass
-    return {}
+    resolved = resolve_section(
+        "queue",
+        runtime_path=TUNEABLES_FILE,
+        env_overrides={
+            "max_events": env_int("SPARK_QUEUE_MAX_EVENTS", lo=100, hi=1_000_000),
+            "max_queue_bytes": env_int("SPARK_QUEUE_MAX_BYTES", lo=1_048_576, hi=1_073_741_824),
+            "compact_head_bytes": env_int("SPARK_QUEUE_COMPACT_HEAD_BYTES", lo=1_048_576, hi=134_217_728),
+            "tail_chunk_bytes": env_int("SPARK_QUEUE_TAIL_CHUNK_BYTES", lo=4096, hi=4 * 1024 * 1024),
+        },
+    )
+    return resolved.data if isinstance(resolved.data, dict) else {}
 
 
 def _apply_queue_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     global MAX_EVENTS
+    global MAX_QUEUE_BYTES
+    global QUEUE_COMPACT_HEAD_BYTES
     global TAIL_CHUNK_BYTES
 
     applied: List[str] = []
@@ -74,6 +77,22 @@ def _apply_queue_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
             applied.append("max_events")
         except Exception:
             warnings.append("invalid_max_events")
+
+    if "max_queue_bytes" in cfg:
+        try:
+            MAX_QUEUE_BYTES = max(1_048_576, min(1_073_741_824, int(cfg.get("max_queue_bytes") or 1_048_576)))
+            applied.append("max_queue_bytes")
+        except Exception:
+            warnings.append("invalid_max_queue_bytes")
+
+    if "compact_head_bytes" in cfg:
+        try:
+            QUEUE_COMPACT_HEAD_BYTES = max(
+                1_048_576, min(134_217_728, int(cfg.get("compact_head_bytes") or 1_048_576))
+            )
+            applied.append("compact_head_bytes")
+        except Exception:
+            warnings.append("invalid_compact_head_bytes")
 
     if "tail_chunk_bytes" in cfg:
         try:
@@ -89,9 +108,15 @@ def apply_queue_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     return _apply_queue_config(cfg)
 
 
+def _reload_queue_config(_cfg: Dict[str, Any]) -> None:
+    _apply_queue_config(_load_queue_config())
+
+
 def get_queue_config() -> Dict[str, Any]:
     return {
         "max_events": int(MAX_EVENTS),
+        "max_queue_bytes": int(MAX_QUEUE_BYTES),
+        "compact_head_bytes": int(QUEUE_COMPACT_HEAD_BYTES),
         "tail_chunk_bytes": int(TAIL_CHUNK_BYTES),
     }
 
@@ -100,7 +125,7 @@ _apply_queue_config(_load_queue_config())
 
 try:
     from lib.tuneables_reload import register_reload as _queue_register
-    _queue_register("queue", apply_queue_config, label="queue.apply_config")
+    _queue_register("queue", _reload_queue_config, label="queue.apply_config")
 except ImportError:
     pass
 

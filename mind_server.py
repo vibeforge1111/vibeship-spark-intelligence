@@ -17,6 +17,7 @@ server zero-dependency. We can upgrade to embeddings later.
 """
 
 import json
+import hmac
 import os
 import re
 import secrets
@@ -69,7 +70,16 @@ def _resolve_token() -> str:
     generated = secrets.token_urlsafe(24)
     try:
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-        TOKEN_FILE.write_text(generated, encoding="utf-8")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        if hasattr(os, "O_BINARY"):
+            flags |= os.O_BINARY
+        fd = os.open(str(TOKEN_FILE), flags, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(generated)
+        try:
+            os.chmod(TOKEN_FILE, 0o600)
+        except Exception:
+            pass
     except Exception:
         pass
     return generated
@@ -110,7 +120,7 @@ def _is_csrf_safe(headers) -> bool:
 
 def _is_authorized(headers) -> bool:
     token = (headers.get("Authorization") or "").strip() if headers is not None else ""
-    return token == f"Bearer {TOKEN}"
+    return hmac.compare_digest(token, f"Bearer {TOKEN}")
 
 
 TOKEN = _resolve_token()

@@ -219,9 +219,13 @@ def validate_step_envelope(step: Step, memories_exist: bool = False) -> StepEnve
 
 
 def _trace_gap_severity() -> WatcherSeverity:
-    if os.environ.get("SPARK_TRACE_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}:
-        return WatcherSeverity.BLOCK
-    return WatcherSeverity.WARNING
+    try:
+        from lib.config_authority import resolve_section, env_bool
+        _e = resolve_section("eidos", env_overrides={"trace_strict": env_bool("SPARK_TRACE_STRICT")}).data
+        strict = bool(_e.get("trace_strict", False))
+    except Exception:
+        strict = os.environ.get("SPARK_TRACE_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}
+    return WatcherSeverity.BLOCK if strict else WatcherSeverity.WARNING
 
 
 # ===== WATCHERS =====

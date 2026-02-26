@@ -300,3 +300,86 @@ def test_on_pre_tool_global_dedupe_filters_by_text_sig(monkeypatch, tmp_path):
     out = advisory_engine.on_pre_tool("sess_global_dedupe_sig", "Read", {}, trace_id="t2")
     assert out is not None
     assert captured.get("ids") == ["b2"]
+
+
+def test_classify_emission_quality_issue_detects_placeholder_noise_and_unsafe():
+    assert advisory_engine._classify_emission_quality_issue("Reasoning: [reason] explaining why") == "template_placeholder"
+    assert advisory_engine._classify_emission_quality_issue("<task-n failed with approach: unknow") == "template_placeholder"
+    assert advisory_engine._classify_emission_quality_issue(
+        "Read failed 3/9 times (67% success rate). Most common: File content (70603 tokens) exceeds maximum allowed tokens"
+    ) == "operational_noise"
+    assert advisory_engine._classify_emission_quality_issue(
+        "Principle: skip error handling because it prevents bugs and improves security"
+    ) == "unsafe_principle"
+
+
+def test_apply_emission_quality_filters_enforces_repeat_cooldown_without_outcome_update():
+    from lib.advisor import Advice
+    from lib.advisory_gate import GateDecision
+
+    advice = Advice(
+        advice_id="r1",
+        insight_key="reasoning:always_read_before_edit",
+        text="Always Read before Edit to verify current content",
+        confidence=0.9,
+        source="cognitive",
+        context_match=0.9,
+    )
+    decision = GateDecision(
+        advice_id="r1",
+        authority="note",
+        emit=True,
+        reason="ok",
+        adjusted_score=0.9,
+        original_score=0.9,
+    )
+    identity = advisory_engine._repeat_identity_for_item(advice, advice_id="r1")
+    now = time.time()
+    kept, suppressed = advisory_engine._apply_emission_quality_filters(
+        [decision],
+        {"r1": advice},
+        now_ts=now,
+        cooldown_s=600.0,
+        recent_identity_ts={identity: now - 45.0},
+        outcome_ts_by_insight={},
+        outcome_ts_by_advice_id={},
+    )
+    assert kept == []
+    assert suppressed
+    assert suppressed[0]["reason"] == "insight_repeat_cooldown"
+
+
+def test_apply_emission_quality_filters_allows_repeat_after_outcome_update():
+    from lib.advisor import Advice
+    from lib.advisory_gate import GateDecision
+
+    advice = Advice(
+        advice_id="r2",
+        insight_key="reasoning:always_read_before_edit",
+        text="Always Read before Edit to verify current content",
+        confidence=0.9,
+        source="cognitive",
+        context_match=0.9,
+    )
+    decision = GateDecision(
+        advice_id="r2",
+        authority="note",
+        emit=True,
+        reason="ok",
+        adjusted_score=0.9,
+        original_score=0.9,
+    )
+    identity = advisory_engine._repeat_identity_for_item(advice, advice_id="r2")
+    now = time.time()
+    last_emit_ts = now - 80.0
+    kept, suppressed = advisory_engine._apply_emission_quality_filters(
+        [decision],
+        {"r2": advice},
+        now_ts=now,
+        cooldown_s=600.0,
+        recent_identity_ts={identity: last_emit_ts},
+        outcome_ts_by_insight={"reasoning:always_read_before_edit": now - 20.0},
+        outcome_ts_by_advice_id={},
+    )
+    assert len(kept) == 1
+    assert suppressed == []

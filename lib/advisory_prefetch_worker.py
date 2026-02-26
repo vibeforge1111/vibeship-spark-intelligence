@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any, Dict, List
 
 from . import advisory_packet_store as packet_store
 from .advisory_prefetch_planner import plan_prefetch_jobs
+from .config_authority import env_bool, resolve_section
 
 
 WORKER_ENABLED = os.getenv("SPARK_ADVISORY_PREFETCH_WORKER", "1") != "0"
@@ -30,6 +32,23 @@ def _parse_bool(value: Any, default: bool) -> bool:
     if text in {"0", "false", "no", "off"}:
         return False
     return bool(default)
+
+
+def _load_prefetch_config(
+    path: Path | None = None,
+    *,
+    baseline_path: Path | None = None,
+) -> Dict[str, Any]:
+    tuneables = path or (packet_store.PACKET_DIR.parent / "tuneables.json")
+    resolved = resolve_section(
+        "advisory_prefetch",
+        baseline_path=baseline_path,
+        runtime_path=tuneables,
+        env_overrides={
+            "worker_enabled": env_bool("SPARK_ADVISORY_PREFETCH_WORKER"),
+        },
+    )
+    return resolved.data if isinstance(resolved.data, dict) else {}
 
 
 def apply_prefetch_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
@@ -70,6 +89,10 @@ def apply_prefetch_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
             warnings.append("invalid_min_probability")
 
     return {"applied": applied, "warnings": warnings}
+
+
+def _reload_prefetch_from(_cfg: Dict[str, Any]) -> None:
+    apply_prefetch_config(_load_prefetch_config())
 
 
 def get_prefetch_config() -> Dict[str, Any]:
@@ -303,3 +326,21 @@ def get_worker_status() -> Dict[str, Any]:
         "packets_total": int(store.get("total_packets", 0) or 0),
         "config": get_prefetch_config(),
     }
+
+
+try:
+    _BOOT_PREFETCH_CFG = _load_prefetch_config()
+    if _BOOT_PREFETCH_CFG:
+        apply_prefetch_config(_BOOT_PREFETCH_CFG)
+    try:
+        from .tuneables_reload import register_reload as _register_prefetch_reload
+
+        _register_prefetch_reload(
+            "advisory_prefetch",
+            _reload_prefetch_from,
+            label="advisory_prefetch.apply_config",
+        )
+    except Exception:
+        pass
+except Exception:
+    pass

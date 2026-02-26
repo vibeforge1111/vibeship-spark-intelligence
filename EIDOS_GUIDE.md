@@ -740,13 +740,26 @@ if EIDOS_AVAILABLE:
     complete_episode(session_id, Outcome.SUCCESS)
 ```
 
-### Environment Variables
+### Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SPARK_EIDOS_ENABLED` | `1` | Enable EIDOS integration |
-| `SPARK_OUTCOME_CHECKIN` | `0` | Enable outcome check-ins |
-| `SPARK_OUTCOME_CHECKIN_MIN_S` | `1800` | Min seconds between check-ins |
+EIDOS settings live in the `observe_hook` and `eidos` sections of tuneables. The canonical way to change them is via `~/.spark/tuneables.json`:
+
+```json
+{
+  "observe_hook": { "eidos_enabled": true, "outcome_checkin_enabled": false },
+  "eidos": { "safety_guardrails_enabled": true }
+}
+```
+
+Env vars are available as overrides (highest priority):
+
+| Variable | Key | Default | Description |
+|----------|-----|---------|-------------|
+| `SPARK_EIDOS_ENABLED` | `observe_hook.eidos_enabled` | `true` | Enable EIDOS integration |
+| `SPARK_OUTCOME_CHECKIN` | `observe_hook.outcome_checkin_enabled` | `false` | Enable outcome check-ins |
+| `SPARK_OUTCOME_CHECKIN_MIN_S` | `observe_hook.outcome_checkin_min_s` | `1800` | Min seconds between check-ins |
+
+See `docs/CONFIG_AUTHORITY.md` for the full env var reference and precedence model.
 
 ---
 

@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 SPARK_DIR = Path.home() / ".spark"
 TUNEABLES_PATH = SPARK_DIR / "tuneables.json"
@@ -105,6 +105,53 @@ class TuneRecommendation:
     reason: str
     confidence: float = 0.5
     impact: str = "medium"
+
+
+def _llm_area_policy_autotuner_recommend(health: "SystemHealth", tuneables: dict) -> List[TuneRecommendation]:
+    """LLM area: generate additional LLM-informed tuning recommendations.
+
+    When disabled (default), returns empty list.
+    """
+    try:
+        import json as _json
+
+        from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
+
+        health_summary = {
+            "advice_action_rate": getattr(health, "advice_action_rate", 0),
+            "cognitive_growth": getattr(health, "cognitive_growth", 0),
+            "feedback_loop_closure": getattr(health, "feedback_loop_closure", 0),
+            "total_advice_given": getattr(health, "total_advice_given", 0),
+        }
+        prompt = format_prompt(
+            "policy_autotuner_recommend",
+            health=str(health_summary),
+            current_config=str({k: v for k, v in tuneables.items() if k in ("advisor", "meta_ralph", "promotion")}),
+        )
+        result = llm_area_call("policy_autotuner_recommend", prompt, fallback="")
+        if result.used_llm and result.text:
+            try:
+                data = _json.loads(result.text)
+                if isinstance(data, dict) and data.get("recommendations"):
+                    recs = []
+                    for rec in data["recommendations"][:3]:
+                        if isinstance(rec, dict) and rec.get("section") and rec.get("key"):
+                            recs.append(TuneRecommendation(
+                                section=str(rec["section"]),
+                                key=str(rec["key"]),
+                                current_value=rec.get("current", None),
+                                recommended_value=rec.get("recommended", None),
+                                reason=str(rec.get("reason", "LLM recommendation")),
+                                confidence=float(rec.get("confidence", 0.4)),
+                                impact=str(rec.get("impact", "low")),
+                            ))
+                    return recs
+            except (ValueError, TypeError):
+                pass
+        return []
+    except Exception:
+        return []
 
 
 def _values_equal(left: Any, right: Any) -> bool:
@@ -385,6 +432,10 @@ class AutoTuner:
                 reason=f"Low feedback closure ({health.feedback_loop_closure:.0%}) with many insights — raise quality bar",
                 confidence=0.5, impact="medium",
             ))
+
+        # LLM area: policy_autotuner_recommend — generate additional LLM-informed recs
+        llm_recs = _llm_area_policy_autotuner_recommend(health, tuneables)
+        recs.extend(llm_recs)
 
         return recs
 

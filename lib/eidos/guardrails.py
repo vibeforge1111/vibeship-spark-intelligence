@@ -69,8 +69,20 @@ class HighRiskToolUseGuard:
     """
 
     def __init__(self):
-        self.enabled = str(os.environ.get("SPARK_SAFETY_GUARDRAILS", "1")).strip() != "0"
-        self.allow_secrets = str(os.environ.get("SPARK_SAFETY_ALLOW_SECRETS", "0")).strip() == "1"
+        try:
+            from lib.config_authority import resolve_section, env_bool
+            cfg = resolve_section(
+                "eidos",
+                env_overrides={
+                    "safety_guardrails_enabled": env_bool("SPARK_SAFETY_GUARDRAILS"),
+                    "safety_allow_secrets": env_bool("SPARK_SAFETY_ALLOW_SECRETS"),
+                },
+            ).data
+            self.enabled = bool(cfg.get("safety_guardrails_enabled", True))
+            self.allow_secrets = bool(cfg.get("safety_allow_secrets", False))
+        except Exception:
+            self.enabled = str(os.environ.get("SPARK_SAFETY_GUARDRAILS", "1")).strip() != "0"
+            self.allow_secrets = str(os.environ.get("SPARK_SAFETY_ALLOW_SECRETS", "0")).strip() == "1"
 
     def check(self, episode: Episode, step: Step) -> GuardrailResult:
         if not self.enabled:

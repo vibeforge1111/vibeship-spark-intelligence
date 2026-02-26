@@ -21,13 +21,41 @@ Types of distillations:
 
 import re
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 
-from .models import (
-    Episode, Step, Distillation, DistillationType,
-    Outcome, Evaluation, Phase
-)
+from ..distillation_refiner import refine_distillation
+from ..distillation_transformer import transform_for_advisory
+from ..elevation import elevate
+from ..noise_patterns import is_session_boilerplate
+from .models import Distillation, DistillationType, Episode, Evaluation, Outcome, Step
+
+
+def _llm_area_outcome_link_reconstruct(
+    statement: str,
+    source_steps: list,
+    rationale: str,
+) -> str:
+    """LLM area: enrich distillation by linking orphaned outcomes.
+
+    When disabled (default), returns statement unchanged.
+    """
+    try:
+        from ..llm_area_prompts import format_prompt
+        from ..llm_dispatch import llm_area_call
+
+        prompt = format_prompt(
+            "outcome_link_reconstruct",
+            statement=statement[:500],
+            source_steps=str(source_steps[:5]),
+            rationale=(rationale or "")[:300],
+        )
+        result = llm_area_call("outcome_link_reconstruct", prompt, fallback=statement)
+        if result.used_llm and result.text and result.text != statement:
+            return result.text
+        return statement
+    except Exception:
+        return statement
 
 
 @dataclass
@@ -69,6 +97,7 @@ class DistillationEngine:
 
         # Revalidation tracking
         self.pending_revalidation: List[str] = []  # distillation_ids
+        self._quality_floor = 0.35
 
     def reflect_on_episode(
         self,
@@ -237,11 +266,13 @@ class DistillationEngine:
         s = statement.strip()
         if len(s) < 20:
             return False
+        if is_session_boilerplate(s):
+            return False
 
         low = s.lower()
 
         # Reject known tautology phrases
-        _TAUTOLOGY_PHRASES = [
+        tautology_phrases = [
             "try a different approach",
             "step back and reconsider",
             "try something else",
@@ -252,10 +283,26 @@ class DistillationEngine:
             "always validate assumptions",
             "always verify",
             "be careful when",
+            "unknown approach",
+            "unknown task",
+            "unknown project",
+            "session in unknown",
+            "request failed for search_query",
+            "request failed for image_query",
+            "for similar requests",
+            "tool is effective",
         ]
-        for phrase in _TAUTOLOGY_PHRASES:
+        for phrase in tautology_phrases:
             if phrase in low:
                 return False
+
+        # Reject placeholder-heavy statements.
+        if re.search(r"\b(?:when|if|for)\b.{0,40}\bunknown\b", low):
+            return False
+
+        # Reject obvious failure-echo templates.
+        if re.search(r"\b(?:watch out|be careful)\b.{0,80}\bunknown\b.{0,40}\bapproach\b", low):
+            return False
 
         # Reject "When X, try: Y" where X ≈ Y (>60% word overlap)
         if "try:" in low and "when " in low:
@@ -338,8 +385,30 @@ class DistillationEngine:
             if policy:
                 candidates.append(policy)
 
-        # Quality gate: reject tautological or generic distillations
-        return [c for c in candidates if self._is_quality_distillation(c.statement, c.type)]
+        # Elevation + quality gate: tighten language, then reject weak candidates.
+        last_step = steps[-1] if steps else None
+        context = {
+            "goal": episode.goal,
+            "domain": ", ".join(self._extract_domains(episode, steps)),
+            "tool": ((last_step.action_details or {}).get("tool", "") if last_step else ""),
+            "file_path": ((last_step.action_details or {}).get("file_path", "") if last_step else ""),
+            "timestamp": int(episode.end_ts or time.time()),
+        }
+
+        filtered: List[DistillationCandidate] = []
+        for candidate in candidates:
+            if not self._is_quality_distillation(candidate.statement, candidate.type):
+                continue
+
+            elevated = elevate(candidate.statement, context)
+            if elevated and elevated.strip():
+                candidate.statement = elevated.strip()
+
+            aq = transform_for_advisory(candidate.statement, source="eidos")
+            if aq.suppressed or aq.unified_score < self._quality_floor:
+                continue
+            filtered.append(candidate)
+        return filtered
 
     _GENERIC_GOALS = {
         "continue", "continue please", "yes", "ok", "go", "do it",
@@ -521,10 +590,32 @@ class DistillationEngine:
         """
         Convert a validated candidate into a permanent distillation.
         """
+        refine_context = {
+            "domain": ", ".join(candidate.domains),
+            "tool": candidate.triggers[0] if candidate.triggers else "",
+            "reason": candidate.rationale,
+            "timestamp": int(time.time()),
+        }
+        refined_statement, advisory_quality = refine_distillation(
+            candidate.statement,
+            source="eidos",
+            context=refine_context,
+            min_unified_score=0.60,
+        )
+
+        # LLM area: outcome_link_reconstruct — link orphaned outcomes
+        refined_statement = _llm_area_outcome_link_reconstruct(
+            refined_statement or candidate.statement,
+            candidate.source_steps,
+            candidate.rationale,
+        )
+
         return Distillation(
             distillation_id="",  # Will be auto-generated
             type=candidate.type,
             statement=candidate.statement,
+            refined_statement=refined_statement if refined_statement != candidate.statement else "",
+            advisory_quality=advisory_quality,
             domains=candidate.domains,
             triggers=candidate.triggers,
             source_steps=candidate.source_steps,

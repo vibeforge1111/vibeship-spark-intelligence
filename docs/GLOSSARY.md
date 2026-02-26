@@ -21,7 +21,7 @@ Use this file as the single, stable documentation entrypoint for public OSS onbo
 - `docs/MEMORY_ACTIONABILITY_FRAMEWORK.md`
 - `docs/RETRIEVAL_LEVELS.md`
 - `TUNEABLES.md` — All tuneable parameters + hot-reload matrix
-- `docs/TUNEABLES_REFERENCE.md` — Auto-generated schema reference (25 sections, 153 keys)
+- `docs/TUNEABLES_REFERENCE.md` — Auto-generated schema reference from `lib/tuneables_schema.py`
 - `docs/SPARK_LIGHTWEIGHT_OPERATING_MODE.md`
 
 ## 3) Subsystem references
@@ -64,11 +64,11 @@ Use this file as the single, stable documentation entrypoint for public OSS onbo
 - **Hot-reload**: Mtime-based change detection for tuneables. Coordinator (`lib/tuneables_reload.py`) dispatches changed sections to registered module callbacks each bridge cycle.
 - **Meta-Ralph**: Quality gate that scores insights 0-10. Threshold configurable via tuneables (default 4.5). Rejects noise, tautologies, platitudes.
 - **Retrievers**: Routes incoming prompts/events to memory and domain-specific evidence.
-- **Schema (tuneables)**: Central validation in `lib/tuneables_schema.py`. 25 sections, 153 keys with type, default, min/max bounds, descriptions. Clamps out-of-bounds values rather than rejecting.
+- **Schema (tuneables)**: Central validation in `lib/tuneables_schema.py` with type/default/min/max/description metadata. Clamps out-of-bounds values rather than rejecting.
 - **Tuneables**: Runtime knobs in `~/.spark/tuneables.json`. Schema-validated, hot-reloaded each bridge cycle, drift-tracked against baseline. Reference: `TUNEABLES.md` and `docs/TUNEABLES_REFERENCE.md`.
 - **validate_and_store_insight()**: Unified write gate (`lib/validate_and_store.py`) that routes every cognitive insight through Meta-Ralph before storage. Fail-open: quarantines on error, then stores anyway. Controllable via `flow.validate_and_store_enabled` tuneable.
 - **Fallback budget**: Rate-limiter on quick/packet fallback emissions in advisory_engine (`fallback_budget_cap` / `fallback_budget_window`). Prevents noise from dominating when retrieval fails.
 - **Noise patterns**: Shared module (`lib/noise_patterns.py`) consolidating noise detection regex from 5 locations into one importable set.
 - **Rejection telemetry**: Per-reason counters at every advisory exit path, flushed to `~/.spark/advisory_rejection_telemetry.json`. Used by observatory and pulse for diagnostics.
 - **Fail-open quarantine**: When Meta-Ralph raises an exception during validate_and_store, the insight is logged to `~/.spark/insight_quarantine.jsonl` AND still stored in cognitive (true fail-open, not fail-closed).
-- **Source boosts**: Auto-tuner multipliers per advice source, clamped to [0.8, 1.1] (tightened from [0.2, 3.0] in Intelligence Flow Evolution Batch 5). Stored in `auto_tuner.source_boosts`.
+- **Source boosts**: Auto-tuner multipliers per advice source. Effective bounds come from `auto_tuner.min_boost` / `auto_tuner.max_boost` (baseline currently 0.2-2.0). Stored in `auto_tuner.source_boosts`.
