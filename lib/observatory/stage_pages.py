@@ -10,6 +10,33 @@ from .linker import (
 )
 
 
+def _llm_area_dead_widget_plan(d: dict) -> str:
+    """LLM area: diagnose dead/stale advisory paths and recommend fixes.
+
+    When disabled (default), returns empty string.
+    """
+    try:
+        from ..llm_dispatch import llm_area_call
+        from ..llm_area_prompts import format_prompt
+
+        health_data = {
+            "emit_rate": d.get("decision_emit_rate", 0),
+            "followed_rate": d.get("followed_rate", 0),
+            "total_advice": d.get("total_advice_given", 0),
+            "feedback_follow_rate": d.get("feedback_follow_rate", 0),
+        }
+        prompt = format_prompt(
+            "dead_widget_plan",
+            health_data=str(health_data),
+        )
+        result = llm_area_call("dead_widget_plan", prompt, fallback="")
+        if result.used_llm and result.text:
+            return result.text
+        return ""
+    except Exception:
+        return ""
+
+
 def _slug(text: str) -> str:
     return "-".join(str(text or "").strip().lower().replace("/", " ").replace("_", " ").split())
 
@@ -389,6 +416,10 @@ def _gen_eidos(d: dict, all_data: dict) -> str:
     s = _header(7, "EIDOS", "Episodic intelligence with mandatory predict-then-evaluate loop. Stores episodes (session-scoped), steps (prediction/outcome/evaluation triples), and distillations (extracted rules).", [3, 11], [8])
 
     db_status = "healthy" if d.get("db_exists") else "critical"
+    curriculum_cards = int(d.get("curriculum_cards_generated", 0) or 0)
+    curriculum_high = int(d.get("curriculum_high", 0) or 0)
+    curriculum_delta = int(d.get("curriculum_high_delta", 0) or 0)
+    curriculum_status = "healthy" if curriculum_high <= 0 else ("warning" if curriculum_high < 15 else "critical")
     s += _health_table([
         ("Database", "exists" if d.get("db_exists") else "MISSING", db_status),
         ("DB size", fmt_size(d.get("db_size", 0)), "healthy"),
@@ -397,6 +428,8 @@ def _gen_eidos(d: dict, all_data: dict) -> str:
         ("Distillations", fmt_num(d.get("distillations", 0)), "healthy"),
         ("Active episodes", fmt_num(d.get("active_episodes", 0)), "healthy"),
         ("Active steps", fmt_num(d.get("active_steps", 0)), "healthy"),
+        ("Curriculum cards", fmt_num(curriculum_cards), "healthy"),
+        ("High-severity backlog", f"{fmt_num(curriculum_high)} ({curriculum_delta:+d})", curriculum_status),
     ])
 
     # Advisory quality distribution for distillations.
@@ -435,6 +468,36 @@ def _gen_eidos(d: dict, all_data: dict) -> str:
         s += f"| Archived (score floor) | {fmt_num(suppression.get('archived_score_floor', 0))} |\n"
         s += "\n"
 
+    # Curriculum burn-down metrics.
+    curriculum_rows = int(d.get("curriculum_rows_scanned", 0) or 0)
+    curriculum_medium = int(d.get("curriculum_medium", 0) or 0)
+    curriculum_low = int(d.get("curriculum_low", 0) or 0)
+    curriculum_history_points = int(d.get("curriculum_history_points", 0) or 0)
+    curriculum_gaps = d.get("curriculum_gaps", {})
+    if curriculum_cards or curriculum_rows or curriculum_history_points:
+        s += "## Distillation Curriculum Burn-Down\n\n"
+        s += "| Metric | Value |\n"
+        s += "|--------|-------|\n"
+        s += f"| Rows scanned | {fmt_num(curriculum_rows)} |\n"
+        s += f"| Cards generated | {fmt_num(curriculum_cards)} |\n"
+        s += f"| High severity | {fmt_num(curriculum_high)} |\n"
+        s += f"| Medium severity | {fmt_num(curriculum_medium)} |\n"
+        s += f"| Low severity | {fmt_num(curriculum_low)} |\n"
+        s += f"| High-severity delta | {curriculum_delta:+d} |\n"
+        s += f"| History points | {fmt_num(curriculum_history_points)} |\n"
+        s += "\n"
+
+        if isinstance(curriculum_gaps, dict) and curriculum_gaps:
+            s += "### Gap Mix\n\n"
+            s += "| Gap | Cards |\n"
+            s += "|-----|-------|\n"
+            for gap, count in sorted(
+                curriculum_gaps.items(),
+                key=lambda x: -(x[1] if isinstance(x[1], (int, float)) else 0),
+            ):
+                s += f"| {gap} | {fmt_num(count)} |\n"
+            s += "\n"
+
     # Recent distillations
     recent = d.get("recent_distillations", [])
     if recent:
@@ -465,12 +528,19 @@ def _gen_advisory(d: dict, all_data: dict) -> str:
     followed_status = "healthy" if d.get("followed_rate", 0) > 40 else "warning"
     emit_rate = d.get("decision_emit_rate", 0)
     fb_follow = d.get("feedback_follow_rate", 0)
+    helpfulness_summary = d.get("helpfulness_summary", {}) if isinstance(d.get("helpfulness_summary"), dict) else {}
+    calibrated_helpful_rate = float(helpfulness_summary.get("helpful_rate_pct", 0.0) or 0.0)
+    calibrated_unknown_rate = float(helpfulness_summary.get("unknown_rate_pct", 0.0) or 0.0)
+    calibrated_conflict_rate = float(helpfulness_summary.get("conflict_rate_pct", 0.0) or 0.0)
     s += _health_table([
         ("Total advice given", fmt_num(d.get("total_advice_given", 0)), "healthy"),
         ("Followed (effectiveness)", f"{fmt_num(d.get('total_followed', 0))} ({d.get('followed_rate', 0)}%)", followed_status),
         ("Helpful", fmt_num(d.get("total_helpful", 0)), "healthy"),
         ("Decision emit rate", f"{emit_rate}%", "healthy" if emit_rate > 20 else "warning"),
-        ("Implicit follow rate", f"{fb_follow}%", "healthy" if fb_follow > 40 else "warning"),
+        ("Implicit follow rate (strict)", f"{fb_follow}%", "healthy" if fb_follow > 40 else "warning"),
+        ("Calibrated helpful rate", f"{calibrated_helpful_rate:.1f}%", "healthy" if calibrated_helpful_rate >= 60 else "warning"),
+        ("Unknown outcome rate", f"{calibrated_unknown_rate:.1f}%", "warning" if calibrated_unknown_rate > 30 else "healthy"),
+        ("Conflict rate", f"{calibrated_conflict_rate:.1f}%", "warning" if calibrated_conflict_rate > 5 else "healthy"),
         ("Advice log entries", f"~{fmt_num(d.get('advice_log_count', 0))}", "healthy"),
     ])
 
@@ -491,16 +561,48 @@ def _gen_advisory(d: dict, all_data: dict) -> str:
     fb_by_tool = d.get("feedback_by_tool", {})
     if fb_by_tool:
         s += "## Implicit Feedback by Tool\n\n"
-        s += "*When advice is given before a tool call, the tool's success/failure signals whether advice was followed.*\n\n"
-        s += "| Tool | Followed | Ignored | Total | Follow Rate |\n"
-        s += "|------|----------|---------|-------|-------------|\n"
+        s += "*Strict denominator includes `followed`, `ignored`, `unhelpful`, and `not_followed`.*\n\n"
+        s += "| Tool | Followed | Ignored | Unhelpful | Not Followed | Eval Total | Follow Rate |\n"
+        s += "|------|----------|---------|-----------|--------------|------------|-------------|\n"
         for tool, stats in sorted(fb_by_tool.items(), key=lambda x: -x[1]["total"]):
             fol = stats["followed"]
             ign = stats["ignored"]
-            tot = stats["total"]
-            rate = round(fol / max(fol + ign, 1) * 100, 1)
-            s += f"| {tool} | {fol} | {ign} | {tot} | {rate}% |\n"
+            unh = stats.get("unhelpful", 0)
+            not_f = stats.get("not_followed", 0)
+            eval_total = fol + ign + unh + not_f
+            rate = round(fol / max(eval_total, 1) * 100, 1)
+            s += f"| {tool} | {fol} | {ign} | {unh} | {not_f} | {eval_total} | {rate}% |\n"
         s += "\n"
+
+    if helpfulness_summary:
+        labels = helpfulness_summary.get("labels", {}) if isinstance(helpfulness_summary.get("labels"), dict) else {}
+        judge_source = helpfulness_summary.get("judge_source", {}) if isinstance(helpfulness_summary.get("judge_source"), dict) else {}
+        s += "## Calibrated Helpfulness (Watcher)\n\n"
+        s += "*Generated by `scripts/helpfulness_watcher.py` from exposure + explicit + implicit logs.*\n\n"
+        s += "| Metric | Value |\n"
+        s += "|--------|-------|\n"
+        s += f"| Total events | {fmt_num(helpfulness_summary.get('total_events', 0))} |\n"
+        s += f"| Known helpfulness events | {fmt_num(helpfulness_summary.get('known_helpfulness_total', 0))} |\n"
+        s += f"| Helpful rate | {helpfulness_summary.get('helpful_rate_pct', 0.0)}% |\n"
+        s += f"| Unknown rate | {helpfulness_summary.get('unknown_rate_pct', 0.0)}% |\n"
+        s += f"| Conflict count | {fmt_num(helpfulness_summary.get('conflict_count', 0))} |\n"
+        s += f"| LLM review queue | {fmt_num(helpfulness_summary.get('llm_review_queue_count', 0))} |\n"
+        s += f"| LLM review applied | {fmt_num(helpfulness_summary.get('llm_review_applied_count', 0))} |\n"
+        s += "\n"
+        if labels:
+            s += "### Label Distribution\n\n"
+            s += "| Label | Count |\n"
+            s += "|-------|-------|\n"
+            for label, count in sorted(labels.items(), key=lambda x: -x[1]):
+                s += f"| {label} | {fmt_num(count)} |\n"
+            s += "\n"
+        if judge_source:
+            s += "### Judge Source Mix\n\n"
+            s += "| Judge Source | Count |\n"
+            s += "|--------------|-------|\n"
+            for src, count in sorted(judge_source.items(), key=lambda x: -x[1]):
+                s += f"| {src} | {fmt_num(count)} |\n"
+            s += "\n"
 
     # By-source breakdown
     by_source = d.get("by_source", {})
@@ -563,6 +665,7 @@ def _gen_advisory(d: dict, all_data: dict) -> str:
     s += "- [[../advisory_reverse_engineering|Advisory Reverse Engineering]] - full path map + suppression diagnostics\n"
     s += "- [[../explore/decisions/_index|Advisory Decision Ledger]] — emit/suppress/block decisions\n"
     s += "- [[../explore/feedback/_index|Implicit Feedback Loop]] — per-tool follow rates\n"
+    s += "- [[../explore/helpfulness/_index|Helpfulness Calibration]] - watcher labels, conflict trend, and LLM review queue\n"
     s += "- [[../explore/advisory/_index|Advisory Effectiveness]] — source breakdown + recent advice\n"
     s += "- [[../explore/routing/_index|Retrieval Routing]] — route distribution and decisions\n\n"
 
@@ -571,9 +674,20 @@ def _gen_advisory(d: dict, all_data: dict) -> str:
         "advisor/effectiveness.json",
         "advisor/metrics.json",
         "advisor/implicit_feedback.jsonl",
+        "advisor/helpfulness_events.jsonl",
+        "advisor/helpfulness_summary.json",
+        "advisor/helpfulness_llm_queue.jsonl",
+        "advisor/helpfulness_llm_reviews.jsonl",
         "advisor/retrieval_router.jsonl",
         "advisory_decision_ledger.jsonl",
     ])
+
+    # LLM area: dead_widget_plan — diagnose dead/stale advisory paths
+    dead_plan = _llm_area_dead_widget_plan(d)
+    if dead_plan:
+        s += "## Dead Widget Remediation Plan\n\n"
+        s += dead_plan + "\n\n"
+
     return s
 
 
@@ -744,3 +858,4 @@ def _gen_tuneables(d: dict, all_data: dict) -> str:
     ])
     s += f"\nVersion-controlled: `config/tuneables.json`\n"
     return s
+
