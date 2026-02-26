@@ -366,3 +366,30 @@ def test_record_packet_usage_refreshes_fresh_until(monkeypatch, tmp_path):
     after = store.get_packet(packet_id)
     assert after is not None
     assert float(after.get("fresh_until_ts", 0.0) or 0.0) > time.time() + 100.0
+
+
+def test_store_status_counts_recent_used_stale_as_refreshable(monkeypatch, tmp_path):
+    _patch_store_paths(monkeypatch, tmp_path)
+    now = time.time()
+
+    packet = store.build_packet(
+        project_key="proj",
+        session_context_key="ctx",
+        tool_name="Edit",
+        intent_family="auth_security",
+        task_plane="build_delivery",
+        advisory_text="Refresh stale packets that were recently used.",
+        source_mode="prefetch",
+        lineage={"sources": ["prefetch"], "memory_absent_declared": False},
+        ttl_s=120,
+    )
+    packet["fresh_until_ts"] = now - 10.0
+    packet["updated_ts"] = now - 120.0
+    packet["usage_count"] = 2
+    store.save_packet(packet)
+
+    status = store.get_store_status()
+    assert int(status.get("fresh_packets", 0)) == 0
+    assert int(status.get("refreshable_stale_packets", 0)) >= 1
+    assert int(status.get("effective_fresh_packets", 0)) >= 1
+    assert float(status.get("freshness_ratio", 0.0)) >= 1.0

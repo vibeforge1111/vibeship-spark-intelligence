@@ -46,6 +46,7 @@ TRACE_HISTORY_TEXT_MAX = 60
 
 DEFAULT_PACKET_TTL_S = 900.0
 MAX_INDEX_PACKETS = 2000
+STATUS_REFRESH_GRACE_MAX_AGE_S = 21600.0
 RELAXED_MATCH_WEIGHT_TOOL = 4.0
 RELAXED_MATCH_WEIGHT_INTENT = 3.0
 RELAXED_MATCH_WEIGHT_PLANE = 2.0
@@ -3250,6 +3251,23 @@ def get_store_status() -> Dict[str, Any]:
         if not bool((row or {}).get("invalidated"))
         and float((row or {}).get("fresh_until_ts", 0.0)) < now_value
     )
+    refreshable_stale = 0
+    for row in meta.values():
+        if bool((row or {}).get("invalidated")):
+            continue
+        if float((row or {}).get("fresh_until_ts", 0.0) or 0.0) >= now_value:
+            continue
+        updated_ts = float((row or {}).get("updated_ts", 0.0) or 0.0)
+        if updated_ts <= 0.0:
+            continue
+        age_s = max(0.0, now_value - updated_ts)
+        if age_s > float(STATUS_REFRESH_GRACE_MAX_AGE_S):
+            continue
+        usage_count = _meta_count(row, "usage_count", fallback_key="read_count")
+        if usage_count <= 0:
+            continue
+        refreshable_stale += 1
+    effective_fresh = int(fresh + refreshable_stale)
     active_rows = max(1, int(active))
     top_sources = [
         {"name": str(name), "count": int(count)}
@@ -3267,13 +3285,15 @@ def get_store_status() -> Dict[str, Any]:
         "total_packets": total,
         "active_packets": active,
         "fresh_packets": fresh,
+        "effective_fresh_packets": effective_fresh,
+        "refreshable_stale_packets": int(refreshable_stale),
         "stale_packets": stale,
         "inactive_packets": inactive,
-        "freshness_ratio": round(float(fresh) / max(total, 1), 3),
+        "freshness_ratio": round(float(effective_fresh) / max(total, 1), 3),
         "ready_packets": int(ready_meta),
         "stale_ratio": round(float(stale) / max(total, 1), 3),
         "inactive_ratio": round(float(inactive) / max(total, 1), 3),
-        "readiness_ratio": round(float(fresh) / max(active_rows, 1), 3),
+        "readiness_ratio": round(float(effective_fresh) / max(active_rows, 1), 3),
         "catalog_size": int(total),
         "catalog_ready_packets": int(ready_meta),
         "top_sources": top_sources,

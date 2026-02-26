@@ -8,6 +8,7 @@ retrieval->outcome latency is within the strict attribution window.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import time
 from datetime import datetime
@@ -41,6 +42,19 @@ def _latency_s(row: Dict[str, Any]) -> Optional[float]:
     return float(delta)
 
 
+def _synthetic_trace_id(row: Dict[str, Any], *, idx: int) -> str:
+    seed = "|".join(
+        [
+            str(row.get("learning_id") or ""),
+            str(row.get("insight_key") or ""),
+            str(row.get("retrieved_at") or ""),
+            str(row.get("outcome_at") or ""),
+            str(idx),
+        ]
+    )
+    return f"trace-recovered-{hashlib.sha1(seed.encode('utf-8', errors='ignore')).hexdigest()[:16]}"
+
+
 def plan_rebind(path: Path = OUTCOME_FILE, *, window_s: int = 1800) -> Dict[str, Any]:
     if not path.exists():
         return {
@@ -68,6 +82,7 @@ def plan_rebind(path: Path = OUTCOME_FILE, *, window_s: int = 1800) -> Dict[str,
 
     candidates: List[Dict[str, Any]] = []
     mismatched = 0
+    missing_trace = 0
     for idx, row in enumerate(rows):
         if not isinstance(row, dict):
             continue
@@ -75,13 +90,32 @@ def plan_rebind(path: Path = OUTCOME_FILE, *, window_s: int = 1800) -> Dict[str,
             continue
         retrieve_trace = str(row.get("trace_id") or "").strip()
         outcome_trace = str(row.get("outcome_trace_id") or "").strip()
+        latency = _latency_s(row)
+
+        if not retrieve_trace and not outcome_trace:
+            missing_trace += 1
+            if latency is None or latency > float(max(0, int(window_s))):
+                continue
+            synthetic = _synthetic_trace_id(row, idx=idx)
+            candidates.append(
+                {
+                    "index": idx,
+                    "learning_id": str(row.get("learning_id") or ""),
+                    "source": str(row.get("source") or ""),
+                    "trace_id": synthetic,
+                    "outcome_trace_id": synthetic,
+                    "latency_s": round(latency, 2),
+                    "mode": "recovered_missing_trace",
+                }
+            )
+            continue
+
         if not (retrieve_trace and outcome_trace):
             continue
         if retrieve_trace == outcome_trace:
             continue
         mismatched += 1
 
-        latency = _latency_s(row)
         if latency is None or latency > float(max(0, int(window_s))):
             continue
 
@@ -93,6 +127,7 @@ def plan_rebind(path: Path = OUTCOME_FILE, *, window_s: int = 1800) -> Dict[str,
                 "trace_id": retrieve_trace,
                 "outcome_trace_id": outcome_trace,
                 "latency_s": round(latency, 2),
+                "mode": "rebind_mismatch",
             }
         )
 
@@ -102,6 +137,7 @@ def plan_rebind(path: Path = OUTCOME_FILE, *, window_s: int = 1800) -> Dict[str,
         "window_s": int(window_s),
         "total": len(rows),
         "mismatched": mismatched,
+        "missing_trace": missing_trace,
         "candidates": len(candidates),
         "updates": candidates,
         "payload": payload,
@@ -131,12 +167,19 @@ def apply_rebind(plan: Dict[str, Any]) -> Dict[str, Any]:
         row = rows[idx]
         if not isinstance(row, dict):
             continue
+        old_retrieve_trace = str(row.get("trace_id") or "").strip()
         old_outcome_trace = str(row.get("outcome_trace_id") or "").strip()
         target_trace = str(item.get("trace_id") or "").strip()
-        if not (old_outcome_trace and target_trace):
+        if not target_trace:
             continue
+        if not old_retrieve_trace:
+            row["trace_id"] = target_trace
         row["outcome_trace_id"] = target_trace
-        if not str(row.get("reported_outcome_trace_id") or "").strip():
+        if (
+            old_outcome_trace
+            and old_outcome_trace != target_trace
+            and not str(row.get("reported_outcome_trace_id") or "").strip()
+        ):
             row["reported_outcome_trace_id"] = old_outcome_trace
         updated += 1
 
@@ -167,6 +210,7 @@ def main() -> int:
         "window_s": plan.get("window_s"),
         "total": plan.get("total"),
         "mismatched": plan.get("mismatched"),
+        "missing_trace": plan.get("missing_trace"),
         "candidates": plan.get("candidates"),
         "preview": list(plan.get("updates") or [])[: max(0, int(args.show or 0))],
     }
