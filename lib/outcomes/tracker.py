@@ -7,6 +7,8 @@ to validate/invalidate insights over time.
 
 import json
 import logging
+import os
+import tempfile
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -73,7 +75,10 @@ class TrackerState:
     def from_dict(cls, data: Dict) -> 'TrackerState':
         insights = {}
         for k, v in data.get("insights", {}).items():
-            insights[k] = InsightValidation(**v)
+            try:
+                insights[k] = InsightValidation(**v)
+            except TypeError:
+                log.warning("Skipping malformed insight entry %r", k)
         return cls(
             insights=insights,
             total_outcomes=data.get("total_outcomes", 0),
@@ -104,12 +109,16 @@ class OutcomeTracker:
             return TrackerState()
 
     def _save_state(self):
-        """Save state to disk."""
+        """Save state to disk (atomic write to avoid partial-JSON on crash)."""
         try:
             TRACKER_FILE.parent.mkdir(parents=True, exist_ok=True)
             self.state.last_updated = datetime.now().isoformat()
-            with open(TRACKER_FILE, 'w', encoding='utf-8') as f:
+            fd, tmp_path = tempfile.mkstemp(
+                dir=TRACKER_FILE.parent, suffix=".tmp"
+            )
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 json.dump(self.state.to_dict(), f, indent=2)
+            os.replace(tmp_path, TRACKER_FILE)
         except Exception as e:
             log.error(f"Failed to save tracker state: {e}")
 
