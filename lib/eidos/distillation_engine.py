@@ -21,17 +21,41 @@ Types of distillations:
 
 import re
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 
-from .models import (
-    Episode, Step, Distillation, DistillationType,
-    Outcome, Evaluation, Phase
-)
-from ..elevation import elevate
-from ..distillation_transformer import transform_for_advisory
 from ..distillation_refiner import refine_distillation
+from ..distillation_transformer import transform_for_advisory
+from ..elevation import elevate
 from ..noise_patterns import is_session_boilerplate
+from .models import Distillation, DistillationType, Episode, Evaluation, Outcome, Step
+
+
+def _llm_area_outcome_link_reconstruct(
+    statement: str,
+    source_steps: list,
+    rationale: str,
+) -> str:
+    """LLM area: enrich distillation by linking orphaned outcomes.
+
+    When disabled (default), returns statement unchanged.
+    """
+    try:
+        from ..llm_area_prompts import format_prompt
+        from ..llm_dispatch import llm_area_call
+
+        prompt = format_prompt(
+            "outcome_link_reconstruct",
+            statement=statement[:500],
+            source_steps=str(source_steps[:5]),
+            rationale=(rationale or "")[:300],
+        )
+        result = llm_area_call("outcome_link_reconstruct", prompt, fallback=statement)
+        if result.used_llm and result.text and result.text != statement:
+            return result.text
+        return statement
+    except Exception:
+        return statement
 
 
 @dataclass
@@ -248,7 +272,7 @@ class DistillationEngine:
         low = s.lower()
 
         # Reject known tautology phrases
-        _TAUTOLOGY_PHRASES = [
+        tautology_phrases = [
             "try a different approach",
             "step back and reconsider",
             "try something else",
@@ -268,7 +292,7 @@ class DistillationEngine:
             "for similar requests",
             "tool is effective",
         ]
-        for phrase in _TAUTOLOGY_PHRASES:
+        for phrase in tautology_phrases:
             if phrase in low:
                 return False
 
@@ -578,6 +602,14 @@ class DistillationEngine:
             context=refine_context,
             min_unified_score=0.60,
         )
+
+        # LLM area: outcome_link_reconstruct — link orphaned outcomes
+        refined_statement = _llm_area_outcome_link_reconstruct(
+            refined_statement or candidate.statement,
+            candidate.source_steps,
+            candidate.rationale,
+        )
+
         return Distillation(
             distillation_id="",  # Will be auto-generated
             type=candidate.type,

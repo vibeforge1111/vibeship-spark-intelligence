@@ -18,15 +18,15 @@ Learning Categories:
 """
 
 import json
+import logging
 import os
 import re
-import logging
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 INSIGHT_CONTEXT_CHARS = 320
 INSIGHT_EVIDENCE_CHARS = 280
@@ -281,7 +281,7 @@ def _coerce_int(value: Any, default: int = 0) -> int:
 
 def _capture_emotion_state_snapshot() -> Dict[str, Any]:
     try:
-        from lib.config_authority import resolve_section, env_bool
+        from lib.config_authority import env_bool, resolve_section
         cfg = resolve_section(
             "feature_gates",
             env_overrides={"cognitive_emotion_capture": env_bool("SPARK_COGNITIVE_EMOTION_CAPTURE")},
@@ -371,7 +371,7 @@ def _flatten_evidence(items: List[Any]) -> List[str]:
     return out
 
 
-class _insights_lock:
+class _insights_lock:  # noqa: N801
     """Best-effort lock using an exclusive lock file."""
 
     def __init__(self, lock_file: Path, timeout_s: float = 0.5, stale_s: float = 60.0):
@@ -467,7 +467,7 @@ class CognitiveInsight:
         if total == 0:
             return max(0.05, min(0.99, float(self.confidence) * weight))
         return weighted_validated / total
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
@@ -490,7 +490,7 @@ class CognitiveInsight:
             "advisory_readiness": round(self.advisory_readiness, 4),
             "reliability": round(self.reliability, 4),
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CognitiveInsight":
         """Create from dictionary."""
@@ -1534,6 +1534,9 @@ class CognitiveLearner:
                 continue
             if self._is_noise_insight(ii_text):
                 continue
+            # LLM area: generic_demotion — skip generic platitudes during retrieval
+            if self._llm_area_generic_demotion(ii_text, context_lower):
+                continue
 
             ic = (insight.context or "").lower()
             ii = ii_text.lower()
@@ -1594,6 +1597,79 @@ class CognitiveLearner:
             return [(k, i) for _, k, i in top]
         return [i for _, _, i in top]
 
+    # -- LLM area hooks (opt-in via llm_areas tuneable section) --
+
+    @staticmethod
+    def _llm_area_evidence_compress(evidence: str) -> str:
+        """LLM area: compress verbose evidence text before storage."""
+        if not evidence or len(evidence) < 120:
+            return evidence
+        try:
+            from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
+
+            prompt = format_prompt(
+                "evidence_compress",
+                evidence=evidence[:500],
+                char_limit="250",
+            )
+            result = llm_area_call("evidence_compress", prompt, fallback=evidence)
+            if result.used_llm and result.text and len(result.text) < len(evidence):
+                return result.text
+            return evidence
+        except Exception:
+            return evidence
+
+    @staticmethod
+    def _llm_area_conflict_resolve(new_insight: str, existing: "CognitiveInsight") -> str:
+        """LLM area: resolve contradictions between new and existing insights.
+
+        Returns the resolved insight text (may merge, prefer new, or prefer existing).
+        When disabled (default), returns new_insight unchanged.
+        """
+        try:
+            from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
+
+            prompt = format_prompt(
+                "conflict_resolve",
+                new_insight=new_insight[:300],
+                existing_insight=(existing.insight or "")[:300],
+                existing_confidence=str(existing.confidence),
+                existing_validations=str(existing.times_validated),
+            )
+            result = llm_area_call("conflict_resolve", prompt, fallback=new_insight)
+            if result.used_llm and result.text:
+                return result.text
+            return new_insight
+        except Exception:
+            return new_insight
+
+    @staticmethod
+    def _llm_area_generic_demotion(insight_text: str, query: str) -> bool:
+        """LLM area: check if insight is too generic for the given query context.
+
+        Returns True if the insight should be demoted (skipped), False to keep.
+        When disabled (default), always returns False (no-op).
+        """
+        try:
+            from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
+
+            prompt = format_prompt(
+                "generic_demotion",
+                insight=insight_text[:300],
+                query=query[:200],
+            )
+            result = llm_area_call("generic_demotion", prompt, fallback="keep")
+            if result.used_llm and result.text:
+                lower = result.text.strip().lower()
+                if "demote" in lower or "generic" in lower or "skip" in lower:
+                    return True
+            return False
+        except Exception:
+            return False
+
     def add_insight(self, category: CognitiveCategory, insight: str,
                     context: str = "", confidence: float = 0.7,
                     record_exposure: bool = True,
@@ -1633,18 +1709,22 @@ class CognitiveLearner:
         normalized_context = _backfill_actionable_context(context, insight, adv_quality_dict)
         context_evidence = _clip_evidence(normalized_context or context or insight)
 
+        # LLM area: evidence_compress — compress verbose evidence before storage
+        context_evidence = self._llm_area_evidence_compress(context_evidence)
+
         if key in self.insights:
             # Update existing - boost confidence!
             existing = self.insights[key]
+
+            # LLM area: conflict_resolve — detect and resolve contradictions
+            insight = self._llm_area_conflict_resolve(insight, existing)
+
             self._touch_validation(existing, validated_delta=1)
             existing.confidence = _boost_confidence(confidence, existing.times_validated)
             if context_evidence and context_evidence not in existing.evidence:
                 existing.evidence.append(context_evidence)
                 existing.evidence = existing.evidence[-10:]
-            # Only backfill context when existing is empty or very short —
-            # never overwrite a human-provided or previously-rich context.
-            existing_ctx = str(existing.context or "")
-            if normalized_context and len(existing_ctx) < 20:
+            if normalized_context and len(normalized_context) > len(str(existing.context or "")):
                 existing.context = normalized_context
             if emotion_state:
                 existing.emotion_state = emotion_state
@@ -1684,7 +1764,11 @@ class CognitiveLearner:
         # Record exposure so predictions can be generated
         if record_exposure:
             try:
-                from lib.exposure_tracker import record_exposures, infer_latest_trace_id, infer_latest_session_id
+                from lib.exposure_tracker import (
+                    infer_latest_session_id,
+                    infer_latest_trace_id,
+                    record_exposures,
+                )
                 session_id = infer_latest_session_id()
                 trace_id = infer_latest_trace_id(session_id)
                 record_exposures(

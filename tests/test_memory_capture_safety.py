@@ -14,8 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lib.memory_capture import importance_score, _compact_context_snippet, _is_capture_noise
-
+from lib.memory_capture import _compact_context_snippet, importance_score
 
 # ── Hard trigger detection ────────────────────────────────────────────
 
@@ -213,36 +212,3 @@ def test_compact_context_prioritizes_high_signal_sentences():
     assert "raise the auto-save threshold to 0.72 because capture is too noisy" in lowered
     assert "file_path" not in lowered
     assert len(compact) <= 180
-
-
-def test_capture_noise_detects_multiline_meta_scaffolding():
-    sample = "\n".join(
-        [
-            "event_type: user_prompt",
-            "tool_name: Bash",
-            "file_path: C:/tmp/trace.log",
-            "cwd: C:/repo",
-            "<task-notification>",
-            "<task-id>",
-            "meta block without any meaningful decision",
-            "placeholder operational chatter",
-        ]
-    )
-    assert _is_capture_noise(sample) is True
-
-
-def test_capture_noise_allows_mixed_content_with_multiple_signal_lines():
-    sample = "\n".join(
-        [
-            "event_type: user_prompt",
-            "tool_name: Bash",
-            "file_path: C:/tmp/trace.log",
-            "cwd: C:/repo",
-            "<task-notification>",
-            "<task-id>",
-            "We should raise the threshold because retrieval quality is low.",
-            "This decision reduces stale memory exposure.",
-            "Fix global dedupe behavior and improve confidence.",
-        ]
-    )
-    assert _is_capture_noise(sample) is False

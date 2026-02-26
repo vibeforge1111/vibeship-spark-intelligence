@@ -21,21 +21,20 @@ This module is intentionally pure + testable:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import time
-import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from lib.cognitive_learner import CognitiveCategory, get_cognitive_learner
+from lib.cognitive_learner import CognitiveCategory
 from lib.config_authority import resolve_section
-from lib.queue import read_recent_events, EventType
 from lib.memory_banks import store_memory
-from lib.outcome_log import append_outcome, make_outcome_id
 from lib.outcome_checkin import record_checkin_request
-
+from lib.outcome_log import append_outcome, make_outcome_id
+from lib.queue import EventType, read_recent_events
 
 PENDING_DIR = Path.home() / ".spark"
 PENDING_FILE = PENDING_DIR / "pending_memory.json"
@@ -141,20 +140,7 @@ def _is_noise_line(text: str) -> bool:
     return any(rx.search(line) for rx in _CAPTURE_NOISE_PATTERNS)
 
 
-def _strip_inline_noise_tokens(text: str, *, preserve_newlines: bool = False) -> str:
-    if preserve_newlines:
-        lines: List[str] = []
-        for raw in str(text or "").splitlines():
-            cleaned_line = _INLINE_NOISE_FIELD_RE.sub(" ", raw)
-            cleaned_line = re.sub(
-                r"<task-notification>|<task-id>|<output-file>|<status>|<summary>",
-                " ",
-                cleaned_line,
-                flags=re.I,
-            )
-            cleaned_line = re.sub(r"\s+", " ", cleaned_line).strip(" -:;|")
-            lines.append(cleaned_line)
-        return "\n".join(lines)
+def _strip_inline_noise_tokens(text: str) -> str:
     cleaned = _INLINE_NOISE_FIELD_RE.sub(" ", str(text or ""))
     cleaned = re.sub(r"<task-notification>|<task-id>|<output-file>|<status>|<summary>", " ", cleaned, flags=re.I)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" -:;|")
@@ -166,14 +152,13 @@ def _noise_line_stats(text: str) -> Tuple[int, int, int]:
     noise = 0
     signal = 0
     for raw in str(text or "").splitlines():
-        line_raw = str(raw or "").strip()
-        if not line_raw:
+        line = _strip_inline_noise_tokens(raw.strip())
+        if not line:
             continue
         total += 1
-        if _is_noise_line(line_raw):
+        if _is_noise_line(line):
             noise += 1
             continue
-        line = _strip_inline_noise_tokens(line_raw)
         if _SIGNAL_HINT_RE.search(line):
             signal += 1
     return noise, total, signal
@@ -198,15 +183,15 @@ def _is_capture_noise(text: str) -> bool:
     sample = str(text or "").strip()
     if not sample:
         return True
-    sample_clean = _strip_inline_noise_tokens(sample, preserve_newlines=True)
+    sample_clean = _strip_inline_noise_tokens(sample)
     if not sample_clean:
         return True
     if any(rx.search(sample_clean) for rx in _CAPTURE_NOISE_PATTERNS):
         return True
-    noise_lines, total_lines, signal_lines = _noise_line_stats(sample)
+    noise_lines, total_lines, signal_lines = _noise_line_stats(sample_clean)
     if total_lines >= 4 and noise_lines / max(1, total_lines) >= 0.55 and signal_lines <= 1:
         return True
-    if total_lines >= 8 and noise_lines >= 6 and signal_lines <= 2:
+    if total_lines >= 8 and noise_lines >= 6:
         return True
     return False
 
@@ -265,6 +250,71 @@ def infer_category(text: str) -> CognitiveCategory:
     if any(k in t for k in ["principle", "philosophy", "rule", "design constraint", "architecture", "compatibility", "adaptability"]):
         return CognitiveCategory.WISDOM
     return CognitiveCategory.META_LEARNING
+
+
+def _llm_area_missed_signal_detect(text: str, score: float, breakdown: Dict[str, float]) -> float:
+    """LLM area: detect valuable signals missed by heuristic scoring.
+
+    Returns adjusted score. When disabled (default), returns original score.
+    """
+    try:
+        from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
+
+        prompt = format_prompt(
+            "missed_signal_detect",
+            statement=text[:500],
+            current_score=str(score),
+            breakdown=str(breakdown),
+        )
+        result = llm_area_call("missed_signal_detect", prompt, fallback=str(score))
+        if result.used_llm and result.text:
+            import json as _json
+            try:
+                data = _json.loads(result.text)
+                if isinstance(data, dict) and data.get("valuable"):
+                    boost = float(data.get("boost", 0.15))
+                    return min(1.0, score + max(0.0, min(0.3, boost)))
+            except (ValueError, TypeError):
+                pass
+        return score
+    except Exception:
+        return score
+
+
+def _llm_area_novelty_score(text: str) -> float:
+    """LLM area: score semantic novelty of a memory candidate.
+
+    Returns a boost value (0.0-0.2) if the content is genuinely novel.
+    When disabled (default), returns 0.0 (no-op).
+    """
+    try:
+        from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
+
+        prompt = format_prompt(
+            "novelty_score",
+            statement=text[:500],
+        )
+        result = llm_area_call("novelty_score", prompt, fallback="0.0")
+        if result.used_llm and result.text:
+            import json as _json
+            try:
+                data = _json.loads(result.text)
+                if isinstance(data, dict):
+                    score = float(data.get("novelty", 0.0))
+                    return max(0.0, min(0.2, score))
+            except (ValueError, TypeError):
+                pass
+            # Try extracting a bare float
+            try:
+                val = float(result.text.strip())
+                return max(0.0, min(0.2, val))
+            except (ValueError, TypeError):
+                pass
+        return 0.0
+    except Exception:
+        return 0.0
 
 
 def importance_score(text: str) -> Tuple[float, Dict[str, float]]:
@@ -386,6 +436,12 @@ def importance_score(text: str) -> Tuple[float, Dict[str, float]]:
     # Apply semantic sum (signals stack additively)
     if semantic_sum > 0:
         score = max(score, min(1.0, semantic_sum))
+
+    # LLM area: novelty_score — boost score for genuinely novel content
+    novelty_boost = _llm_area_novelty_score(text)
+    if novelty_boost > 0:
+        breakdown["novelty"] = novelty_boost
+        score = min(1.0, score + novelty_boost)
 
     return float(min(1.0, score)), breakdown
 
@@ -690,7 +746,10 @@ def process_recent_memory_events(limit: int = 50) -> Dict[str, Any]:
 
         score, breakdown = importance_score(txt)
         if score < SUGGEST_THRESHOLD:
-            continue
+            # LLM area: missed_signal_detect — check if valuable signal was missed
+            score = _llm_area_missed_signal_detect(txt, score, breakdown)
+            if score < SUGGEST_THRESHOLD:
+                continue
 
         # Dedupe: avoid storing the same preference repeatedly (even across sessions)
         norm_txt = normalize_memory_text(txt)

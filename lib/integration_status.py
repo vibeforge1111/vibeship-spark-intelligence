@@ -12,9 +12,9 @@ Usage:
 import json
 import os
 import time
+from datetime import datetime
 from pathlib import Path
-from datetime import datetime, timedelta
-from typing import Dict, List, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 # Paths
 CLAUDE_DIR = Path.home() / ".claude"
@@ -26,6 +26,8 @@ EVENTS_FILE = QUEUE_DIR / "events.jsonl"
 ADVICE_LOG = SPARK_DIR / "advisor" / "advice_log.jsonl"
 RECENT_ADVICE = SPARK_DIR / "advisor" / "recent_advice.jsonl"
 EFFECTIVENESS = SPARK_DIR / "advisor" / "effectiveness.json"
+HOOK_SPOOL_FILE = SPARK_DIR / "openclaw_hook_events.jsonl"
+OPENCLAW_ADAPTER_STATE = SPARK_DIR / "adapters" / "openclaw-main.json"
 CODEX_CONTEXT_FILE = Path("SPARK_CONTEXT_FOR_CODEX.md")
 CODEX_PAYLOAD_FILE = Path("SPARK_ADVISORY_PAYLOAD.json")
 
@@ -88,6 +90,77 @@ def check_recent_events(minutes: int = 60) -> Tuple[bool, str]:
             return False, f"No events in last {minutes} min (file exists but stale)"
     except Exception as e:
         return False, f"Error reading events: {e}"
+
+
+def _read_last_jsonl_row(path: Path) -> Optional[Dict[str, Any]]:
+    """Return last valid JSON row from a JSONL file (best effort)."""
+    if not path.exists():
+        return None
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return None
+    for line in reversed(lines[-500:]):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(row, dict):
+            return row
+    return None
+
+
+def check_hook_to_queue_flow(minutes: int = 20) -> Tuple[bool, str]:
+    """Detect silent break: hook spool fresh while queue/event ingest is stale."""
+    if not HOOK_SPOOL_FILE.exists():
+        return False, f"No hook spool file: {HOOK_SPOOL_FILE}"
+
+    cutoff = time.time() - (minutes * 60)
+    hook_last = _read_last_jsonl_row(HOOK_SPOOL_FILE)
+    if not hook_last:
+        return False, "Hook spool has no valid rows"
+
+    hook_ts = float(hook_last.get("ts") or hook_last.get("timestamp") or 0.0)
+    hook_is_fresh = hook_ts >= cutoff
+
+    queue_last = _read_last_jsonl_row(EVENTS_FILE)
+    queue_ts = 0.0
+    if queue_last:
+        queue_ts = float(queue_last.get("timestamp") or queue_last.get("ts") or 0.0)
+    queue_is_fresh = queue_ts >= cutoff
+
+    if hook_is_fresh and not queue_is_fresh:
+        hook_age = int(max(0, time.time() - hook_ts))
+        queue_age = int(max(0, time.time() - queue_ts)) if queue_ts > 0 else -1
+        return False, (
+            "Hook spool is fresh but queue ingest is stale "
+            f"(hook_age={hook_age}s, queue_age={queue_age}s). "
+            "Likely openclaw_tailer/ingest break."
+        )
+
+    lag_msg = ""
+    try:
+        state = json.loads(OPENCLAW_ADAPTER_STATE.read_text(encoding="utf-8", errors="replace")) if OPENCLAW_ADAPTER_STATE.exists() else {}
+        files = state.get("files") if isinstance(state, dict) else {}
+        key = f"hook::{HOOK_SPOOL_FILE}"
+        offset = int(((files or {}).get(key) or {}).get("offset") or 0)
+        spool_lines = len(HOOK_SPOOL_FILE.read_text(encoding="utf-8", errors="replace").splitlines())
+        lag = max(0, spool_lines - offset)
+        if lag > 500:
+            if queue_is_fresh:
+                lag_msg = f", lag={lag} (catching up)"
+            else:
+                return False, f"Hook spool backlog high: {lag} rows behind adapter offset"
+        else:
+            lag_msg = f", lag={lag}"
+    except Exception:
+        pass
+
+    hook_age = int(max(0, time.time() - hook_ts))
+    queue_age = int(max(0, time.time() - queue_ts)) if queue_ts > 0 else -1
+    return True, f"hook_age={hook_age}s, queue_age={queue_age}s{lag_msg}"
 
 
 def check_advice_log_growing() -> Tuple[bool, str]:
@@ -266,6 +339,7 @@ def get_full_status() -> Dict:
         ("settings.json", check_settings_json()),
         ("Recent Events", check_recent_events(60)),
         ("Pre/Post Tool Events", check_pre_tool_events(60)),
+        ("Hook->Queue Flow", check_hook_to_queue_flow(20)),
         ("Advice Log", check_advice_log_growing()),
         ("Advisory Packet Store", check_advisory_packet_store()),
         ("Codex Sync Outputs", check_codex_sync_outputs()),
