@@ -6,6 +6,41 @@ on:
   workflow_dispatch:
 
 jobs:
+  policy-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+
+      - name: Checkout spark-pr-sentinel
+        uses: actions/checkout@v4
+        with:
+          repository: vibeforge1111/spark-pr-sentinel
+          path: spark-pr-sentinel
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Sentinel
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ./spark-pr-sentinel
+
+      - name: PR policy validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_POLICY_FILE: spark-pr-sentinel/docs/pr_review_merge_policy.yaml
+        run: |
+          python spark-pr-sentinel/scripts/validate_pr.py
+
   triage:
     runs-on: ubuntu-latest
     permissions:

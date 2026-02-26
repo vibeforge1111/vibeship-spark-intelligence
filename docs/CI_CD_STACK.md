@@ -45,6 +45,7 @@ Merge Queue must be enabled in GitHub settings (cannot be fully enabled via YAML
    - `CI / lint-and-test (3.10)`
    - `CI / lint-and-test (3.11)`
    - `CI / lint-and-test (3.12)`
+   - `PR Sentinel / policy-gate`
    - `PR Sentinel / triage`
    - `CodeQL / Analyze (Python)`
    - `Semgrep / semgrep`
