@@ -16,6 +16,7 @@ import math
 import os
 import re
 import shutil
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -202,6 +203,112 @@ def _dot_get(obj: Any, field: str) -> Any:
     return cur
 
 
+def _resolve_local_path(raw: str) -> Path:
+    p = Path(str(raw or "")).expanduser()
+    if not p.is_absolute():
+        p = _repo_root() / p
+    return p
+
+
+def _parse_stdout_json(stdout: str) -> Any:
+    body = str(stdout or "").strip()
+    if not body:
+        raise ValueError("benchmark command produced empty stdout")
+    try:
+        return json.loads(body)
+    except Exception:
+        pass
+    for line in reversed(body.splitlines()):
+        raw = str(line or "").strip()
+        if not raw:
+            continue
+        try:
+            return json.loads(raw)
+        except Exception:
+            continue
+    raise ValueError("benchmark command stdout is not valid JSON")
+
+
+def _benchmark_cache_key(spec: Dict[str, Any]) -> str:
+    payload = {
+        "command": spec.get("command"),
+        "path": spec.get("path"),
+        "json_from_stdout": bool(spec.get("json_from_stdout", False)),
+        "cwd": spec.get("cwd"),
+        "timeout_s": float(spec.get("timeout_s", 60.0) or 60.0),
+    }
+    return json.dumps(payload, sort_keys=True, default=str)
+
+
+def _run_benchmark_command(spec: Dict[str, Any]) -> str:
+    raw_command = spec.get("command")
+    if raw_command is None:
+        raise ValueError("benchmark command missing")
+    timeout_s = max(1.0, float(spec.get("timeout_s", 60.0) or 60.0))
+    cwd = None
+    if str(spec.get("cwd", "")).strip():
+        cwd = str(_resolve_local_path(str(spec.get("cwd"))))
+
+    if isinstance(raw_command, list):
+        cmd = [str(x) for x in raw_command if str(x or "").strip()]
+        if not cmd:
+            raise ValueError("benchmark command list is empty")
+        proc = subprocess.run(
+            cmd,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            check=False,
+            shell=False,
+        )
+    else:
+        cmd_text = str(raw_command or "").strip()
+        if not cmd_text:
+            raise ValueError("benchmark command is empty")
+        proc = subprocess.run(
+            cmd_text,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            check=False,
+            shell=True,
+        )
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        raise ValueError(f"benchmark command failed (code={proc.returncode}): {stderr or 'no stderr'}")
+    return str(proc.stdout or "")
+
+
+def _resolve_benchmark_payload(spec: Dict[str, Any], benchmark_cache: Dict[str, Any]) -> Any:
+    key = _benchmark_cache_key(spec)
+    if key in benchmark_cache:
+        return benchmark_cache[key]
+
+    has_command = spec.get("command") is not None
+    has_path = bool(str(spec.get("path", "")).strip())
+    json_from_stdout = bool(spec.get("json_from_stdout", False))
+
+    stdout = ""
+    if has_command:
+        stdout = _run_benchmark_command(spec)
+
+    payload: Any
+    if json_from_stdout:
+        payload = _parse_stdout_json(stdout)
+    elif has_path:
+        p = _resolve_local_path(str(spec.get("path", "")))
+        if not p.exists():
+            raise ValueError(f"benchmark path does not exist: {p}")
+        payload = _read_json(p, {})
+    else:
+        raise ValueError("benchmark spec needs either `path` or `json_from_stdout=true`")
+
+    benchmark_cache[key] = payload
+    return payload
+
+
 def _infer_optimize(goal: Dict[str, Any]) -> str:
     explicit = str(goal.get("optimize", "")).strip().lower()
     if explicit in {"maximize", "minimize"}:
@@ -305,7 +412,7 @@ def _measure_sources() -> Dict[str, Any]:
     }
 
 
-def _resolve_metric(spec: Dict[str, Any], sources: Dict[str, Any]) -> float:
+def _resolve_metric(spec: Dict[str, Any], sources: Dict[str, Any], benchmark_cache: Optional[Dict[str, Any]] = None) -> float:
     source = str(spec.get("source", "")).strip().lower()
     field = str(spec.get("field", "")).strip()
     if not source or not field:
@@ -334,12 +441,21 @@ def _resolve_metric(spec: Dict[str, Any], sources: Dict[str, Any]) -> float:
         return float(value)
 
     if source == "benchmark":
-        raise ValueError("benchmark source is not implemented in this initial slice")
+        cache = benchmark_cache if isinstance(benchmark_cache, dict) else {}
+        payload = _resolve_benchmark_payload(spec, cache)
+        if field in {"__value__", "value"} and isinstance(payload, (int, float)):
+            return float(payload)
+        value = _dot_get(payload, field)
+        return float(value)
 
     raise ValueError(f"unknown metric source: {source}")
 
 
-def _evaluate_constraints(goal: Dict[str, Any], sources: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _evaluate_constraints(
+    goal: Dict[str, Any],
+    sources: Dict[str, Any],
+    benchmark_cache: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for item in list(goal.get("constraints") or []):
         if not isinstance(item, dict):
@@ -347,7 +463,7 @@ def _evaluate_constraints(goal: Dict[str, Any], sources: Dict[str, Any]) -> List
         name = str(item.get("name", "constraint"))
         operator = str(item.get("operator", ">="))
         threshold = float(item.get("threshold", 0.0) or 0.0)
-        value = _resolve_metric(item, sources)
+        value = _resolve_metric(item, sources, benchmark_cache=benchmark_cache)
         ok = _compare(value, operator, threshold)
         out.append(
             {
@@ -365,8 +481,9 @@ def _evaluate_constraints(goal: Dict[str, Any], sources: Dict[str, Any]) -> List
 
 def _measure_goal(goal: Dict[str, Any]) -> Dict[str, Any]:
     sources = _measure_sources()
-    objective = _resolve_metric(goal.get("metric") or {}, sources)
-    constraints = _evaluate_constraints(goal, sources)
+    benchmark_cache: Dict[str, Any] = {}
+    objective = _resolve_metric(goal.get("metric") or {}, sources, benchmark_cache=benchmark_cache)
+    constraints = _evaluate_constraints(goal, sources, benchmark_cache=benchmark_cache)
     return {
         "objective": float(objective),
         "constraints": constraints,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
 
@@ -97,3 +98,28 @@ def test_momentum_candidates_follow_previous_wins():
     assert momentum[0]["section"] == "advisor"
     assert momentum[0]["key"] == "max_advice_items"
     assert float(momentum[0]["delta"]) > 0.0
+
+
+def test_resolve_metric_supports_benchmark_json_file(tmp_path):
+    vibeforge = _load_vibeforge_module()
+    benchmark = tmp_path / "bench.json"
+    benchmark.write_text(json.dumps({"retrieval_precision_p5": 0.41}), encoding="utf-8")
+    spec = {
+        "source": "benchmark",
+        "field": "retrieval_precision_p5",
+        "path": str(benchmark),
+    }
+    value = vibeforge._resolve_metric(spec, {"production_gates": {}, "carmack_kpi": {}}, benchmark_cache={})
+    assert abs(value - 0.41) < 1e-9
+
+
+def test_resolve_metric_supports_benchmark_command_stdout_json():
+    vibeforge = _load_vibeforge_module()
+    spec = {
+        "source": "benchmark",
+        "field": "metric",
+        "command": [sys.executable, "-c", "import json; print(json.dumps({'metric': 0.73}))"],
+        "json_from_stdout": True,
+    }
+    value = vibeforge._resolve_metric(spec, {"production_gates": {}, "carmack_kpi": {}}, benchmark_cache={})
+    assert abs(value - 0.73) < 1e-9
