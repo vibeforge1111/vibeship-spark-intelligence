@@ -152,8 +152,8 @@ Branch: feat/spark-alpha
 
 21. `f324e32` - `refactor(alpha-retrieval): default to semantic-only cognitive path`
 - Updated `lib/advisor.py` to use semantic cognitive retrieval as default.
-- Keyword cognitive fallback is now opt-in only via `SPARK_ADVISORY_COGNITIVE_KEYWORD_FALLBACK=1`.
-- Updated `lib/advisory_parser.py` so legacy markdown/engine preview parse paths are opt-in (`SPARK_ADVISORY_PARSER_INCLUDE_LEGACY=1`).
+- Removed runtime dependence on keyword-based cognitive fallback in the default route.
+- Removed runtime dependence on legacy markdown/engine preview advisory parser paths.
 
 22. `7b69e46` - `feat(alpha-memory): add parity streak gate ledger tool`
 - Added `scripts/memory_spine_parity_gate.py` to record parity passes in ledger and enforce required consecutive streak.
@@ -214,6 +214,11 @@ Branch: feat/spark-alpha
 - Removed stale advisory fallback-budget keys from `config/tuneables.json` to match current runtime/schema surface.
 - Removed stale fallback-budget references from docs and observatory stage rendering.
 - Reduced dead config/docs surface for PR-09 consistency.
+
+31. `a061ca7` - `refactor(alpha-retrieval): delete legacy cognitive keyword and parser fallback paths`
+- Deleted keyword fallback branch from cognitive advisory retrieval (`lib/advisor.py`).
+- Deleted legacy advisory markdown/engine preview parser fallback paths (`lib/advisory_parser.py`).
+- Kept parser API compatibility while making fallback-only parameters inert.
 
 ### Runtime/data repairs applied in local Spark state
 
@@ -276,7 +281,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 7. Broad file/function deletion pass to reach Carmack-size target is not done.
 8. Final migration playbook for old paths/deprecated modules is not done.
 9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + JSON mirror compatibility); broader JSON consumer retirement is still pending.
-10. PR-05 superseded fallback rank-extension branch deletion is complete; broader retrieval simplification outside this branch is still pending.
+10. PR-05 superseded fallback rank-extension branch deletion is complete, and keyword/parser fallback paths are removed; broader retrieval simplification outside these branches is still pending.
 11. PR-06 alpha ownership expansion for post-tool/user-prompt is complete; broad legacy advisory file removals after canary burn-in are still pending.
 12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup and dead fallback removal.
 

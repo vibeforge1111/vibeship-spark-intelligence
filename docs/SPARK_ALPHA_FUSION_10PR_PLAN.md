@@ -38,7 +38,7 @@ Completed commits:
 18. `1bdedfb` PR-06 follow-up: advisory route default cutover to alpha
 19. `0f3740d` runtime default: startup canary route at 80% alpha
 20. `24ff81a` gate stabilization: strict trace recovery + effective packet freshness metrics
-21. `f324e32` retrieval collapse: semantic-first cognitive path with legacy fallback opt-in only
+21. `f324e32` retrieval collapse: semantic-first cognitive path
 22. `7b69e46` PR-04 follow-up: parity streak ledger gate tool
 23. `a29a5d4` PR-04 promotion: cognitive learner moved to SQLite-canonical mode with JSON mirror compatibility
 24. `dede8a5` PR-05 follow-up: removed superseded fallback rank-extension branch in retrieval prefilter
@@ -48,6 +48,7 @@ Completed commits:
 28. `824fb62` PR-08 follow-up: momentum proposer extension + schema-bounded candidate values
 29. `e9a9335` PR-08 follow-up: benchmark metric source support (`path` or `command` + stdout JSON)
 30. `0976ae4` PR-09 follow-up: stale fallback-budget config/docs/observatory surface removed
+31. `a061ca7` PR-10/PR-05 follow-up: deleted keyword cognitive fallback + legacy parser fallback paths
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -97,9 +98,10 @@ Current measured state:
 1. Hybrid retrieval now includes deterministic RRF fusion (semantic + lexical + support ranks).
 2. Improve dominant-key and low-sim behavior.
 3. Added packet freshness extension on usage to reduce stale-store decay for active advisory packets.
-4. Added semantic-only default for cognitive advice (keyword fallback now opt-in via env).
+4. Added semantic-only cognitive advisory path and removed legacy keyword fallback branch.
 5. Removed superseded fallback rank-extension branch in prefilter ranking path.
-6. Remaining: broader retrieval simplification and post-cutover deletion pass outside this branch.
+6. Removed legacy advisory parser fallback branches (markdown/engine preview).
+7. Remaining: broader retrieval simplification and post-cutover deletion pass outside these branches.
 
 ### PR-06 Advisory Alpha Vertical Slice  (Near Complete)
 1. Emission reliability and trace binding improved.

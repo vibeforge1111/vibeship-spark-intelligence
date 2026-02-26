@@ -20,9 +20,9 @@ Purpose: explicit legacy advisory-path candidates for PR-10 deletion sweep, tied
 4. [Done] `lib/advisory_orchestrator.py` default route now cut over to `alpha` (engine retained only as fallback lane).
 5. [Pending] `lib/advisory_engine.py` duplicate post-gate dedupe pass if alpha gate+state dedupe proves equivalent or better.
 6. [Pending] `lib/advisory_engine.py` legacy route-only diagnostic fields superseded by alpha comparison report.
-7. [Pending] `lib/advisor.py` keyword fallback path for cognitive retrieval when semantic+RRF path consistently outperforms in replay.
+7. [Done] `lib/advisor.py` keyword fallback path for cognitive retrieval removed.
 8. [Pending] `lib/advisor.py` superseded single-path rank weighting branches replaced by deterministic fusion stack.
-9. [Pending] `lib/advisory_parser.py` legacy read paths not consumed by alpha or replay observability.
+9. [Done] `lib/advisory_parser.py` legacy markdown/engine preview read paths removed.
 
 ## Files Added in PR-06 That Enable This Sweep
 
