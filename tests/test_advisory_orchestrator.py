@@ -1,10 +1,10 @@
 import lib.advisory_orchestrator as orch
 
 
-def test_route_for_session_defaults_to_engine(monkeypatch):
+def test_route_for_session_defaults_to_alpha(monkeypatch):
     monkeypatch.delenv("SPARK_ADVISORY_ROUTE", raising=False)
     monkeypatch.delenv("SPARK_ADVISORY_ALPHA_CANARY_PERCENT", raising=False)
-    assert orch.route_for_session("s1", "Read") == "engine"
+    assert orch.route_for_session("s1", "Read") == "alpha"
 
 
 def test_route_for_session_canary_100(monkeypatch):
@@ -37,4 +37,3 @@ def test_on_pre_tool_alpha_fallback_to_engine(monkeypatch):
     monkeypatch.setattr(orch, "_engine_on_pre_tool", lambda *_a, **_k: "engine_emitted")
     out = orch.on_pre_tool("s1", "Read", {}, "t1")
     assert out == "engine_emitted"
-

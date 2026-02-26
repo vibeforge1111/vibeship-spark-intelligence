@@ -21,11 +21,11 @@ def _stable_bucket(seed: str) -> int:
 
 
 def _route_mode() -> str:
-    mode = str(os.getenv("SPARK_ADVISORY_ROUTE", "engine") or "engine").strip().lower()
+    mode = str(os.getenv("SPARK_ADVISORY_ROUTE", "alpha") or "alpha").strip().lower()
     if mode in {"legacy"}:
         return "engine"
     if mode not in {"engine", "alpha", "canary"}:
-        return "engine"
+        return "alpha"
     return mode
 
 
