@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Run curriculum-driven EIDOS distillation auto-refinement."""
 
 from __future__ import annotations
@@ -29,6 +29,24 @@ def main() -> int:
         default=0.60,
         help="Minimum unified score required for archive promotion",
     )
+    parser.add_argument(
+        "--archive-fallback-llm",
+        dest="archive_fallback_llm",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable second-pass fallback refinement for archive rows",
+    )
+    parser.add_argument(
+        "--soft-promote-on-success",
+        action="store_true",
+        help="Tag improved archive rows as soft-promoted when they pass the soft gate",
+    )
+    parser.add_argument(
+        "--soft-promote-min-unified",
+        type=float,
+        default=0.35,
+        help="Minimum unified score for soft promotion",
+    )
     parser.add_argument("--json-out", default="", help="Optional path to write full JSON report")
     args = parser.parse_args()
 
@@ -40,6 +58,9 @@ def main() -> int:
         include_archive=bool(args.include_archive),
         promote_on_success=bool(args.promote_on_success),
         promote_min_unified=float(args.promote_min_unified),
+        archive_fallback_llm=bool(args.archive_fallback_llm),
+        soft_promote_on_success=bool(args.soft_promote_on_success),
+        soft_promote_min_unified=float(args.soft_promote_min_unified),
     )
 
     if args.json_out:

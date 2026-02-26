@@ -1,4 +1,4 @@
-﻿"""Auto-refinement worker for high-priority EIDOS curriculum cards."""
+"""Auto-refinement worker for high-priority EIDOS curriculum cards."""
 
 from __future__ import annotations
 
@@ -249,6 +249,9 @@ def run_curriculum_autofix(
     include_archive: bool = False,
     promote_on_success: bool = False,
     promote_min_unified: float = 0.60,
+    archive_fallback_llm: bool = True,
+    soft_promote_on_success: bool = False,
+    soft_promote_min_unified: float = 0.35,
 ) -> Dict[str, Any]:
     """Run curriculum-driven refinement attempts on top priority cards."""
     target_db = Path(db_path) if db_path else _DEFAULT_DB
@@ -261,12 +264,18 @@ def run_curriculum_autofix(
         "include_archive": bool(include_archive),
         "promote_on_success": bool(promote_on_success),
         "promote_min_unified": float(promote_min_unified),
+        "archive_fallback_llm": bool(archive_fallback_llm),
+        "soft_promote_on_success": bool(soft_promote_on_success),
+        "soft_promote_min_unified": float(soft_promote_min_unified),
+        "mode_used": "deterministic_plus_fallback" if bool(archive_fallback_llm) else "deterministic_only",
         "candidates": 0,
         "attempted": 0,
         "updated": 0,
         "archive_attempted": 0,
         "archive_updated": 0,
         "archive_promoted": 0,
+        "archive_stagnation_detected": False,
+        "archive_update_rate": 0.0,
         "suppression_recovery_rate": 0.0,
         "rows": [],
     }
@@ -321,12 +330,30 @@ def run_curriculum_autofix(
                 continue
 
             old_q = _decode_quality(row.get("advisory_quality"))
+            old_unified = _safe_float(old_q.get("unified_score"), 0.0)
+            refine_context = {"curriculum_autofix": True, "distillation_id": dist_id, "source": source}
             new_text, new_q = refine_distillation(
                 input_text,
                 source="eidos",
-                context={"curriculum_autofix": True, "distillation_id": dist_id, "source": source},
+                context=refine_context,
                 min_unified_score=0.60,
             )
+            if source == "distillations_archive" and bool(archive_fallback_llm):
+                pass_a_suppressed = bool((new_q or {}).get("suppressed", False))
+                pass_a_unified = _safe_float((new_q or {}).get("unified_score"), 0.0)
+                pass_a_gain = pass_a_unified - old_unified
+                if pass_a_suppressed or pass_a_gain < float(min_gain):
+                    fallback_context = dict(refine_context)
+                    fallback_context["archive_fallback_pass"] = True
+                    fallback_input = str(new_text or "").strip() or input_text
+                    fallback_text, fallback_q = refine_distillation(
+                        fallback_input,
+                        source="eidos",
+                        context=fallback_context,
+                        min_unified_score=0.60,
+                    )
+                    if _rank(fallback_q) > _rank(new_q):
+                        new_text, new_q = fallback_text, fallback_q
             improved = _is_improved(old_q, new_q, min_gain=float(min_gain))
             changed_text = str(new_text or "").strip() and str(new_text).strip() != input_text
 
@@ -357,6 +384,7 @@ def run_curriculum_autofix(
                         if source == "distillations_archive":
                             report["archive_updated"] += 1
 
+                    hard_promoted = False
                     promote_candidate = (
                         source == "distillations_archive"
                         and bool(promote_on_success)
@@ -371,11 +399,41 @@ def run_curriculum_autofix(
                         quality_payload=new_quality_payload,
                     ):
                         report["archive_promoted"] += 1
+                        hard_promoted = True
                         action = "promoted"
+
+                    soft_promote_candidate = (
+                        source == "distillations_archive"
+                        and bool(soft_promote_on_success)
+                        and not promote_candidate
+                        and not hard_promoted
+                        and not new_suppressed
+                        and _safe_float((new_q or {}).get("unified_score"), 0.0) >= float(soft_promote_min_unified)
+                        and _quality_combo(new_q) >= _quality_combo(old_q)
+                    )
+                    if soft_promote_candidate:
+                        soft_quality = dict(new_q or {})
+                        soft_quality["soft_promoted"] = True
+                        soft_quality_payload = json.dumps(soft_quality, ensure_ascii=True)
+                        soft_persisted = _persist_refinement(
+                            conn,
+                            table=source,
+                            distillation_id=dist_id,
+                            statement=statement,
+                            refined_text=persisted_refined,
+                            quality_payload=soft_quality_payload,
+                        )
+                        if soft_persisted:
+                            new_q = soft_quality
+                            new_quality_payload = soft_quality_payload
+                            action = "soft_promoted"
 
             report["attempted"] += 1
             if source == "distillations_archive":
                 report["archive_attempted"] += 1
+                rate = report["archive_updated"] / report["archive_attempted"]
+                report["archive_update_rate"] = round(rate, 4)
+                report["archive_stagnation_detected"] = report["archive_update_rate"] < 0.05
 
             report["rows"].append(
                 {
@@ -397,5 +455,12 @@ def run_curriculum_autofix(
 
     report["suppression_recovery_rate"] = (
         round(suppressed_recovered / suppressed_attempted, 4) if suppressed_attempted > 0 else 0.0
+    )
+    if report["archive_attempted"] > 0:
+        report["archive_update_rate"] = round(report["archive_updated"] / report["archive_attempted"], 4)
+    else:
+        report["archive_update_rate"] = 0.0
+    report["archive_stagnation_detected"] = (
+        bool(report["archive_attempted"] > 0 and report["archive_update_rate"] < 0.05)
     )
     return report
