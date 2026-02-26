@@ -1,4 +1,4 @@
-"""
+﻿"""
 Distillation Quality Transformer: Bridge between Meta-Ralph scoring and advisory delivery.
 
 Problem: Meta-Ralph scores distillations on 5 dimensions (actionability, novelty, reasoning,
@@ -156,6 +156,7 @@ _SPECIFICITY_MARKERS = {
     "postgresql", "mysql", "oauth", "api", "player", "health", "damage",
     "queue", "worker", "bridge", "pipeline", "flow",
     "authentication", "token", "payload", "schema", "contract",
+    "pytest", "unit test", "integration test",
 }
 
 _OUTCOME_WORDS = {
@@ -384,7 +385,7 @@ def _compose_advisory_text(
     if reasoning and dims.get("reasoning", 0) >= 0.5:
         parts.append(f"because {reasoning}")
 
-    # Add outcome: "— {outcome}"
+    # Add outcome: "â€” {outcome}"
     if outcome and dims.get("outcome_linked", 0) >= 0.5:
         parts.append(f"({outcome})")
 
@@ -402,7 +403,7 @@ def _compose_advisory_text(
 def should_suppress(text: str, dims: Dict[str, float], structure: Dict[str, Optional[str]]) -> Tuple[bool, str]:
     """Determine if a distillation should be suppressed from advisory.
 
-    More aggressive than Meta-Ralph's gate — catches noise that passes
+    More aggressive than Meta-Ralph's gate â€” catches noise that passes
     the structural/primitive checks but isn't useful as advice.
     """
     text_stripped = text.strip()
@@ -450,7 +451,7 @@ def should_suppress(text: str, dims: Dict[str, float], structure: Dict[str, Opti
     # actionable advice later.  Specificity counts because domain-specific
     # advice (e.g. "validate auth tokens") is operationalizable even without
     # an explicit "because" clause.
-    # Skip for items that passed the no-action escape hatch above — they
+    # Skip for items that passed the no-action escape hatch above - they
     # were explicitly kept as valuable non-actionable observations.
     if not escaped_no_action:
         has_action = bool(structure.get("action")) or dims.get("actionability", 0) >= 0.5
@@ -533,7 +534,7 @@ def transform_for_advisory(
 
     # Boost unified score with external signals
     if reliability is not None and reliability > 0:
-        # Cognitive reliability is outcome-backed — blend it in
+        # Cognitive reliability is outcome-backed â€” blend it in
         unified = 0.70 * unified + 0.30 * float(reliability)
     if chip_quality is not None and chip_quality > 0:
         unified = 0.80 * unified + 0.20 * float(chip_quality)
@@ -568,3 +569,5 @@ def transform_for_advisory(
         suppressed=suppressed,
         suppression_reason=reason,
     )
+
+

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Spark Cognitive Learner: Learning to THINK, not just to DO.
 
 This module captures higher-level insights that make any LLM more intelligent:
@@ -561,7 +561,7 @@ def classify_action_domain(insight_text: str, category: str = "", source: str = 
         if re.match(r"^I'd say|^I don't think|^can we now|^please remember", text, re.IGNORECASE):
             return "user_context"
 
-    # Code domain — look for code patterns
+    # Code domain â€” look for code patterns
     if cat in ("self_awareness", "reasoning"):
         if re.search(r"(def |class |import |from \w+ import|self\.\w+|\.py\b)", text):
             return "code"
@@ -570,7 +570,7 @@ def classify_action_domain(insight_text: str, category: str = "", source: str = 
     if re.search(r"\b(function|method|variable|parameter|argument|return|exception|error handling)\b", text_lower):
         return "code"
 
-    # System domain — Spark internals
+    # System domain â€” Spark internals
     if any(kw in text_lower for kw in ("tuneables", "meta-ralph", "metaralph", "bridge_cycle", "pipeline", "cognitive_learner")):
         return "system"
     if re.search(r"\b(auto-tuner|bridge_worker|sparkd|spark daemon|queue\.py)\b", text_lower):
@@ -1418,12 +1418,12 @@ class CognitiveLearner:
         if re.match(r"^##\s+", t):
             return True
 
-        # 42. "I struggle with tool_N_error" — generic hook error telemetry
+        # 42. "I struggle with tool_N_error" â€” generic hook error telemetry
         # e.g., "I struggle with tool_5_error tasks", "I struggle with tool_49_error tasks"
         if re.search(r"i struggle with tool_\d+_error", tl):
             return True
 
-        # 47. Cycle summary telemetry — operational data, not cognitive insights
+        # 47. Cycle summary telemetry â€” operational data, not cognitive insights
         # e.g., "Cycle summary: Bash used 3 times (100% success)."
         # e.g., "Processed 42 events with 5 tools tracked and 0 error patterns"
         if tl.startswith("cycle summary:"):
@@ -1431,24 +1431,24 @@ class CognitiveLearner:
         if re.match(r"^processed \d+ events with \d+ tools? tracked", tl):
             return True
 
-        # 48. Tool usage counts — Tier 1 operational telemetry
+        # 48. Tool usage counts â€” Tier 1 operational telemetry
         # e.g., "Bash used 8 times (100% success)", "Read had 75% success across 4 uses"
         if re.search(r"\b\w+ used \d+ times?\b", tl):
             return True
         if re.search(r"\bhad \d+%? success across \d+ uses\b", tl):
             return True
 
-        # 49. Large edit warnings — operational telemetry about file edits
-        # e.g., "Large edit on pipeline.py (652→1036 chars). Consider smaller..."
+        # 49. Large edit warnings â€” operational telemetry about file edits
+        # e.g., "Large edit on pipeline.py (652â†’1036 chars). Consider smaller..."
         if re.match(r"^large edit on \w+\.\w+\s*\(", tl):
             return True
 
-        # 50. Generic tool struggle — auto-generated from any tool error
+        # 50. Generic tool struggle â€” auto-generated from any tool error
         # e.g., "I struggle with Bash_error tasks", "I struggle with Glob_error tasks"
         if re.match(r"^i struggle with \w+_error tasks?$", tl):
             return True
 
-        # 51. Goal genesis telemetry — cycle counts, not actionable insights
+        # 51. Goal genesis telemetry â€” cycle counts, not actionable insights
         # e.g., "3 goals completed. Top gap: cognitive:self_awareness (severity 1.00)"
         if re.match(r"^\d+ goals? completed\. top gap:", tl):
             return True
@@ -1641,7 +1641,7 @@ class CognitiveLearner:
             if context_evidence and context_evidence not in existing.evidence:
                 existing.evidence.append(context_evidence)
                 existing.evidence = existing.evidence[-10:]
-            # Only backfill context when existing is empty or very short —
+            # Only backfill context when existing is empty or very short -
             # never overwrite a human-provided or previously-rich context.
             existing_ctx = str(existing.context or "")
             if normalized_context and len(existing_ctx) < 20:
@@ -2195,3 +2195,5 @@ def get_cognitive_learner() -> CognitiveLearner:
     if _cognitive_learner is None:
         _cognitive_learner = CognitiveLearner()
     return _cognitive_learner
+
+

@@ -125,7 +125,7 @@ SESSION_BOILERPLATE_PATTERNS: Tuple[str, ...] = (
     r"you are spark intelligence, observing a live coding session",
     r"system inventory \(what actually exists",
     r"<task-notification>|<task-id>|<output-file>|<status>|<summary>",
-    r"\bmission id:\b|\bassigned tasks:\b|\bexecution expectations:\b",
+    r"\bmission id:\s*|\bassigned tasks:\s*|\bexecution expectations:\s*",
     r"\bh70 skill loading\b|\bmission completion gate\b",
     r"^\s*#\s*provider prompt",
     r"\bcurl\s+-x\s+post\s+http://127\.0\.0\.1:\d+/api/events\b",

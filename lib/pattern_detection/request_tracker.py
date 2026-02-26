@@ -172,6 +172,13 @@ class RequestTracker:
         "choose": ("select option", "User asked to choose between options"),
     }
 
+    @staticmethod
+    def _has_keyword(text: str, keyword: str) -> bool:
+        """Keyword match with word boundaries to avoid substring false positives."""
+        if not text or not keyword:
+            return False
+        return re.search(rf"(?<!\w){re.escape(keyword)}(?!\w)", text) is not None
+
     def __init__(self, max_pending: int = 50, max_completed: int = 200):
         """
         Initialize the tracker.
@@ -436,7 +443,7 @@ class RequestTracker:
 
         # Check for known intent patterns
         for keyword, (category, _) in self.INTENT_PATTERNS.items():
-            if keyword in msg_lower:
+            if self._has_keyword(msg_lower, keyword):
                 # Extract the object of the intent
                 words = message.split()
                 relevant_words = [w for w in words if w.lower() not in
@@ -454,7 +461,7 @@ class RequestTracker:
         msg_lower = message.lower()
 
         for keyword, (_, hypothesis) in self.INTENT_PATTERNS.items():
-            if keyword in msg_lower:
+            if self._has_keyword(msg_lower, keyword):
                 return hypothesis
 
         return f"User wants: {message[:50]}"
@@ -464,23 +471,23 @@ class RequestTracker:
         msg_lower = message.lower()
 
         # Specific predictions based on intent
-        if "push" in msg_lower or "commit" in msg_lower:
+        if self._has_keyword(msg_lower, "push") or self._has_keyword(msg_lower, "commit"):
             return "Changes will be persisted to remote repository successfully"
-        if "fix" in msg_lower or "bug" in msg_lower:
+        if self._has_keyword(msg_lower, "fix") or self._has_keyword(msg_lower, "bug"):
             return "Issue will be resolved and functionality will work correctly"
-        if "test" in msg_lower:
+        if self._has_keyword(msg_lower, "test"):
             return "Tests will pass and validate the functionality"
-        if "deploy" in msg_lower:
+        if self._has_keyword(msg_lower, "deploy"):
             return "Code will be deployed and accessible in target environment"
-        if "clean" in msg_lower or "remove" in msg_lower:
+        if self._has_keyword(msg_lower, "clean") or self._has_keyword(msg_lower, "remove"):
             return "Unwanted items will be eliminated without side effects"
-        if any(k in msg_lower for k in ("constraint", "non-negotiable", "must not", "scope")):
+        if any(self._has_keyword(msg_lower, k) for k in ("constraint", "non-negotiable", "must not", "scope")):
             return "Execution will respect stated constraints without violating boundaries"
-        if any(k in msg_lower for k in ("decision", "decide", "choose", "tradeoff")):
+        if any(self._has_keyword(msg_lower, k) for k in ("decision", "decide", "choose", "tradeoff")):
             return "A clear option will be selected with rationale and tradeoffs"
-        if "deadline" in msg_lower:
+        if self._has_keyword(msg_lower, "deadline"):
             return "The plan will prioritize fastest safe path to hit deadline"
-        if "risk" in msg_lower:
+        if self._has_keyword(msg_lower, "risk"):
             return "High-risk paths will be identified and mitigated before execution"
 
         return "User will be satisfied if request is fulfilled correctly"
@@ -490,20 +497,20 @@ class RequestTracker:
         assumptions = []
         msg_lower = message.lower()
 
-        if "push" in msg_lower or "commit" in msg_lower:
+        if self._has_keyword(msg_lower, "push") or self._has_keyword(msg_lower, "commit"):
             assumptions.append("Changes are staged and ready to commit")
             assumptions.append("Remote repository is accessible")
 
-        if "fix" in msg_lower:
+        if self._has_keyword(msg_lower, "fix"):
             assumptions.append("Root cause of issue is understood")
 
-        if "test" in msg_lower:
+        if self._has_keyword(msg_lower, "test"):
             assumptions.append("Test environment is configured correctly")
-        if any(k in msg_lower for k in ("constraint", "non-negotiable", "must not", "scope")):
+        if any(self._has_keyword(msg_lower, k) for k in ("constraint", "non-negotiable", "must not", "scope")):
             assumptions.append("Constraints are explicit and mutually consistent")
-        if any(k in msg_lower for k in ("decision", "decide", "choose", "tradeoff")):
+        if any(self._has_keyword(msg_lower, k) for k in ("decision", "decide", "choose", "tradeoff")):
             assumptions.append("Selection criteria are clear enough to rank options")
-        if "deadline" in msg_lower:
+        if self._has_keyword(msg_lower, "deadline"):
             assumptions.append("Delivery window is feasible for remaining scope")
 
         if context.get("project"):
@@ -518,11 +525,11 @@ class RequestTracker:
         """Generate stop condition - when to abort approach."""
         msg_lower = message.lower()
 
-        if "push" in msg_lower or "commit" in msg_lower:
+        if self._has_keyword(msg_lower, "push") or self._has_keyword(msg_lower, "commit"):
             return "If authentication fails or remote is unreachable, stop and report"
-        if "fix" in msg_lower:
+        if self._has_keyword(msg_lower, "fix"):
             return "If two different fixes fail, stop and diagnose root cause"
-        if "test" in msg_lower:
+        if self._has_keyword(msg_lower, "test"):
             return "If tests fail for reasons unrelated to changes, investigate environment"
 
         return "If approach fails twice, stop and reconsider strategy"
