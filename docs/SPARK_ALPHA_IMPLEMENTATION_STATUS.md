@@ -210,6 +210,11 @@ Branch: feat/spark-alpha
 - Added per-cycle benchmark payload cache so objective + constraints do not rerun the same benchmark command repeatedly.
 - Expanded helper tests for benchmark metric resolution paths.
 
+30. `0976ae4` - `refactor(alpha): remove stale fallback-budget config and observatory surface`
+- Removed stale advisory fallback-budget keys from `config/tuneables.json` to match current runtime/schema surface.
+- Removed stale fallback-budget references from docs and observatory stage rendering.
+- Reduced dead config/docs surface for PR-09 consistency.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -243,6 +248,7 @@ Branch: feat/spark-alpha
 - `python scripts/memory_spine_parity_gate.py --required-streak 3` -> `ready_for_json_retirement=true` (streak `5`)
 - `pytest tests/test_advisory_engine_alpha.py -q` -> `2 passed`
 - `pytest tests/test_vibeforge_helpers.py -q` -> `8 passed`
+- `pytest tests/test_vibeforge_helpers.py tests/test_tuneables_alignment.py -q` -> `9 passed`
 - Replay artifacts:
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.json`
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`

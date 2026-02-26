@@ -47,6 +47,7 @@ Completed commits:
 27. `291d3cb` PR-08 hardening: tuneable loop gets adaptive proposer ranking + `rollback/reset/diff` + cycle budget enforcement
 28. `824fb62` PR-08 follow-up: momentum proposer extension + schema-bounded candidate values
 29. `e9a9335` PR-08 follow-up: benchmark metric source support (`path` or `command` + stdout JSON)
+30. `0976ae4` PR-09 follow-up: stale fallback-budget config/docs/observatory surface removed
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -137,7 +138,8 @@ Current measured state:
 1. Consolidated duplicated JSONL helpers into shared `lib/jsonl_utils.py`.
 2. Replaced local helper copies in advisory engine/orchestrator/alpha/quarantine modules.
 3. Removed dead advisory fallback tuneables (`fallback_budget_cap/window`) from schema after fallback lane deletion.
-4. Remaining: broad tuneable pruning and additional utility dedup across non-advisory surfaces.
+4. Removed stale fallback-budget keys from baseline config (`config/tuneables.json`) and aligned docs/observatory references.
+5. Remaining: broad tuneable pruning and additional utility dedup across non-advisory surfaces.
 
 ### PR-10 Legacy Deletion Sweep (Mandatory)  (Partial)
 1. Removed hook-level legacy fallback (`observe.py` direct `advisor.advise_on_tool` fallback).
