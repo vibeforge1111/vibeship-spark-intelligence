@@ -9,8 +9,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from datetime import datetime, timezone
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -32,8 +32,8 @@ def _llm_area_curriculum_gap_summarize(
     When disabled (default), returns empty string.
     """
     try:
-        from .llm_dispatch import llm_area_call
         from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         prompt = format_prompt(
             "curriculum_gap_summarize",
