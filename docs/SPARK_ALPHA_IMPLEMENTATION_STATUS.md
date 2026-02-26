@@ -63,7 +63,7 @@ Branch: feat/spark-alpha
   - `tests/test_advisor.py`
   - `tests/test_memory_retrieval_ab.py`
 
-10. `(working tree)` - `feat(alpha-advisory): add advisory alpha vertical slice + route orchestrator`
+10. `23ef06a` - `feat(alpha-advisory): add advisory alpha vertical slice + route orchestrator`
 - Added compact alpha hot path (`lib/advisory_engine_alpha.py`) for:
   - retrieve -> gate -> synthesize -> emit
   - strict trace-bound delivery metadata
@@ -124,4 +124,4 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 
 ## In progress right now
 
-- PR-06 advisory alpha vertical slice is in local working tree and ready to commit.
+- No active in-progress patch; PR-06 is checkpointed and validated.

@@ -27,7 +27,7 @@ Completed commits:
 7. `(working tree)` PR-03 dual scoring challenger integration (shadow + enforce gated)
 8. `(working tree)` PR-04 SQLite dual-write for cognitive insights (JSON still canonical)
 9. `(working tree)` PR-05 deterministic RRF retrieval fusion signal (runtime + AB harness)
-10. `(working tree)` PR-06 advisory alpha vertical slice route + canary orchestration
+10. `23ef06a` PR-06 advisory alpha vertical slice route + canary orchestration
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
