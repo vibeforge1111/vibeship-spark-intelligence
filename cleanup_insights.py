@@ -97,7 +97,12 @@ def main():
     raw = INSIGHTS_FILE.read_text(encoding="utf-8", errors="surrogatepass")
     # Strip surrogate characters that break JSON serialization
     raw = raw.encode("utf-8", errors="replace").decode("utf-8")
-    data = json.loads(raw)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        print(f"Error: insights file contains invalid JSON — {exc}")
+        print("Aborting. Fix or restore the file before running cleanup.")
+        return
     total = len(data)
     print(f"Total insights: {total}")
 
