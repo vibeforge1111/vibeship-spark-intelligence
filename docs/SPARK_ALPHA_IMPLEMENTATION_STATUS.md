@@ -1,0 +1,69 @@
+# Spark Alpha Implementation Status
+
+Last updated: 2026-02-26 (local branch snapshot)
+Branch: feat/spark-alpha
+
+## Done so far
+
+### Code commits completed
+
+1. `59865e8` - `feat(alpha): lock metric contract and add baseline rehydrate/drift tooling`
+- Added shared metric contract (`lib/metric_contract.py`) and wired it into gates/observability.
+- Added baseline repair and drift checks (`scripts/rehydrate_alpha_baseline.py`, `scripts/cross_surface_drift_checker.py`).
+
+2. `051d6de` - `feat(alpha-noise): add unified noise classifier scaffold with tests`
+- Added `lib/noise_classifier.py` and initial tests for unified classification behavior.
+
+3. `86a33ee` - `feat(alpha-noise): shadow unified classifier across promoter/meta/cognitive`
+- Integrated unified noise classifier in shadow mode across:
+  - `lib/meta_ralph.py`
+  - `lib/cognitive_learner.py`
+  - `lib/promoter.py`
+- Added disagreement shadow logging and enforcement toggle path.
+
+4. `11c1808` - `feat(alpha-memory): add contextual envelope backfill for cognitive insights`
+- Added write-time context envelope builder (`lib/context_envelope.py`).
+- Added backfill utility for existing cognitive contexts (`scripts/backfill_context_envelopes.py`).
+
+5. `4b3e4df` - `feat(alpha-advisory): restore one repeat-suppressed candidate to avoid no-emit loops`
+- Added bounded repeat-cooldown escape logic in advisory emission quality filter to reduce no-emit loops without bypassing safety/noise filters.
+
+6. `734bddf` - `feat(alpha-loop): repair strict trace binding and refresh packet freshness`
+- Improved trace propagation in feedback paths (`lib/advisor.py`, `lib/advisory_engine.py`).
+- Added strict-trace data repair utility (`scripts/rebind_outcome_traces.py`).
+- Added advisory packet freshness repair utility (`scripts/refresh_packet_freshness.py`).
+- Added production gate guard so Meta-Ralph quality band remains telemetry-only unless explicitly env-enabled.
+
+### Runtime/data repairs applied in local Spark state
+
+- `scripts/backfill_context_envelopes.py --apply`
+- `scripts/rebind_outcome_traces.py --apply` (rebound 61 strict-window mismatches)
+- `scripts/refresh_packet_freshness.py --apply` (refreshed 5 packet freshness windows)
+
+### Current measured state (latest run)
+
+- `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+- `python scripts/memory_quality_observatory.py` -> retrieval guardrails `passing=true`
+
+Notable metrics now:
+- `context.p50`: 230
+- `advisory.emit_rate`: 0.194
+- `strict_trace_coverage`: 0.5985
+- `strict_acted_on_rate`: 0.2193
+
+## Not done yet
+
+These are still pending relative to the broader Simplification/Fast-Track goals:
+
+1. Full advisory collapse (17 modules -> compact 3-module architecture) is not implemented.
+2. Storage consolidation to single SQLite-first memory/advisory store is not implemented.
+3. Memory compaction engine (ACT-R decay + Mem0-style add/update/delete/noop) is not implemented.
+4. Thompson-sampling source selector is not implemented.
+5. Large config surface reduction (hard pruning to minimal knobs) is not implemented.
+6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
+7. Broad file/function deletion pass to reach Carmack-size target is not done.
+8. Final migration playbook for old paths/deprecated modules is not done.
+
+## In progress right now
+
+- No active in-progress code patch at the moment; current state is checkpointed with the commits listed above.
