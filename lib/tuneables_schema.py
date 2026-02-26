@@ -163,6 +163,14 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "global_dedupe_cooldown_s": TuneableSpec("float", 600, 0, 86400,
             "Cross-session global dedupe cooldown (s). Prevents same insight across sessions. "
             "Distinct from text_repeat (exact text) and advice_repeat (same ID)"),
+        "global_dedupe_scope": TuneableSpec(
+            "str",
+            "global",
+            None,
+            None,
+            "Scope for global dedupe ('global', 'tree', or 'contextual').",
+            ["global", "tree", "contextual"],
+        ),
         "actionability_enforce": TuneableSpec("bool", True, None, None, "Enforce actionability scoring"),
         "force_programmatic_synth": TuneableSpec("bool", False, None, None, "Force programmatic synthesis"),
         "selective_ai_synth_enabled": TuneableSpec("bool", True, None, None, "Enable selective AI synthesis"),

@@ -100,7 +100,10 @@ except Exception:
     GLOBAL_DEDUPE_COOLDOWN_S = 600.0
 GLOBAL_DEDUPE_LOG = Path.home() / ".spark" / "advisory_global_dedupe.jsonl"
 GLOBAL_DEDUPE_LOG_MAX = 5000
-# Dedupe scope: global (all sessions) or tree (main + subagents under same agent tree).
+# Dedupe scope:
+# - global: all sessions share one dedupe scope
+# - tree: main + subagents under same agent tree
+# - contextual: tree + task phase + intent family
 GLOBAL_DEDUPE_SCOPE = str(os.getenv("SPARK_ADVISORY_GLOBAL_DEDUPE_SCOPE", "global") or "global").strip().lower()
 
 # (pytest hygiene handled in *_recently_emitted helpers)
@@ -114,24 +117,36 @@ _rejection_flush_interval = 50
 _rejection_flush_counter = 0
 
 
+def _flush_rejection_telemetry() -> None:
+    existing: Dict[str, int] = {}
+    if REJECTION_TELEMETRY_FILE.exists():
+        loaded = json.loads(REJECTION_TELEMETRY_FILE.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            existing = loaded
+    for k, v in _rejection_counts.items():
+        existing[k] = existing.get(k, 0) + v
+    existing["_last_flush"] = time.time()
+    REJECTION_TELEMETRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    REJECTION_TELEMETRY_FILE.write_text(
+        json.dumps(existing, indent=2), encoding="utf-8"
+    )
+    _rejection_counts.clear()
+
+
 def _record_rejection(reason: str) -> None:
     """Increment a rejection reason counter. Flushes to disk periodically."""
     global _rejection_flush_counter
     _rejection_counts[reason] = _rejection_counts.get(reason, 0) + 1
     _rejection_flush_counter += 1
-    if _rejection_flush_counter >= _rejection_flush_interval:
+    should_flush = (
+        _rejection_flush_counter >= _rejection_flush_interval
+        or reason == "global_dedupe_suppressed"
+        or not REJECTION_TELEMETRY_FILE.exists()
+    )
+    if should_flush:
         _rejection_flush_counter = 0
         try:
-            existing: Dict[str, int] = {}
-            if REJECTION_TELEMETRY_FILE.exists():
-                existing = json.loads(REJECTION_TELEMETRY_FILE.read_text(encoding="utf-8"))
-            for k, v in _rejection_counts.items():
-                existing[k] = existing.get(k, 0) + v
-            existing["_last_flush"] = time.time()
-            REJECTION_TELEMETRY_FILE.write_text(
-                json.dumps(existing, indent=2), encoding="utf-8"
-            )
-            _rejection_counts.clear()
+            _flush_rejection_telemetry()
         except Exception as exc:
             log_debug("advisory_engine", f"rejection telemetry flush failed: {exc}", None)
 
@@ -335,7 +350,7 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
         # Fall through to resolver so schema defaults still apply.
         pass
     from .config_authority import resolve_section
-    from .config_authority import env_bool, env_float, env_int
+    from .config_authority import env_bool, env_float, env_int, env_str
     cfg = resolve_section(
         "advisory_engine",
         runtime_path=tuneables,
@@ -356,6 +371,7 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
             "delivery_stale_s": env_float("SPARK_ADVISORY_STALE_S"),
             "advisory_text_repeat_cooldown_s": env_float("SPARK_ADVISORY_TEXT_REPEAT_COOLDOWN_S"),
             "global_dedupe_cooldown_s": env_float("SPARK_ADVISORY_GLOBAL_DEDUPE_COOLDOWN_S"),
+            "global_dedupe_scope": env_str("SPARK_ADVISORY_GLOBAL_DEDUPE_SCOPE", lower=True),
         },
     ).data
     return cfg if isinstance(cfg, dict) else {}
@@ -392,6 +408,7 @@ def apply_engine_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     global DELIVERY_STALE_SECONDS
     global ADVISORY_TEXT_REPEAT_COOLDOWN_S
     global GLOBAL_DEDUPE_COOLDOWN_S
+    global GLOBAL_DEDUPE_SCOPE
     global FORCE_PROGRAMMATIC_SYNTH
     global SELECTIVE_AI_SYNTH_ENABLED
     global SELECTIVE_AI_MIN_REMAINING_MS
@@ -576,6 +593,14 @@ def apply_engine_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
             applied.append("global_dedupe_cooldown_s")
         except Exception:
             warnings.append("invalid_global_dedupe_cooldown_s")
+
+    if "global_dedupe_scope" in cfg:
+        scope = str(cfg.get("global_dedupe_scope") or "").strip().lower()
+        if scope in {"global", "tree", "contextual"}:
+            GLOBAL_DEDUPE_SCOPE = scope
+            applied.append("global_dedupe_scope")
+        else:
+            warnings.append("invalid_global_dedupe_scope")
     return {"applied": applied, "warnings": warnings}
 
 
@@ -602,6 +627,7 @@ def get_engine_config() -> Dict[str, Any]:
         "delivery_stale_s": float(DELIVERY_STALE_SECONDS),
         "advisory_text_repeat_cooldown_s": float(ADVISORY_TEXT_REPEAT_COOLDOWN_S),
         "global_dedupe_cooldown_s": float(GLOBAL_DEDUPE_COOLDOWN_S),
+        "global_dedupe_scope": str(GLOBAL_DEDUPE_SCOPE),
     }
 
 
@@ -937,12 +963,30 @@ def _session_lineage(session_id: str) -> Dict[str, Any]:
     }
 
 
-def _dedupe_scope_key(session_id: str) -> str:
+def _dedupe_scope_key(
+    session_id: str,
+    *,
+    intent_family: str = "",
+    task_phase: str = "",
+) -> str:
+    """Build a scope key for cross-session dedupe filtering.
+
+    Modes:
+      - global: one shared scope for all sessions
+      - tree: scoped to agent tree (main + subagents)
+      - contextual: scoped to tree + phase + intent
+    """
     scope = str(GLOBAL_DEDUPE_SCOPE or "global").strip().lower()
     if scope == "tree":
         lineage = _session_lineage(session_id)
         key = str(lineage.get("session_tree_key") or "").strip()
         return key or str(session_id or "")
+    if scope == "contextual":
+        lineage = _session_lineage(session_id)
+        tree_key = str(lineage.get("session_tree_key") or "").strip() or str(session_id or "")
+        phase = str(task_phase or "").strip().lower() or "implementation"
+        intent = str(intent_family or "").strip().lower() or "emergent_other"
+        return f"{tree_key}:{phase}:{intent}"
     return "global"
 
 
@@ -1705,7 +1749,11 @@ def on_pre_tool(
             try:
                 _dedupe_now = time.time()
                 _dedupe_cooldown = float(GLOBAL_DEDUPE_COOLDOWN_S)
-                _dedupe_scope = _dedupe_scope_key(session_id)
+                _dedupe_scope = _dedupe_scope_key(
+                    session_id,
+                    intent_family=intent_family,
+                    task_phase=str(getattr(state, "task_phase", "") or ""),
+                )
                 for row in reversed(_tail_jsonl(GLOBAL_DEDUPE_LOG, 400)):
                     try:
                         aid = str(row.get("advice_id") or "").strip()
@@ -2057,7 +2105,11 @@ def on_pre_tool(
             ):
                 now_ts = time.time()
                 cooldown = float(GLOBAL_DEDUPE_COOLDOWN_S)
-                dedupe_scope = _dedupe_scope_key(session_id)
+                dedupe_scope = _dedupe_scope_key(
+                    session_id,
+                    intent_family=intent_family,
+                    task_phase=str(getattr(state, "task_phase", "") or ""),
+                )
                 kept = []
                 suppressed: List[Dict[str, Any]] = []
                 for decision in list(gate_result.emitted or []):
@@ -2366,7 +2418,11 @@ def on_pre_tool(
         # Initialize before conditional paths to avoid stale runtime crashes
         # when no advisories are emitted in this pass.
         shown_ids: List[str] = []
-        dedupe_scope = _dedupe_scope_key(session_id)
+        dedupe_scope = _dedupe_scope_key(
+            session_id,
+            intent_family=intent_family,
+            task_phase=str(getattr(state, "task_phase", "") or ""),
+        )
         session_lineage = _session_lineage(session_id)
         if emitted:
             shown_ids = [d.advice_id for d in gate_result.emitted]

@@ -73,6 +73,32 @@ def test_global_recently_emitted_text_sig(monkeypatch, tmp_path):
     assert float(hit["age_s"]) >= 0.0
 
 
+def test_dedupe_scope_key_contextual_composes_tree_phase_intent(monkeypatch):
+    monkeypatch.setattr(advisory_engine, "GLOBAL_DEDUPE_SCOPE", "contextual")
+    monkeypatch.setattr(
+        advisory_engine,
+        "_session_lineage",
+        lambda session_id: {"session_tree_key": "tree-abc"},
+    )
+    key = advisory_engine._dedupe_scope_key(
+        "session-1",
+        intent_family="build_delivery",
+        task_phase="implementation",
+    )
+    assert key == "tree-abc:implementation:build_delivery"
+
+
+def test_dedupe_scope_key_contextual_uses_defaults_when_missing(monkeypatch):
+    monkeypatch.setattr(advisory_engine, "GLOBAL_DEDUPE_SCOPE", "contextual")
+    monkeypatch.setattr(
+        advisory_engine,
+        "_session_lineage",
+        lambda session_id: {"session_tree_key": "tree-default"},
+    )
+    key = advisory_engine._dedupe_scope_key("session-2")
+    assert key == "tree-default:implementation:emergent_other"
+
+
 def test_on_pre_tool_global_dedupe_filters_emitted(monkeypatch, tmp_path):
     monkeypatch.setattr(advisory_engine, "ENGINE_ENABLED", True)
     monkeypatch.setattr(advisory_engine, "GLOBAL_DEDUPE_ENABLED", True)
