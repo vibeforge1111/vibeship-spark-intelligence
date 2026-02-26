@@ -213,7 +213,10 @@ def read_meta_ralph(max_recent: int = 15) -> dict[str, Any]:
     # Roast history — recent verdicts
     rh = _load_json(_SD / "meta_ralph" / "roast_history.json") or {}
     history = rh.get("history", []) if isinstance(rh, dict) else []
-    d["total_roasted"] = len(history)
+    total_roasted = 0
+    if isinstance(rh, dict):
+        total_roasted = _as_int(rh.get("total_roasted"), 0)
+    d["total_roasted"] = max(total_roasted, len(history))
     recent = history[-max_recent:] if history else []
     d["recent_verdicts"] = []
     verdicts: dict[str, int] = {}
@@ -238,12 +241,16 @@ def read_meta_ralph(max_recent: int = 15) -> dict[str, Any]:
             if isinstance(total, (int, float)):
                 total_score_sum += total
                 total_score_count += 1
+    quality_passed = verdicts.get("quality", 0)
+    if isinstance(rh, dict):
+        quality_passed = _as_int(rh.get("quality_passed"), quality_passed)
+    d["quality_passed"] = quality_passed
     d["verdict_distribution"] = verdicts
     d["dimension_averages"] = {
         dim: round(dim_sums[dim] / max(dim_counts[dim], 1), 2) for dim in dims
     }
     d["avg_total_score"] = round(total_score_sum / max(total_score_count, 1), 2)
-    d["pass_rate"] = round(verdicts.get("quality", 0) / max(len(history), 1) * 100, 1)
+    d["pass_rate"] = round(d["quality_passed"] / max(d["total_roasted"], 1) * 100, 1)
     # Weak dimensions (below 1.0 avg or lowest 2)
     sorted_dims = sorted(d["dimension_averages"].items(), key=lambda x: x[1])
     d["weak_dimensions"] = [dim for dim, avg in sorted_dims[:2] if avg < 1.5]

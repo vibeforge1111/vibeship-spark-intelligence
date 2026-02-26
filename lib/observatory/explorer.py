@@ -548,6 +548,11 @@ def _export_verdicts(explore_dir: Path, limit: int) -> int:
     rh = _load_json(_SD / "meta_ralph" / "roast_history.json") or {}
     history = rh.get("history", []) if isinstance(rh, dict) else []
     total = len(history)
+    if isinstance(rh, dict):
+        try:
+            total = max(total, int(rh.get("total_roasted", total) or total))
+        except Exception:
+            total = total
     recent = history[-limit:] if history else []
 
     # Verdict distribution
