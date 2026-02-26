@@ -948,8 +948,10 @@ def run_processing_cycle(
     metrics = ProcessingMetrics(cycle_start=time.time())
     state = _load_pipeline_state()
 
-    # 1. Check queue depth
-    metrics.queue_depth_before = count_events()
+    # 1. Check queue depth (bypass the 1-second cache so batch-size decisions
+    #    are based on the actual queue length at the start of this cycle, not
+    #    a stale snapshot from a previous cycle).
+    metrics.queue_depth_before = count_events(use_cache=False)
     metrics.backpressure_level = compute_backpressure_level(
         metrics.queue_depth_before
     )
