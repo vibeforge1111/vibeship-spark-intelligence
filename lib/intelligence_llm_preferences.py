@@ -25,7 +25,7 @@ def detect_local_ollama(timeout_s: float = 2.5) -> bool:
         ollama_bin = shutil.which("ollama")
         if not ollama_bin:
             return False
-        proc = subprocess.run(
+        proc = subprocess.run(  # noqa: S603
             [ollama_bin, "list"],
             capture_output=True,
             text=True,
