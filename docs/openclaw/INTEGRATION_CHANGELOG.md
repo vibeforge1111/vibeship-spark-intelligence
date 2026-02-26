@@ -2,6 +2,13 @@
 
 This log tracks Spark x OpenClaw integration changes that should be easy to audit later.
 
+## 2026-02-26
+
+### Added
+
+- Added weekly strict-quality lineage rollup report:
+  - `scripts/openclaw_strict_quality_rollup.py`
+  - `tests/test_openclaw_strict_quality_rollup.py`
 ## 2026-02-18
 
 ### Documentation consolidation (canonicalization)
