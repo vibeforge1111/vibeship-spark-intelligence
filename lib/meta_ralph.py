@@ -69,6 +69,8 @@ RUNTIME_REFINER_LLM_ENABLED = False
 RUNTIME_REFINER_LLM_TIMEOUT_S = 6.0
 RUNTIME_REFINER_LLM_MAX_CHARS = 260
 RUNTIME_REFINER_LLM_PROVIDER = "auto"
+RUNTIME_REFINER_LLM_MIN_SCORE = 1.0
+RUNTIME_REFINER_ROUND2_MARGIN = 1.0
 _ALLOWED_RUNTIME_REFINER_PROVIDERS = {
     "auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude",
 }
@@ -1287,6 +1289,10 @@ class MetaRalph:
     @staticmethod
     def _extract_runtime_refinement(raw: str, max_chars: int) -> str:
         text = str(raw or "").strip()
+        if not text:
+            return ""
+        # Strip provider "thinking" blocks (e.g., MiniMax/OpenAI-style tags).
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
         if text.startswith("```"):
             lines = text.splitlines()
             if lines and lines[0].strip().startswith("```"):
@@ -1308,8 +1314,19 @@ class MetaRalph:
             except Exception:
                 candidate = ""
         if not candidate:
-            candidate = (text.splitlines()[0] if text else "").strip()
+            for line in text.splitlines():
+                probe = line.strip()
+                if not probe:
+                    continue
+                if probe.startswith("{") and probe.endswith("}"):
+                    # Keep JSON lines for parser above; skip here.
+                    continue
+                candidate = probe
+                break
+        if not candidate:
+            candidate = text.strip()
         candidate = re.sub(r"\s+", " ", candidate).strip()
+        candidate = candidate.strip("`\"' ")
         if len(candidate) > max_chars:
             candidate = candidate[:max_chars].rstrip(" ,.;:")
         return candidate if len(candidate) >= 20 else ""
@@ -1319,19 +1336,35 @@ class MetaRalph:
         learning: str,
         issues: List[str],
         context: Optional[Dict[str, Any]],
+        *,
+        style: str = "stock",
     ) -> Optional[str]:
-        prompt = (
-            "Rewrite this Meta-Ralph NEEDS_WORK learning into ONE concrete, action-first sentence.\n"
-            "Rules:\n"
-            "- Keep original meaning.\n"
-            "- Do not invent facts.\n"
-            "- Prefer format: 'When <condition>: <action> because <reason>'.\n"
-            "- 20 to 220 chars.\n"
-            "- Output JSON only: {\"refined\": \"...\"}\n\n"
-            f"Issues: {issues[:4]}\n"
-            f"Context: {json.dumps(context or {}, ensure_ascii=False)}\n"
-            f"Input: {learning}"
-        )
+        if style == "compact_contract":
+            prompt = (
+                "Rewrite this low-quality engineering learning into one compact action sentence.\n"
+                "Rules:\n"
+                "- Keep original meaning.\n"
+                "- Do not invent facts.\n"
+                "- <= 140 chars.\n"
+                "- No hedge words.\n"
+                "- Output JSON only: {\"refined\": \"...\"}\n\n"
+                f"Issues: {issues[:4]}\n"
+                f"Context: {json.dumps(context or {}, ensure_ascii=False)}\n"
+                f"Input: {learning}"
+            )
+        else:
+            prompt = (
+                "Rewrite this Meta-Ralph NEEDS_WORK learning into ONE concrete, action-first sentence.\n"
+                "Rules:\n"
+                "- Keep original meaning.\n"
+                "- Do not invent facts.\n"
+                "- Prefer format: 'When <condition>: <action> because <reason>'.\n"
+                "- 20 to 220 chars.\n"
+                "- Output JSON only: {\"refined\": \"...\"}\n\n"
+                f"Issues: {issues[:4]}\n"
+                f"Context: {json.dumps(context or {}, ensure_ascii=False)}\n"
+                f"Input: {learning}"
+            )
 
         raw: Optional[str] = None
         provider = str(RUNTIME_REFINER_LLM_PROVIDER or "auto")
@@ -1375,6 +1408,22 @@ class MetaRalph:
             return None
         candidate = self._extract_runtime_refinement(raw, max_chars=max_chars)
         return candidate or None
+
+    def _attempt_llm_refinement_with_style(
+        self,
+        learning: str,
+        issues: List[str],
+        context: Optional[Dict[str, Any]],
+        *,
+        style: str,
+    ) -> Optional[str]:
+        """Call runtime LLM refinement with style, supporting legacy monkeypatched signatures."""
+        try:
+            return self._attempt_llm_refinement(learning, issues, context, style=style)
+        except TypeError as exc:
+            if "unexpected keyword argument 'style'" not in str(exc):
+                raise
+            return self._attempt_llm_refinement(learning, issues, context)
 
     def _attempt_refinement(self, learning: str, issues: List[str],
                             context: Optional[Dict] = None) -> Optional[str]:
@@ -1420,13 +1469,39 @@ class MetaRalph:
         # Stage 3: Optional runtime LLM assist (tuneable + hot-reload).
         if RUNTIME_REFINER_LLM_ENABLED:
             source_text = refined if made_changes else learning
-            llm_candidate = self._attempt_llm_refinement(source_text, issues, context or {})
-            if llm_candidate and llm_candidate != source_text:
-                base_score = self._score_learning(source_text, context or {})
-                cand_score = self._score_learning(llm_candidate, context or {})
-                if self._refinement_rank(cand_score) > self._refinement_rank(base_score):
-                    refined = llm_candidate
-                    made_changes = True
+            base_score = self._score_learning(source_text, context or {})
+
+            # Gate LLM calls to candidates where runtime spend is most useful.
+            llm_candidate_ok = (
+                base_score.verdict == RoastVerdict.NEEDS_WORK
+                and float(base_score.total) >= float(RUNTIME_REFINER_LLM_MIN_SCORE)
+            )
+            if llm_candidate_ok:
+                # Pass 1: compact contract (fast structural uplift).
+                llm_candidate = self._attempt_llm_refinement_with_style(
+                    source_text, issues, context or {}, style="compact_contract"
+                )
+                pass1_improved = False
+                if llm_candidate and llm_candidate != source_text:
+                    cand_score = self._score_learning(llm_candidate, context or {})
+                    if self._refinement_rank(cand_score) > self._refinement_rank(base_score):
+                        refined = llm_candidate
+                        base_score = cand_score
+                        made_changes = True
+                        pass1_improved = True
+
+                # Pass 2: stock prompt only if pass1 improved and item is near threshold.
+                near_threshold = float(base_score.total) >= float(QUALITY_THRESHOLD - RUNTIME_REFINER_ROUND2_MARGIN)
+                if pass1_improved and base_score.verdict != RoastVerdict.QUALITY and near_threshold:
+                    source_text = refined
+                    llm_candidate_2 = self._attempt_llm_refinement_with_style(
+                        source_text, issues, context or {}, style="stock"
+                    )
+                    if llm_candidate_2 and llm_candidate_2 != source_text:
+                        cand2_score = self._score_learning(llm_candidate_2, context or {})
+                        if self._refinement_rank(cand2_score) > self._refinement_rank(base_score):
+                            refined = llm_candidate_2
+                            made_changes = True
 
         return refined if made_changes else None
 
