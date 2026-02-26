@@ -61,7 +61,7 @@ class BankEntry:
         }
 
 
-def _ensure_dirs():
+def _ensure_dirs() -> None:
     BANK_DIR.mkdir(parents=True, exist_ok=True)
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 

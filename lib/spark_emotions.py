@@ -97,7 +97,7 @@ TRIGGER_MAP: Dict[str, Dict[str, Any]] = {
 
 
 class SparkEmotions:
-    def __init__(self, state_file: Path | None = None):
+    def __init__(self, state_file: Path | None = None) -> None:
         self.state_file = state_file or STATE_FILE
         self.state = self._load_state()
 

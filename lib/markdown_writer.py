@@ -15,6 +15,8 @@ This provides:
 3. Compatibility with other tools expecting .learnings/
 """
 
+from __future__ import annotations
+
 import os
 import random
 import string
@@ -80,28 +82,28 @@ def _reliability_to_priority(reliability: float) -> str:
 class MarkdownWriter:
     """
     Writes cognitive insights to markdown files in .learnings/ directory.
-    
+
     Compatible with ClawdHub self-improving-agent format.
     """
-    
-    def __init__(self, project_dir: Optional[Path] = None, learnings_dir: str = DEFAULT_LEARNINGS_DIR):
+
+    def __init__(self, project_dir: Optional[Path] = None, learnings_dir: str = DEFAULT_LEARNINGS_DIR) -> None:
         self.project_dir = project_dir or Path.cwd()
         self.learnings_dir = self.project_dir / learnings_dir
         self._ensure_dir()
-    
-    def _ensure_dir(self):
+
+    def _ensure_dir(self) -> None:
         """Ensure .learnings directory exists with template files."""
         self.learnings_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Create template files if they don't exist
         learnings_file = self.learnings_dir / "LEARNINGS.md"
         if not learnings_file.exists():
             learnings_file.write_text(self._learnings_header(), encoding="utf-8")
-        
+
         errors_file = self.learnings_dir / "ERRORS.md"
         if not errors_file.exists():
             errors_file.write_text(self._errors_header(), encoding="utf-8")
-    
+
     def _learnings_header(self) -> str:
         """Generate header for LEARNINGS.md"""
         return """# Learnings
@@ -113,7 +115,7 @@ Format: `[LRN-YYYYMMDD-XXX] category`
 ---
 
 """
-    
+
     def _errors_header(self) -> str:
         """Generate header for ERRORS.md"""
         return """# Errors
@@ -125,7 +127,7 @@ Format: `[ERR-YYYYMMDD-XXX] error_type`
 ---
 
 """
-    
+
     def insight_to_markdown(self, insight: CognitiveInsight) -> str:
         """Convert a CognitiveInsight to markdown entry."""
         entry_id = _generate_id("LRN")
@@ -133,17 +135,17 @@ Format: `[ERR-YYYYMMDD-XXX] error_type`
         category = _category_to_learning_category(insight.category)
         priority = _reliability_to_priority(insight.reliability)
         area = _category_to_area(insight.category)
-        
+
         # Build evidence list
         evidence_lines = ""
         if insight.evidence:
             evidence_lines = "\n".join(f"- {e}" for e in insight.evidence[:5])
-        
+
         # Build counter-examples
         counter_lines = ""
         if insight.counter_examples:
             counter_lines = "\n**Exceptions:**\n" + "\n".join(f"- {c}" for c in insight.counter_examples[:3])
-        
+
         entry = f"""## [{entry_id}] {category}
 
 **Logged**: {timestamp}
@@ -176,16 +178,16 @@ Review and validate this insight. If confirmed, consider promoting to CLAUDE.md 
 
 """
         return entry
-    
+
     def error_to_markdown(self, tool_name: str, error: str, context: Dict[str, Any]) -> str:
         """Convert an error to markdown entry."""
         entry_id = _generate_id("ERR")
         timestamp = datetime.now().isoformat()
-        
+
         # Extract context details
         tool_input = context.get("tool_input", {})
         recovery = context.get("recovery_suggestion", {})
-        
+
         entry = f"""## [{entry_id}] {tool_name}
 
 **Logged**: {timestamp}
@@ -219,79 +221,79 @@ Review and validate this insight. If confirmed, consider promoting to CLAUDE.md 
 
 """
         return entry
-    
+
     def write_insight(self, insight: CognitiveInsight) -> str:
         """Write a single insight to LEARNINGS.md."""
         self._ensure_dir()
-        
+
         entry = self.insight_to_markdown(insight)
         learnings_file = self.learnings_dir / "LEARNINGS.md"
-        
+
         with open(learnings_file, "a") as f:
             f.write(entry)
-        
+
         entry_id = entry.split("]")[0].split("[")[1]
         print(f"[SPARK] Written to .learnings/LEARNINGS.md: {entry_id}")
         return entry_id
-    
+
     def write_error(self, tool_name: str, error: str, context: Dict[str, Any] = None) -> str:
         """Write an error to ERRORS.md."""
         self._ensure_dir()
-        
+
         entry = self.error_to_markdown(tool_name, error, context or {})
         errors_file = self.learnings_dir / "ERRORS.md"
-        
+
         with open(errors_file, "a") as f:
             f.write(entry)
-        
+
         entry_id = entry.split("]")[0].split("[")[1]
         print(f"[SPARK] Written to .learnings/ERRORS.md: {entry_id}")
         return entry_id
-    
+
     def write_all_insights(self) -> Dict[str, int]:
         """Write all unwritten insights to markdown."""
         cognitive = get_cognitive_learner()
         stats = {"written": 0, "skipped": 0}
-        
+
         # Track what we've already written
         written_file = self.learnings_dir / ".written_insights.txt"
         written_hashes = set()
         if written_file.exists():
             written_hashes = set(written_file.read_text(encoding="utf-8").strip().split("\n"))
-        
+
         new_hashes = []
         for key, insight in cognitive.insights.items():
             if key in written_hashes:
                 stats["skipped"] += 1
                 continue
-            
+
             self.write_insight(insight)
             new_hashes.append(key)
             stats["written"] += 1
-        
+
         # Update written tracker
         if new_hashes:
             with open(written_file, "a") as f:
                 f.write("\n".join(new_hashes) + "\n")
-        
+
         print(f"[SPARK] Markdown write complete: {stats}")
         return stats
-    
+
     def get_stats(self) -> Dict:
         """Get writer statistics."""
         learnings_count = 0
         errors_count = 0
-        
+
         learnings_file = self.learnings_dir / "LEARNINGS.md"
         if learnings_file.exists():
             content = learnings_file.read_text(encoding="utf-8")
             learnings_count = content.count("## [LRN-")
-        
+
         errors_file = self.learnings_dir / "ERRORS.md"
         if errors_file.exists():
             content = errors_file.read_text(encoding="utf-8")
             errors_count = content.count("## [ERR-")
-        
+
         return {
             "learnings_dir": str(self.learnings_dir),
             "learnings_count": learnings_count,
@@ -317,7 +319,7 @@ def write_learning(insight: CognitiveInsight, project_dir: Optional[Path] = None
     return get_markdown_writer(project_dir).write_insight(insight)
 
 
-def write_error(tool_name: str, error: str, context: Dict[str, Any] = None, 
+def write_error(tool_name: str, error: str, context: Dict[str, Any] = None,
                 project_dir: Optional[Path] = None) -> str:
     """Write an error to markdown."""
     return get_markdown_writer(project_dir).write_error(tool_name, error, context)
