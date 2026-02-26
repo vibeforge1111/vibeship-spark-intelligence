@@ -225,6 +225,51 @@ def _clip_evidence(text: str) -> str:
     return t
 
 
+def _backfill_actionable_context(
+    context: str,
+    insight: str,
+    advisory_quality: Dict[str, Any],
+) -> str:
+    """Backfill short contexts with actionable structure for future retrieval."""
+    base = _clip_context(context)
+    parts: List[str] = []
+    if base:
+        parts.append(base)
+
+    structure = advisory_quality.get("structure") if isinstance(advisory_quality, dict) else {}
+    if isinstance(structure, dict):
+        condition = str(structure.get("condition") or "").strip()
+        action = str(structure.get("action") or "").strip()
+        reasoning = str(structure.get("reasoning") or "").strip()
+        outcome = str(structure.get("outcome") or "").strip()
+
+        if action:
+            if condition:
+                parts.append(f"When {condition}")
+            parts.append(f"Action: {action}")
+            if reasoning:
+                parts.append(f"Reason: {reasoning}")
+            elif outcome:
+                parts.append(f"Outcome: {outcome}")
+
+    merged = " | ".join([p for p in parts if p]).strip(" |")
+    if merged and len(merged) >= 80:
+        return _clip_context(merged)
+
+    if merged:
+        seed = merged
+    else:
+        seed = re.sub(r"\s+", " ", str(insight or "")).strip()
+    if not seed:
+        return base
+
+    # Fallback: keep a semantic sentence window from the insight itself.
+    segments = [s.strip() for s in re.split(r"(?<=[.!?])\s+|\s*[;|]\s+", seed) if s.strip()]
+    if segments:
+        seed = " ".join(segments[:3])
+    return _clip_context(seed)
+
+
 def _coerce_int(value: Any, default: int = 0) -> int:
     try:
         if value is None:
@@ -1585,8 +1630,8 @@ class CognitiveLearner:
         key_part = insight[:40].replace(" ", "_").lower()
         key = self._generate_key(category, key_part)
         emotion_state = _capture_emotion_state_snapshot()
-        normalized_context = _clip_context(context)
-        context_evidence = _clip_evidence(normalized_context or context)
+        normalized_context = _backfill_actionable_context(context, insight, adv_quality_dict)
+        context_evidence = _clip_evidence(normalized_context or context or insight)
 
         if key in self.insights:
             # Update existing - boost confidence!
@@ -1596,6 +1641,11 @@ class CognitiveLearner:
             if context_evidence and context_evidence not in existing.evidence:
                 existing.evidence.append(context_evidence)
                 existing.evidence = existing.evidence[-10:]
+            # Only backfill context when existing is empty or very short —
+            # never overwrite a human-provided or previously-rich context.
+            existing_ctx = str(existing.context or "")
+            if normalized_context and len(existing_ctx) < 20:
+                existing.context = normalized_context
             if emotion_state:
                 existing.emotion_state = emotion_state
             # Refresh advisory quality on validation

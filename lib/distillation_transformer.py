@@ -22,6 +22,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from .noise_patterns import is_session_boilerplate
+
 
 @dataclass
 class AdvisoryQuality:
@@ -406,6 +408,9 @@ def should_suppress(text: str, dims: Dict[str, float], structure: Dict[str, Opti
     text_stripped = text.strip()
     text_lower = text_stripped.lower()
 
+    if is_session_boilerplate(text_stripped):
+        return True, "session_boilerplate"
+
     # Prefix-based suppression (observations, not advice)
     for prefix in _SUPPRESS_PREFIXES:
         if text_stripped.startswith(prefix):
@@ -430,14 +435,35 @@ def should_suppress(text: str, dims: Dict[str, float], structure: Dict[str, Opti
             return True, "code_artifact"
 
     # Pure observation: no actionability AND no reasoning
+    escaped_no_action = False
     if dims.get("actionability", 0) == 0 and dims.get("reasoning", 0) == 0:
         # Allow if it has strong outcome evidence with specificity
         if dims.get("outcome_linked", 0) >= 0.5 and dims.get("specificity", 0) >= 0.5:
-            pass  # Keep: outcome-backed specific observation
+            escaped_no_action = True  # Keep: outcome-backed specific observation
         elif dims.get("novelty", 0) >= 0.5:
-            pass  # Keep: has quality signals (data, patterns, insights)
+            escaped_no_action = True  # Keep: has quality signals (data, patterns, insights)
         else:
             return True, "no_action_no_reasoning"
+
+    # Operationalizability gate: require explicit action plus one of
+    # condition/reasoning/outcome/specificity so retrieval can produce
+    # actionable advice later.  Specificity counts because domain-specific
+    # advice (e.g. "validate auth tokens") is operationalizable even without
+    # an explicit "because" clause.
+    # Skip for items that passed the no-action escape hatch above — they
+    # were explicitly kept as valuable non-actionable observations.
+    if not escaped_no_action:
+        has_action = bool(structure.get("action")) or dims.get("actionability", 0) >= 0.5
+        has_support = (
+            bool(structure.get("condition"))
+            or dims.get("reasoning", 0) >= 0.5
+            or dims.get("outcome_linked", 0) >= 0.5
+            or dims.get("specificity", 0) >= 0.5
+        )
+        if not has_action:
+            return True, "missing_action_structure"
+        if not has_support:
+            return True, "missing_condition_reason_or_outcome"
 
     # Tautology: actionable but no condition, reasoning, outcome, OR specificity
     if dims.get("actionability", 0) >= 0.5:

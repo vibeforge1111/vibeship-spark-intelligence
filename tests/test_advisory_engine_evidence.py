@@ -155,6 +155,13 @@ def test_record_rejection_flushes_global_dedupe_suppressed(monkeypatch, tmp_path
     assert int(payload.get("global_dedupe_suppressed", 0)) >= 1
 
 
+def test_engine_config_exposes_global_dedupe_scope_tree(monkeypatch):
+    monkeypatch.setattr(advisory_engine, "GLOBAL_DEDUPE_SCOPE", "global")
+    advisory_engine.apply_engine_config({"global_dedupe_scope": "tree"})
+    cfg = advisory_engine.get_engine_config()
+    assert cfg["global_dedupe_scope"] == "tree"
+
+
 def test_fallback_rate_guard_blocks_when_recent_ratio_exceeded(monkeypatch, tmp_path):
     log_path = tmp_path / "advisory_engine.jsonl"
     rows = []

@@ -28,6 +28,7 @@ from lib.advisory_gate import (
     AuthorityLevel,
     GateResult,
     AUTHORITY_THRESHOLDS,
+    MAX_EMIT_PER_CALL,
 )
 
 
@@ -175,15 +176,17 @@ def test_tool_cooldown_allows_when_clear():
 # ── Dynamic budget ────────────────────────────────────────────────────
 
 def test_dynamic_budget_base():
-    """Base budget should be MAX_EMIT_PER_CALL (2)."""
+    """Base budget should not exceed MAX_EMIT_PER_CALL."""
     state = MockState()
     items = [MockAdvice(advice_id=f"adv_{i}", confidence=0.7, context_match=0.6) for i in range(5)]
 
     with patch("lib.advisory_state.is_tool_suppressed", return_value=False):
         result = evaluate(items, state, "Edit")
 
-    # At most MAX_EMIT_PER_CALL (2) items emitted by default (no WARNING boost here)
-    assert len(result.emitted) <= 2, f"Base budget should be 2, got {len(result.emitted)}"
+    # At most MAX_EMIT_PER_CALL items emitted by default (no WARNING boost here)
+    assert len(result.emitted) <= MAX_EMIT_PER_CALL, (
+        f"Base budget should be {MAX_EMIT_PER_CALL}, got {len(result.emitted)}"
+    )
 
 
 def test_dynamic_budget_warning_boost():

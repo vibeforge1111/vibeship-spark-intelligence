@@ -23,6 +23,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from .base import DetectedPattern, PatternDetector, PatternType
+from ..noise_patterns import is_session_boilerplate
 
 
 # Pattern categories with confidence and insight type
@@ -169,6 +170,8 @@ class WhyDetector(PatternDetector):
 
             if not text or len(text) < 20:
                 return patterns
+            if is_session_boilerplate(text):
+                return patterns
 
             # Check each why pattern
             for regex, confidence, insight_type in _WHY_REGEXES:
@@ -189,6 +192,8 @@ class WhyDetector(PatternDetector):
 
                 # Skip generic/low-value extractions
                 if _is_too_generic(extracted):
+                    continue
+                if is_session_boilerplate(extracted):
                     continue
 
                 # Get recent context

@@ -22,12 +22,12 @@
   },
   "semantic": {
     "enabled": true,
-    "min_similarity": 0.5,
+    "min_similarity": 0.56,
     "min_fusion_score": 0.5,
     "weight_recency": 0.1,
     "weight_outcome": 0.45,
     "mmr_lambda": 0.5,
-    "dedupe_similarity": 0.88,
+    "dedupe_similarity": 0.84,
     "index_on_write": true,
     "index_on_read": true,
     "index_backfill_limit": 500,
@@ -37,12 +37,12 @@
       "cognitive": 3,
       "trigger": 2,
       "default": 2,
-      "user_understanding": 2,
-      "context": 2,
+      "user_understanding": 3,
+      "context": 3,
       "self_awareness": 2,
-      "meta_learning": 2,
-      "wisdom": 3,
-      "reasoning": 2
+      "meta_learning": 1,
+      "wisdom": 1,
+      "reasoning": 3
     },
     "category_exclude": [],
     "log_retrievals": true,
@@ -99,7 +99,8 @@
     "prefetch_inline_max_jobs": 1,
     "delivery_stale_s": 600,
     "advisory_text_repeat_cooldown_s": 300,
-    "global_dedupe_cooldown_s": 600,
+    "global_dedupe_cooldown_s": 240,
+    "global_dedupe_scope": "tree",
     "actionability_enforce": true,
     "force_programmatic_synth": false,
     "selective_ai_synth_enabled": true,
@@ -112,16 +113,23 @@
     "emit_format": "inline"
   },
   "advisory_gate": {
-    "max_emit_per_call": 2,
-    "tool_cooldown_s": 15,
-    "advice_repeat_cooldown_s": 300,
+    "max_emit_per_call": 3,
+    "tool_cooldown_s": 10,
+    "advice_repeat_cooldown_s": 240,
     "agreement_gate_enabled": false,
     "agreement_min_sources": 2,
-    "shown_advice_ttl_s": 600,
+    "shown_advice_ttl_s": 420,
     "warning_threshold": 0.68,
     "note_threshold": 0.38,
     "whisper_threshold": 0.27,
     "emit_whispers": true,
+    "category_cooldown_multipliers": {
+      "context": 0.65,
+      "reasoning": 0.75,
+      "user_understanding": 0.85,
+      "wisdom": 1.8,
+      "meta_learning": 1.5
+    },
     "source_ttl_multipliers": {
       "baseline": 0.5,
       "bank": 0.6,
@@ -268,7 +276,11 @@
     "min_needs_work_samples": 5,
     "min_source_samples": 15,
     "attribution_window_s": 1800,
-    "strict_attribution_require_trace": true
+    "strict_attribution_require_trace": true,
+    "runtime_refiner_llm_enabled": false,
+    "runtime_refiner_llm_timeout_s": 6.0,
+    "runtime_refiner_llm_max_chars": 260,
+    "runtime_refiner_llm_provider": "auto"
   },
   "eidos": {
     "max_time_seconds": 1200,
@@ -279,7 +291,12 @@
     "safety_allow_secrets": false,
     "trace_strict": false,
     "tool_distillation_enabled": true,
-    "llm_provider": "minimax"
+    "llm_provider": "minimax",
+    "runtime_refiner_llm_enabled": false,
+    "runtime_refiner_llm_min_unified_score": 0.45,
+    "runtime_refiner_llm_timeout_s": 6.0,
+    "runtime_refiner_llm_max_chars": 280,
+    "runtime_refiner_llm_provider": "auto"
   },
   "observe_hook": {
     "eidos_enabled": true,
@@ -546,10 +563,10 @@
   },
   "memory_capture": {
     "enabled": true,
-    "auto_save_threshold": 0.72,
-    "suggest_threshold": 0.6,
-    "max_capture_chars": 2000,
-    "context_capture_chars": 320
+    "auto_save_threshold": 0.78,
+    "suggest_threshold": 0.68,
+    "max_capture_chars": 1200,
+    "context_capture_chars": 520
   },
   "request_tracker": {
     "max_pending": 50,
@@ -572,7 +589,12 @@
     "explore_routing_max": 100,
     "explore_tuning_max": 200,
     "explore_decisions_max": 200,
-    "explore_feedback_max": 200
+    "explore_feedback_max": 200,
+    "eidos_curriculum_enabled": true,
+    "eidos_curriculum_interval_s": 86400,
+    "eidos_curriculum_max_rows": 300,
+    "eidos_curriculum_max_cards": 120,
+    "eidos_curriculum_include_archive": true
   },
   "feature_flags": {
     "premium_tools": false,

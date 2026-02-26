@@ -82,18 +82,18 @@ def main():
     state = {"sessionFile": None, "offset": 0}
     if state_file.exists():
         try:
-            state.update(json.loads(state_file.read_text()))
+            state.update(json.loads(state_file.read_text(encoding="utf-8")))
         except Exception:
             pass
 
     def save_state():
-        state_file.write_text(json.dumps(state, indent=2))
+        state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
     while True:
         try:
             if args.verbose:
                 print("[clawdbot_tailer] tick", flush=True)
-            sj = json.loads(sessions_json.read_text())
+            sj = json.loads(sessions_json.read_text(encoding="utf-8"))
             # sessions.json is a map; pick most recent by updatedAt/lastMessageAt if present.
             entries = []
             for k, v in sj.items():
@@ -122,12 +122,12 @@ def main():
                     state["offset"] = 0
                 else:
                     try:
-                        state["offset"] = len(session_file.read_text().splitlines())
+                        state["offset"] = len(session_file.read_text(encoding="utf-8").splitlines())
                     except Exception:
                         state["offset"] = 0
                 save_state()
 
-            lines = session_file.read_text().splitlines()
+            lines = session_file.read_text(encoding="utf-8").splitlines()
             if args.verbose:
                 print(f"[clawdbot_tailer] lines={len(lines)} offset={state.get('offset')}", flush=True)
             off = int(state.get("offset") or 0)
