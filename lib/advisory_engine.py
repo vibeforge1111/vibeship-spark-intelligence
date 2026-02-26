@@ -131,7 +131,10 @@ except Exception:
     GLOBAL_DEDUPE_COOLDOWN_S = 600.0
 GLOBAL_DEDUPE_LOG = Path.home() / ".spark" / "advisory_global_dedupe.jsonl"
 GLOBAL_DEDUPE_LOG_MAX = 5000
-# Dedupe scope: global (all sessions) or tree (main + subagents under same agent tree).
+# Dedupe scope:
+# - global: all sessions share one dedupe scope
+# - tree: main + subagents under same agent tree
+# - contextual: tree + task phase + intent family
 GLOBAL_DEDUPE_SCOPE = str(os.getenv("SPARK_ADVISORY_GLOBAL_DEDUPE_SCOPE", "global") or "global").strip().lower()
 
 # (pytest hygiene handled in *_recently_emitted helpers)
@@ -146,7 +149,6 @@ _rejection_flush_counter = 0
 
 
 def _flush_rejection_telemetry() -> None:
-    """Merge in-memory rejection counters to disk and clear the buffer."""
     existing: Dict[str, int] = {}
     if REJECTION_TELEMETRY_FILE.exists():
         loaded = json.loads(REJECTION_TELEMETRY_FILE.read_text(encoding="utf-8"))
@@ -378,7 +380,8 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
     if not tuneables.exists():
         # Fall through to resolver so schema defaults still apply.
         pass
-    from .config_authority import env_bool, env_float, env_int, env_str, resolve_section
+    from .config_authority import resolve_section
+    from .config_authority import env_bool, env_float, env_int, env_str
     cfg = resolve_section(
         "advisory_engine",
         runtime_path=tuneables,
@@ -1253,10 +1256,9 @@ def _dedupe_scope_key(
     """Build a scope key for cross-session dedupe filtering.
 
     Modes:
-      - "global"     — one shared scope for all sessions.
-      - "tree"       — scoped to agent tree (main + subagents).
-      - "contextual" — scoped to agent tree *plus* intent_family and task_phase,
-                        so the same advice can resurface when context changes.
+      - global: one shared scope for all sessions
+      - tree: scoped to agent tree (main + subagents)
+      - contextual: scoped to tree + phase + intent
     """
     scope = str(GLOBAL_DEDUPE_SCOPE or "global").strip().lower()
 
@@ -1264,21 +1266,13 @@ def _dedupe_scope_key(
         lineage = _session_lineage(session_id)
         key = str(lineage.get("session_tree_key") or "").strip()
         return key or str(session_id or "")
-
     if scope == "contextual":
         lineage = _session_lineage(session_id)
         tree_key = str(lineage.get("session_tree_key") or "").strip() or str(session_id or "")
-        parts = [tree_key]
-        phase = str(task_phase or "").strip().lower()
-        intent = str(intent_family or "").strip().lower()
-        if phase:
-            parts.append(phase)
-        if intent:
-            parts.append(intent)
-        return ":".join(parts)
-
-    # LLM area: dedupe_optimize — refine dedupe key with semantic intent
-    return _llm_area_dedupe_optimize("global", session_id, intent_family, task_phase)
+        phase = str(task_phase or "").strip().lower() or "implementation"
+        intent = str(intent_family or "").strip().lower() or "emergent_other"
+        return f"{tree_key}:{phase}:{intent}"
+    return "global"
 
 
 def _diagnostics_envelope(
@@ -2040,7 +2034,11 @@ def on_pre_tool(
             try:
                 _dedupe_now = time.time()
                 _dedupe_cooldown = float(GLOBAL_DEDUPE_COOLDOWN_S)
-                _dedupe_scope = _dedupe_scope_key(session_id, intent_family=intent_family, task_phase=str(getattr(state, "task_phase", "") or ""))
+                _dedupe_scope = _dedupe_scope_key(
+                    session_id,
+                    intent_family=intent_family,
+                    task_phase=str(getattr(state, "task_phase", "") or ""),
+                )
                 for row in reversed(_tail_jsonl(GLOBAL_DEDUPE_LOG, 400)):
                     try:
                         aid = str(row.get("advice_id") or "").strip()
@@ -2392,7 +2390,11 @@ def on_pre_tool(
             ):
                 now_ts = time.time()
                 cooldown = float(GLOBAL_DEDUPE_COOLDOWN_S)
-                dedupe_scope = _dedupe_scope_key(session_id, intent_family=intent_family, task_phase=str(getattr(state, "task_phase", "") or ""))
+                dedupe_scope = _dedupe_scope_key(
+                    session_id,
+                    intent_family=intent_family,
+                    task_phase=str(getattr(state, "task_phase", "") or ""),
+                )
                 kept = []
                 suppressed: List[Dict[str, Any]] = []
                 for decision in list(gate_result.emitted or []):
@@ -2792,7 +2794,11 @@ def on_pre_tool(
         # Initialize before conditional paths to avoid stale runtime crashes
         # when no advisories are emitted in this pass.
         shown_ids: List[str] = []
-        dedupe_scope = _dedupe_scope_key(session_id, intent_family=intent_family, task_phase=str(getattr(state, "task_phase", "") or ""))
+        dedupe_scope = _dedupe_scope_key(
+            session_id,
+            intent_family=intent_family,
+            task_phase=str(getattr(state, "task_phase", "") or ""),
+        )
         session_lineage = _session_lineage(session_id)
         if emitted:
             shown_ids = [d.advice_id for d in gate_result.emitted]
