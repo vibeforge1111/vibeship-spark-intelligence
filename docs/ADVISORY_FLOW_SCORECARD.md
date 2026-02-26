@@ -89,7 +89,7 @@ This scorecard reviews the full intelligence flow for:
 |11|Low-quality/noisy results are filtered before synthesis/gate?|4|Quality/dedup and suppression logic exist, but some semantic edge cases remain.|
 |12|Result provenance (`source`,`provider_path`,`route`) is retained for decision audits?|5|Recent improvements added provenance fields in logs.|
 |13|Hot path avoids expensive full fusion when packet lookup succeeds?|5|Fallback-path intent to avoid heavy retrieval on hot path now present.|
-|14|Fallback emission from advisory engine includes actionable command/check?|5|Actionability enforcement exists with next-check append. Fallback emissions now rate-limited via fallback_budget_cap/window.|
+|14|Fallback emission from advisory engine includes actionable command/check?|5|Actionability enforcement exists with next-check append. Emission safety is enforced via gate suppression, cooldowns, and route controls.|
 |15|Legacy advisor compatibility still retained for resilience?|5|Legacy fallback still available behind safeguards.|
 |16|Contextual recency aging is applied to avoid stale recommendations dominating?|4|Effective recency and reliability flows are present.|
 |17|Duplicate recommendations are de-duplicated across sources?|4|Cross-source de-dupe and caps exist, but collisions still occur in rare edge cases.|

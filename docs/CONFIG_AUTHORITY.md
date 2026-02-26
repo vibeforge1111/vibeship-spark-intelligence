@@ -130,8 +130,6 @@ Only keys with explicit `env_overrides` mappings respond to env vars. All others
 | `SPARK_ADVISORY_FALLBACK_RATE_GUARD` | `fallback_rate_guard_enabled` | bool |
 | `SPARK_ADVISORY_FALLBACK_RATE_MAX_RATIO` | `fallback_rate_max_ratio` | float |
 | `SPARK_ADVISORY_FALLBACK_RATE_WINDOW` | `fallback_rate_window` | int |
-| `SPARK_ADVISORY_FALLBACK_BUDGET_CAP` | `fallback_budget_cap` | int |
-| `SPARK_ADVISORY_FALLBACK_BUDGET_WINDOW` | `fallback_budget_window` | int |
 | `SPARK_ADVISORY_PREFETCH_INLINE_MAX_JOBS` | `prefetch_inline_max_jobs` | int |
 | `SPARK_ADVISORY_REQUIRE_ACTION` | `actionability_enforce` | bool |
 | `SPARK_ADVISORY_FORCE_PROGRAMMATIC_SYNTH` | `force_programmatic_synth` | bool |

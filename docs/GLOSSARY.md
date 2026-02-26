@@ -67,7 +67,7 @@ Use this file as the single, stable documentation entrypoint for public OSS onbo
 - **Schema (tuneables)**: Central validation in `lib/tuneables_schema.py` with type/default/min/max/description metadata. Clamps out-of-bounds values rather than rejecting.
 - **Tuneables**: Runtime knobs in `~/.spark/tuneables.json`. Schema-validated, hot-reloaded each bridge cycle, drift-tracked against baseline. Reference: `TUNEABLES.md` and `docs/TUNEABLES_REFERENCE.md`.
 - **validate_and_store_insight()**: Unified write gate (`lib/validate_and_store.py`) that routes every cognitive insight through Meta-Ralph before storage. Fail-open: quarantines on error, then stores anyway. Controllable via `flow.validate_and_store_enabled` tuneable.
-- **Fallback budget**: Rate-limiter on quick/packet fallback emissions in advisory_engine (`fallback_budget_cap` / `fallback_budget_window`). Prevents noise from dominating when retrieval fails.
+- **Fallback handling**: Advisory fallback behavior is controlled through gate suppression, cooldowns, and routing controls rather than dedicated fallback-budget knobs.
 - **Noise patterns**: Shared module (`lib/noise_patterns.py`) consolidating noise detection regex from 5 locations into one importable set.
 - **Rejection telemetry**: Per-reason counters at every advisory exit path, flushed to `~/.spark/advisory_rejection_telemetry.json`. Used by observatory and pulse for diagnostics.
 - **Fail-open quarantine**: When Meta-Ralph raises an exception during validate_and_store, the insight is logged to `~/.spark/insight_quarantine.jsonl` AND still stored in cognitive (true fail-open, not fail-closed).

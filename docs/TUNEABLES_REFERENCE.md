@@ -214,8 +214,6 @@ vault_dir = str(section.data.get("vault_dir", DEFAULT_PATH))
 | `selective_ai_synth_enabled` | bool | `True` | — | — | Enable selective AI synthesis |
 | `selective_ai_min_remaining_ms` | float | `1800` | 0 | 20000 | Min ms remaining for AI synth |
 | `selective_ai_min_authority` | str | `whisper` | — | — | Min authority for AI synth (silent, whisper, note, warning, block) |
-| `fallback_budget_cap` | int | `1` | 0 | 10 | Max fallback emissions per budget window. 0 = unlimited (old behavior) |
-| `fallback_budget_window` | int | `5` | 1 | 100 | Number of tool calls per fallback budget window |
 | `emit_enabled` | bool | `True` | — | — | Enable stdout advisory emission |
 | `emit_max_chars` | int | `500` | 50 | 5000 | Max characters per emission |
 | `emit_format` | str | `inline` | — | — | Emission format style (inline, block) |

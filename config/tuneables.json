@@ -106,8 +106,6 @@
     "selective_ai_synth_enabled": true,
     "selective_ai_min_remaining_ms": 1800,
     "selective_ai_min_authority": "whisper",
-    "fallback_budget_cap": 1,
-    "fallback_budget_window": 5,
     "emit_enabled": true,
     "emit_max_chars": 500,
     "emit_format": "inline"

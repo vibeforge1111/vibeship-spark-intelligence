@@ -78,13 +78,10 @@ Meta-Ralph quality gate
 
 **Rollback**: Set `flow.validate_and_store_enabled = false` in tuneables to bypass.
 
-### Fallback Budget
+### Fallback Handling
 
-When retrieval fails or returns no items, advisory_engine falls back to quick/packet
-fallback emissions. These are rate-limited:
-
-- `advisory_engine.fallback_budget_cap = 1` (max fallback emissions per window)
-- `advisory_engine.fallback_budget_window = 5` (window size in calls)
+Legacy fallback budget controls were removed from runtime and schema. Advisory behavior is now
+governed by explicit gate suppression, cooldowns, and route/freshness controls.
 
 ---
 

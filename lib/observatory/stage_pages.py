@@ -657,15 +657,6 @@ def _gen_advisory(d: dict, all_data: dict) -> str:
     except Exception:
         pass
 
-    # Fallback budget status
-    try:
-        from lib.advisory_engine import FALLBACK_BUDGET_CAP, FALLBACK_BUDGET_WINDOW
-        s += "## Fallback Budget\n\n"
-        s += f"- **Cap**: {FALLBACK_BUDGET_CAP} emissions per {FALLBACK_BUDGET_WINDOW}-call window\n"
-        s += "- 0 = unlimited (old behavior)\n\n"
-    except Exception:
-        pass
-
     s += "## Deep Dive\n\n"
     s += "- [[../advisory_reverse_engineering|Advisory Reverse Engineering]] - full path map + suppression diagnostics\n"
     s += "- [[../explore/decisions/_index|Advisory Decision Ledger]] — emit/suppress/block decisions\n"
