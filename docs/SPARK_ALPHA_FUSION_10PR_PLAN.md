@@ -46,6 +46,7 @@ Completed commits:
 26. `a7ec9bb` PR-08 start: VibeForge loop CLI skeleton (`init/status/run-once/run/history/pause/resume`)
 27. `291d3cb` PR-08 hardening: tuneable loop gets adaptive proposer ranking + `rollback/reset/diff` + cycle budget enforcement
 28. `824fb62` PR-08 follow-up: momentum proposer extension + schema-bounded candidate values
+29. `e9a9335` PR-08 follow-up: benchmark metric source support (`path` or `command` + stdout JSON)
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -126,7 +127,11 @@ Current measured state:
 8. Added safer promotion criteria and failure handling:
    - promotion requires objective improvement + constraint pass + gates-ready
    - apply/measure exceptions auto-rollback and emit explicit `error_rolled_back` row
-9. Remaining: EVOLVE-BLOCK code patch lane and benchmark-stage oracle cascade.
+9. Added benchmark-source metric resolution for goals:
+   - file-backed benchmark payloads via `metric.path`
+   - command-refreshed payloads via `metric.command`
+   - optional stdout JSON parse via `metric.json_from_stdout=true`
+10. Remaining: EVOLVE-BLOCK code patch lane and richer benchmark-stage oracle cascade policy.
 
 ### PR-09 Config Reduction + Utility Dedup  (Partial)
 1. Consolidated duplicated JSONL helpers into shared `lib/jsonl_utils.py`.
