@@ -122,10 +122,10 @@ File: `adapters/openclaw_tailer.py`
 
 Capture/skip behavior is configurable via the `openclaw_tailer` tuneables section:
 
-- `skip_successful_tool_results` (default: `true`)
+- `skip_successful_tool_results` (default: `false`)
 - `skip_read_only_tool_calls` (default: `true`)
-- `max_tool_result_chars` (default: `4000`)
-- `keep_large_tool_results_on_error_only` (default: `true`)
+- `max_tool_result_chars` (default: `6000`)
+- `keep_large_tool_results_on_error_only` (default: `false`)
 - `min_tool_result_chars_for_capture` (default: `0`)
 - `workflow_summary_enabled` (default: `true`)
 - `workflow_summary_min_interval_s` (default: `120`)

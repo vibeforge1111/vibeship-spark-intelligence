@@ -501,16 +501,16 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
     # ---- openclaw_tailer ----
     "openclaw_tailer": {
         "skip_successful_tool_results": TuneableSpec(
-            "bool", True, None, None, "Skip successful tool results per capture policy",
+            "bool", False, None, None, "Skip successful tool results per capture policy",
         ),
         "skip_read_only_tool_calls": TuneableSpec(
             "bool", True, None, None, "Skip assistant messages that only contain Read tool calls",
         ),
         "max_tool_result_chars": TuneableSpec(
-            "int", 4000, 200, 50000, "Max chars retained for tool result capture and truncation",
+            "int", 6000, 200, 50000, "Max chars retained for tool result capture and truncation",
         ),
         "keep_large_tool_results_on_error_only": TuneableSpec(
-            "bool", True, None, None, "When true, large successful tool results are skipped and errors are retained",
+            "bool", False, None, None, "When true, large successful tool results are skipped and errors are retained",
         ),
         "min_tool_result_chars_for_capture": TuneableSpec(
             "int", 0, 0, 20000, "Minimum successful tool result text length required for capture",

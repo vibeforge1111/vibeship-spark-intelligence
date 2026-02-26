@@ -22,6 +22,10 @@ This log tracks Spark x OpenClaw integration changes that should be easy to audi
 
 - Added `openclaw_tailer.workflow_summary_enabled` (default `true`)
 - Added `openclaw_tailer.workflow_summary_min_interval_s` (default `120`)
+- Relaxed default capture policy to retain more execution context:
+  - `skip_successful_tool_results: false`
+  - `max_tool_result_chars: 6000`
+  - `keep_large_tool_results_on_error_only: false`
 - Added tests for recursive workflow report ingest, large-output references, and summary materialization.
 
 ## 2026-02-18

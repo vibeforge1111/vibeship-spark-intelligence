@@ -41,10 +41,10 @@ TUNEABLES_FILE = Path.home() / ".spark" / "tuneables.json"
 TOOL_RESULT_REF_DIR = Path.home() / ".spark" / "workflow_refs" / "openclaw_tool_results"
 WORKFLOW_REPORT_SUBDIR = "workflow"
 
-MAX_TOOL_RESULT_CHARS = 4000
-SKIP_SUCCESSFUL_TOOL_RESULTS = True
+MAX_TOOL_RESULT_CHARS = 6000
+SKIP_SUCCESSFUL_TOOL_RESULTS = False
 SKIP_READ_ONLY_TOOL_CALLS = True
-KEEP_LARGE_TOOL_RESULTS_ON_ERROR_ONLY = True
+KEEP_LARGE_TOOL_RESULTS_ON_ERROR_ONLY = False
 MIN_TOOL_RESULT_CHARS_FOR_CAPTURE = 0
 WORKFLOW_SUMMARY_ENABLED = True
 WORKFLOW_SUMMARY_MIN_INTERVAL_S = 120
@@ -109,13 +109,13 @@ def _apply_openclaw_tailer_config(cfg: dict) -> dict:
         return {"applied": applied, "warnings": warnings}
 
     if "skip_successful_tool_results" in cfg:
-        SKIP_SUCCESSFUL_TOOL_RESULTS = _as_bool(cfg.get("skip_successful_tool_results"), True)
+        SKIP_SUCCESSFUL_TOOL_RESULTS = _as_bool(cfg.get("skip_successful_tool_results"), False)
         applied.append("skip_successful_tool_results")
     if "skip_read_only_tool_calls" in cfg:
         SKIP_READ_ONLY_TOOL_CALLS = _as_bool(cfg.get("skip_read_only_tool_calls"), True)
         applied.append("skip_read_only_tool_calls")
     if "keep_large_tool_results_on_error_only" in cfg:
-        KEEP_LARGE_TOOL_RESULTS_ON_ERROR_ONLY = _as_bool(cfg.get("keep_large_tool_results_on_error_only"), True)
+        KEEP_LARGE_TOOL_RESULTS_ON_ERROR_ONLY = _as_bool(cfg.get("keep_large_tool_results_on_error_only"), False)
         applied.append("keep_large_tool_results_on_error_only")
     if "max_tool_result_chars" in cfg:
         try:

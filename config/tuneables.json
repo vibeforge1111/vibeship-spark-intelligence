@@ -569,10 +569,10 @@
     "context_capture_chars": 520
   },
   "openclaw_tailer": {
-    "skip_successful_tool_results": true,
+    "skip_successful_tool_results": false,
     "skip_read_only_tool_calls": true,
-    "max_tool_result_chars": 4000,
-    "keep_large_tool_results_on_error_only": true,
+    "max_tool_result_chars": 6000,
+    "keep_large_tool_results_on_error_only": false,
     "min_tool_result_chars_for_capture": 0,
     "workflow_summary_enabled": true,
     "workflow_summary_min_interval_s": 120
