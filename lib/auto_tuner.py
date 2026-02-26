@@ -20,6 +20,8 @@ CLI:
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -192,9 +194,17 @@ def _write_json_atomic(path: Path, data: dict):
         pass  # Schema error should not block writes
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=4), encoding="utf-8")
-    tmp.replace(path)
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
     # Record drift after writing tuneables
     try:
