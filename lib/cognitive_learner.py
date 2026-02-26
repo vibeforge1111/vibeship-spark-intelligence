@@ -18,15 +18,15 @@ Learning Categories:
 """
 
 import json
+import logging
 import os
 import re
-import logging
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 INSIGHT_CONTEXT_CHARS = 320
 INSIGHT_EVIDENCE_CHARS = 280
@@ -281,7 +281,7 @@ def _coerce_int(value: Any, default: int = 0) -> int:
 
 def _capture_emotion_state_snapshot() -> Dict[str, Any]:
     try:
-        from lib.config_authority import resolve_section, env_bool
+        from lib.config_authority import env_bool, resolve_section
         cfg = resolve_section(
             "feature_gates",
             env_overrides={"cognitive_emotion_capture": env_bool("SPARK_COGNITIVE_EMOTION_CAPTURE")},
@@ -371,7 +371,7 @@ def _flatten_evidence(items: List[Any]) -> List[str]:
     return out
 
 
-class _insights_lock:
+class _insights_lock:  # noqa: N801
     """Best-effort lock using an exclusive lock file."""
 
     def __init__(self, lock_file: Path, timeout_s: float = 0.5, stale_s: float = 60.0):
@@ -467,7 +467,7 @@ class CognitiveInsight:
         if total == 0:
             return max(0.05, min(0.99, float(self.confidence) * weight))
         return weighted_validated / total
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
@@ -490,7 +490,7 @@ class CognitiveInsight:
             "advisory_readiness": round(self.advisory_readiness, 4),
             "reliability": round(self.reliability, 4),
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CognitiveInsight":
         """Create from dictionary."""
@@ -1605,8 +1605,8 @@ class CognitiveLearner:
         if not evidence or len(evidence) < 120:
             return evidence
         try:
-            from .llm_dispatch import llm_area_call
             from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
 
             prompt = format_prompt(
                 "evidence_compress",
@@ -1628,8 +1628,8 @@ class CognitiveLearner:
         When disabled (default), returns new_insight unchanged.
         """
         try:
-            from .llm_dispatch import llm_area_call
             from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
 
             prompt = format_prompt(
                 "conflict_resolve",
@@ -1653,8 +1653,8 @@ class CognitiveLearner:
         When disabled (default), always returns False (no-op).
         """
         try:
-            from .llm_dispatch import llm_area_call
             from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
 
             prompt = format_prompt(
                 "generic_demotion",
@@ -1764,7 +1764,11 @@ class CognitiveLearner:
         # Record exposure so predictions can be generated
         if record_exposure:
             try:
-                from lib.exposure_tracker import record_exposures, infer_latest_trace_id, infer_latest_session_id
+                from lib.exposure_tracker import (
+                    infer_latest_session_id,
+                    infer_latest_trace_id,
+                    record_exposures,
+                )
                 session_id = infer_latest_session_id()
                 trace_id = infer_latest_trace_id(session_id)
                 record_exposures(

@@ -98,7 +98,7 @@ def _sanitize_runtime_refiner_cfg(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 def _load_runtime_refiner_cfg() -> Dict[str, Any]:
     try:
-        from .config_authority import resolve_section, env_bool, env_float, env_int, env_str
+        from .config_authority import env_bool, env_float, env_int, env_str, resolve_section
 
         cfg = resolve_section(
             "eidos",
@@ -323,8 +323,8 @@ def _llm_refine_candidate(
 def _llm_area_archive_rewrite(statement: str, quality: Dict[str, Any]) -> str:
     """LLM area: rewrite a suppressed/low-score statement (archive_rewrite)."""
     try:
-        from .llm_dispatch import llm_area_call
         from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         prompt = format_prompt(
             "archive_rewrite",
@@ -345,8 +345,8 @@ def _llm_area_archive_rescue(statement: str, quality: Dict[str, Any], source: st
     otherwise returns the original statement (no-op for the consider() call).
     """
     try:
-        from .llm_dispatch import llm_area_call
         from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         prompt = format_prompt(
             "archive_rescue",

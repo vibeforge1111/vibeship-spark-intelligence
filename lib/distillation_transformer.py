@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from .noise_patterns import is_session_boilerplate
 
@@ -406,7 +406,6 @@ def should_suppress(text: str, dims: Dict[str, float], structure: Dict[str, Opti
     the structural/primitive checks but isn't useful as advice.
     """
     text_stripped = text.strip()
-    text_lower = text_stripped.lower()
 
     if is_session_boilerplate(text_stripped):
         return True, "session_boilerplate"
@@ -484,8 +483,8 @@ def should_suppress(text: str, dims: Dict[str, float], structure: Dict[str, Opti
 def _llm_area_actionability_boost(text: str, actionability_score: float) -> Optional[str]:
     """LLM area: boost actionability by rewriting to include clear verb+object."""
     try:
-        from .llm_dispatch import llm_area_call
         from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         prompt = format_prompt(
             "actionability_boost",
@@ -503,8 +502,8 @@ def _llm_area_actionability_boost(text: str, actionability_score: float) -> Opti
 def _llm_area_specificity_augment(text: str, specificity_score: float) -> Optional[str]:
     """LLM area: augment vague statements with concrete details."""
     try:
-        from .llm_dispatch import llm_area_call
         from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         prompt = format_prompt(
             "specificity_augment",
@@ -522,8 +521,8 @@ def _llm_area_specificity_augment(text: str, specificity_score: float) -> Option
 def _llm_area_system28_reformulate(text: str, structure: Dict[str, Optional[str]]) -> Optional[str]:
     """LLM area: reformulate into condition->action->reason structure."""
     try:
-        from .llm_dispatch import llm_area_call
         from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         has_condition = bool(structure.get("condition"))
         has_action = bool(structure.get("action"))
@@ -555,8 +554,8 @@ def _llm_area_system28_reformulate(text: str, structure: Dict[str, Optional[str]
 def _llm_area_reasoning_patch(text: str, reasoning_score: float) -> Optional[str]:
     """LLM area: patch weak reasoning chains in a statement."""
     try:
-        from .llm_dispatch import llm_area_call
         from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         issue = "lacks causal reasoning" if reasoning_score == 0.0 else "weak reasoning chain"
         prompt = format_prompt(

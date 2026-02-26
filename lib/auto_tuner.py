@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 SPARK_DIR = Path.home() / ".spark"
 TUNEABLES_PATH = SPARK_DIR / "tuneables.json"
@@ -113,9 +113,10 @@ def _llm_area_policy_autotuner_recommend(health: "SystemHealth", tuneables: dict
     When disabled (default), returns empty list.
     """
     try:
-        from .llm_dispatch import llm_area_call
-        from .llm_area_prompts import format_prompt
         import json as _json
+
+        from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         health_summary = {
             "advice_action_rate": getattr(health, "advice_action_rate", 0),

@@ -19,15 +19,15 @@ The Ralph Loop:
 PROPOSE → ROAST → REFINE → TEST → VERIFY → META-ROAST → repeat
 """
 
-import json
 import hashlib
+import json
+import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-import re
 
 # Tuneables — defaults overridden by ~/.spark/tuneables.json → "meta_ralph" section.
 QUALITY_THRESHOLD = 4
@@ -96,11 +96,11 @@ def _load_meta_ralph_config() -> None:
     """Load meta_ralph tuneables via config_authority resolve_section."""
     try:
         from .config_authority import (
-            resolve_section,
             env_bool,
             env_float,
             env_int,
             env_str,
+            resolve_section,
         )
         tuneables = Path.home() / ".spark" / "tuneables.json"
         cfg = resolve_section(
@@ -914,7 +914,6 @@ class MetaRalph:
             decision_boost = 1
 
         # Check context for importance scorer result
-        importance_score = context.get("importance_score")
         is_priority = context.get("is_priority", False)
         if is_priority:
             priority_boost = max(priority_boost, 1.0)
@@ -1227,8 +1226,8 @@ class MetaRalph:
     ) -> Optional[str]:
         """LLM area: generate a specific fix for NEEDS_WORK statements."""
         try:
-            from .llm_dispatch import llm_area_call
             from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
 
             weak_dims = []
             if score.actionability < 2:
@@ -1513,8 +1512,8 @@ class MetaRalph:
         Returns the rewritten text if rescue is recommended, None otherwise.
         """
         try:
-            from .llm_dispatch import llm_area_call
             from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
 
             prompt = format_prompt(
                 "unsuppression_score",

@@ -24,6 +24,8 @@ from lib.chips import process_chip_events
 from lib.content_learner import learn_from_edit_event
 from lib.context_sync import sync_context
 from lib.diagnostics import log_debug
+from lib.feature_flags import PREMIUM_TOOLS as _FF_PREMIUM
+from lib.feature_flags import chips_active as _ff_chips_active
 from lib.memory_capture import process_recent_memory_events
 from lib.noise_patterns import API_ERROR_STRINGS, GENERIC_ADVICE_STRINGS
 from lib.openclaw_paths import discover_openclaw_workspaces
@@ -34,8 +36,6 @@ from lib.queue import EventType, read_recent_events
 from lib.runtime_hygiene import cleanup_runtime_artifacts
 from lib.tastebank import add_item, parse_like_message
 from lib.validation_loop import process_outcome_validation, process_validation_events
-
-from lib.feature_flags import PREMIUM_TOOLS as _FF_PREMIUM, chips_active as _ff_chips_active
 
 BRIDGE_HEARTBEAT_FILE = Path.home() / ".spark" / "bridge_worker_heartbeat.json"
 _reconcile_done = False
@@ -179,7 +179,7 @@ def _load_bridge_worker_config() -> None:
     global BRIDGE_MIND_SYNC_MIN_READINESS, BRIDGE_MIND_SYNC_MIN_RELIABILITY
     global BRIDGE_MIND_SYNC_MAX_AGE_S, BRIDGE_MIND_SYNC_DRAIN_QUEUE, BRIDGE_MIND_SYNC_QUEUE_BUDGET
     try:
-        from lib.config_authority import resolve_section, env_bool, env_int, env_float
+        from lib.config_authority import env_bool, env_float, env_int, resolve_section
 
         cfg = resolve_section(
             "bridge_worker",
@@ -267,7 +267,8 @@ _STEP_EXECUTOR: Optional[ThreadPoolExecutor] = None
 _STEP_EXECUTOR_LOCK = Lock()
 # Read once at import; not hot-reloadable (ThreadPoolExecutor size is fixed).
 try:
-    from lib.config_authority import resolve_section as _bw_resolve, env_int as _bw_env_int
+    from lib.config_authority import env_int as _bw_env_int
+    from lib.config_authority import resolve_section as _bw_resolve
     _STEP_EXECUTOR_WORKERS = max(2, int(
         _bw_resolve("bridge_worker", env_overrides={
             "step_executor_workers": _bw_env_int("SPARK_BRIDGE_STEP_EXECUTOR_WORKERS"),

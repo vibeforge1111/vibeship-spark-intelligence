@@ -14,8 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lib.memory_capture import importance_score, _compact_context_snippet
-
+from lib.memory_capture import _compact_context_snippet, importance_score
 
 # ── Hard trigger detection ────────────────────────────────────────────
 

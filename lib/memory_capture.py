@@ -21,21 +21,20 @@ This module is intentionally pure + testable:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import time
-import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from lib.cognitive_learner import CognitiveCategory, get_cognitive_learner
+from lib.cognitive_learner import CognitiveCategory
 from lib.config_authority import resolve_section
-from lib.queue import read_recent_events, EventType
 from lib.memory_banks import store_memory
-from lib.outcome_log import append_outcome, make_outcome_id
 from lib.outcome_checkin import record_checkin_request
-
+from lib.outcome_log import append_outcome, make_outcome_id
+from lib.queue import EventType, read_recent_events
 
 PENDING_DIR = Path.home() / ".spark"
 PENDING_FILE = PENDING_DIR / "pending_memory.json"
@@ -259,8 +258,8 @@ def _llm_area_missed_signal_detect(text: str, score: float, breakdown: Dict[str,
     Returns adjusted score. When disabled (default), returns original score.
     """
     try:
-        from .llm_dispatch import llm_area_call
         from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         prompt = format_prompt(
             "missed_signal_detect",
@@ -290,8 +289,8 @@ def _llm_area_novelty_score(text: str) -> float:
     When disabled (default), returns 0.0 (no-op).
     """
     try:
-        from .llm_dispatch import llm_area_call
         from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         prompt = format_prompt(
             "novelty_score",

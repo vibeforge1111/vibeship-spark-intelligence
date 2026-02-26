@@ -21,17 +21,14 @@ Types of distillations:
 
 import re
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 
-from .models import (
-    Episode, Step, Distillation, DistillationType,
-    Outcome, Evaluation, Phase
-)
-from ..elevation import elevate
-from ..distillation_transformer import transform_for_advisory
 from ..distillation_refiner import refine_distillation
+from ..distillation_transformer import transform_for_advisory
+from ..elevation import elevate
 from ..noise_patterns import is_session_boilerplate
+from .models import Distillation, DistillationType, Episode, Evaluation, Outcome, Step
 
 
 def _llm_area_outcome_link_reconstruct(
@@ -44,8 +41,8 @@ def _llm_area_outcome_link_reconstruct(
     When disabled (default), returns statement unchanged.
     """
     try:
-        from ..llm_dispatch import llm_area_call
         from ..llm_area_prompts import format_prompt
+        from ..llm_dispatch import llm_area_call
 
         prompt = format_prompt(
             "outcome_link_reconstruct",
@@ -275,7 +272,7 @@ class DistillationEngine:
         low = s.lower()
 
         # Reject known tautology phrases
-        _TAUTOLOGY_PHRASES = [
+        tautology_phrases = [
             "try a different approach",
             "step back and reconsider",
             "try something else",
@@ -295,7 +292,7 @@ class DistillationEngine:
             "for similar requests",
             "tool is effective",
         ]
-        for phrase in _TAUTOLOGY_PHRASES:
+        for phrase in tautology_phrases:
             if phrase in low:
                 return False
 
