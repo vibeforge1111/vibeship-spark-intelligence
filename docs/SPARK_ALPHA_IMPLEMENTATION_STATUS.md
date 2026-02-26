@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, post PR-10 initial deletion sweep)
+Last updated: 2026-02-27 (local branch snapshot, post PR-10 fallback-surface deletion sweep)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -34,7 +34,7 @@ Branch: feat/spark-alpha
 - Added advisory packet freshness repair utility (`scripts/refresh_packet_freshness.py`).
 - Added production gate guard so Meta-Ralph quality band remains telemetry-only unless explicitly env-enabled.
 
-7. `(working tree)` - `feat(alpha-meta): add dual scoring challenger path (shadow + enforce gate)`
+7. `89ac67f` - `feat(alpha-meta): add dual scoring challenger path (shadow + enforce gate)`
 - Added compact challenger scorer module (`lib/meta_alpha_scorer.py`).
 - Integrated dual-score execution in `lib/meta_ralph.py`:
   - Legacy scorer + challenger scorer run side-by-side when shadow is enabled.
@@ -44,7 +44,7 @@ Branch: feat/spark-alpha
 - Added scorer metadata in roast records (`result.scoring`) and dual-score counters in `get_stats()`.
 - Added tests for shadow/enforce paths in `tests/test_meta_ralph.py`.
 
-8. `(working tree)` - `feat(alpha-memory): add SQLite memory spine dual-write for cognitive insights`
+8. `72b42b3` - `feat(alpha-memory): add SQLite memory spine dual-write for cognitive insights`
 - Added SQLite spine module (`lib/spark_memory_spine.py`) with:
   - Cognitive insight snapshot dual-write (`dual_write_cognitive_insights`)
   - Optional JSON-missing read fallback (`load_cognitive_insights_snapshot`)
@@ -54,7 +54,7 @@ Branch: feat/spark-alpha
   - Optional read fallback from SQLite when JSON is unavailable.
 - Added focused tests (`tests/test_memory_spine_sqlite.py`).
 
-9. `(working tree)` - `feat(alpha-retrieval): add deterministic RRF rerank signal`
+9. `0b8a4ba` - `feat(alpha-retrieval): add deterministic RRF rerank signal`
 - Added normalized reciprocal-rank-fusion scoring to advisory retrieval (`lib/advisor.py`):
   - Fuses semantic rank + lexical rank + support rank.
   - Injected as an explicit rerank feature (`rrf_fusion`) with policy weight (`rrf_weight`).
@@ -108,6 +108,16 @@ Branch: feat/spark-alpha
 - Removed packet no-emit fallback emission branch from `lib/advisory_engine.py` (gate-suppressed now remains explicit no-emit).
 - Updated dual-path router tests to match the new no-fallback behavior.
 
+14. `52d555f` - `refactor(alpha): delete dead advisory fallback config surface`
+- Removed dead fallback control surface in `lib/advisory_engine.py`:
+  - Removed stale fallback env/tuneable knobs and config plumbing.
+  - Removed unused fallback guard and fallback budget helpers.
+  - Removed unused per-call fallback budget tick.
+- Pruned advisory schema keys in `lib/tuneables_schema.py`:
+  - Removed `fallback_budget_cap`
+  - Removed `fallback_budget_window`
+- Updated affected tests and observatory narrative references for single-path emission behavior.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -116,7 +126,7 @@ Branch: feat/spark-alpha
 
 ### Current measured state (latest run)
 
-- `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+- `python scripts/production_loop_report.py` -> `NOT READY (16/19 passed)`
 - `python scripts/memory_quality_observatory.py` -> retrieval guardrails `passing=true`
 - `pytest tests/test_meta_ralph.py -q` -> `18 passed`
 - `pytest tests/test_metaralph_integration.py -q` -> `7 passed, 1 skipped`
@@ -129,7 +139,7 @@ Branch: feat/spark-alpha
 - `pytest tests/test_spark_alpha_replay_arena.py -q` -> `4 passed`
 - `pytest tests/test_advisory_dual_path_router.py -q` -> `10 passed`
 - `python scripts/spark_alpha_replay_arena.py --episodes 60 --seed 42` -> alpha winner, promotion gate pass, streak reached `5/3`
-- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `7/3`
+- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `8/3`
 - Replay artifacts:
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.json`
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`
@@ -139,8 +149,8 @@ Branch: feat/spark-alpha
 Notable metrics now:
 - `context.p50`: 230
 - `advisory.emit_rate`: 0.194
-- `strict_trace_coverage`: 0.5985
-- `strict_acted_on_rate`: 0.2193
+- `strict_trace_coverage`: 0.5276
+- `strict_acted_on_rate`: 0.1754
 
 ## Not done yet
 

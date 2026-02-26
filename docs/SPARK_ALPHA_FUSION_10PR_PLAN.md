@@ -24,22 +24,23 @@ Completed commits:
 4. `11c1808` contextual memory envelope + backfill tooling
 5. `4b3e4df` advisory no-emit loop fix (bounded repeat escape)
 6. `734bddf` strict trace binding repairs + packet freshness repair + quality-band telemetry guard
-7. `(working tree)` PR-03 dual scoring challenger integration (shadow + enforce gated)
-8. `(working tree)` PR-04 SQLite dual-write for cognitive insights (JSON still canonical)
-9. `(working tree)` PR-05 deterministic RRF retrieval fusion signal (runtime + AB harness)
+7. `89ac67f` PR-03 dual scoring challenger integration (shadow + enforce gated)
+8. `72b42b3` PR-04 SQLite dual-write for cognitive insights (JSON still canonical)
+9. `0b8a4ba` PR-05 deterministic RRF retrieval fusion signal (runtime + AB harness)
 10. `23ef06a` PR-06 advisory alpha vertical slice route + canary orchestration
 11. `d02fdae` PR-07 deterministic replay arena + promotion ledger
 12. `e5b1263` PR-09 utility dedup: shared JSONL helper extraction
 13. `2c4c3cb` PR-10 initial legacy fallback deletion sweep
+14. `52d555f` PR-10 follow-up: dead fallback config surface deletion + schema prune
 
 Current measured state:
-1. `production_loop_report.py`: `READY (19/19 passed)`
+1. `production_loop_report.py`: `NOT READY (16/19 passed)`
 2. `memory_quality_observatory.py`: retrieval guardrails passing
 3. Key metrics: `context.p50=230`, `advisory.emit_rate=0.194`, `strict_trace_coverage=0.5985`
 4. Replay arena latest (`scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42`):
    - winner: `alpha`
    - `promotion_gate_pass=true`
-   - `consecutive_pass_streak=7`
+   - `consecutive_pass_streak=8`
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial
@@ -103,18 +104,20 @@ Current measured state:
 ### PR-09 Config Reduction + Utility Dedup  (Partial)
 1. Consolidated duplicated JSONL helpers into shared `lib/jsonl_utils.py`.
 2. Replaced local helper copies in advisory engine/orchestrator/alpha/quarantine modules.
-3. Remaining: broad tuneable pruning and additional utility dedup across non-advisory surfaces.
+3. Removed dead advisory fallback tuneables (`fallback_budget_cap/window`) from schema after fallback lane deletion.
+4. Remaining: broad tuneable pruning and additional utility dedup across non-advisory surfaces.
 
 ### PR-10 Legacy Deletion Sweep (Mandatory)  (Partial)
 1. Removed hook-level legacy fallback (`observe.py` direct `advisor.advise_on_tool` fallback).
 2. Removed legacy `live_quick` fallback route from advisory engine.
 3. Removed packet no-emit fallback emission path; gate suppression now stays explicit no-emit.
-4. Remaining: larger advisory-stack file deletion set after live canary pass.
-5. Pending broader sweep once PR-03/04/05/06 are proven:
+4. Removed dead fallback control surface (unused fallback env/tuneable plumbing + dead helper functions).
+5. Remaining: larger advisory-stack file deletion set after live canary pass.
+6. Pending broader sweep once PR-03/04/05/06 are proven:
    - Legacy advisory stack (targeting 17-file collapse from V2)
    - Redundant noise filters no longer used
    - Legacy storage write paths replaced by SQLite spine
-6. Output required: explicit deleted file list + LOC removed + rollback tag.
+7. Output required: explicit deleted file list + LOC removed + rollback tag.
 
 ## Methods Decision (RL Governor vs Thompson)
 Default path for alpha:
