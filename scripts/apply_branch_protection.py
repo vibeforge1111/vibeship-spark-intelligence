@@ -95,7 +95,7 @@ def main() -> int:
     print("Required checks:")
     for c in checks:
         print(f"- {c}")
-    print("\n⚠️ Merge Queue still needs to be enabled in GitHub Settings -> Branch protection/rulesets.")
+    print("\nMerge Queue still needs to be enabled in GitHub Settings -> Branch protection/rulesets.")
     return 0
 
 
