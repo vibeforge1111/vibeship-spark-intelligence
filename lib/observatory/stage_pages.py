@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .linker import (
-    stage_link_from_stage, flow_link, fmt_ts, fmt_ago, fmt_num, fmt_size, health_badge,
+    flow_link,
+    fmt_ago,
+    fmt_num,
+    fmt_size,
+    health_badge,
+    stage_link_from_stage,
 )
 
 
@@ -16,8 +21,8 @@ def _llm_area_dead_widget_plan(d: dict) -> str:
     When disabled (default), returns empty string.
     """
     try:
-        from ..llm_dispatch import llm_area_call
         from ..llm_area_prompts import format_prompt
+        from ..llm_dispatch import llm_area_call
 
         health_data = {
             "emit_rate": d.get("decision_emit_rate", 0),
@@ -846,7 +851,7 @@ def _gen_tuneables(d: dict, all_data: dict) -> str:
     s += f"- `advisor` — {stage_link_from_stage(8)}\n"
     s += f"- `meta_ralph` — {stage_link_from_stage(5)}\n"
     s += f"- `eidos` — {stage_link_from_stage(7)}\n"
-    s += f"- `observatory` — Observatory auto-sync\n"
+    s += "- `observatory` — Observatory auto-sync\n"
     s += "\n"
 
     s += "\n## Deep Dive\n\n"
@@ -856,6 +861,6 @@ def _gen_tuneables(d: dict, all_data: dict) -> str:
     s += _source_files("lib/tuneables_schema.py + lib/tuneables_reload.py", [
         "tuneables.json",
     ])
-    s += f"\nVersion-controlled: `config/tuneables.json`\n"
+    s += "\nVersion-controlled: `config/tuneables.json`\n"
     return s
 

@@ -7,9 +7,7 @@ No imports from pipeline modules — pure file I/O, zero side effects.
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
-import time
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +80,7 @@ def _count_jsonl(path: Path) -> int:
                 sample_lines.append(line)
         if not sample_lines:
             return 0
-        avg_line = sum(len(l) for l in sample_lines) / len(sample_lines)
+        avg_line = sum(len(line) for line in sample_lines) / len(sample_lines)
         if avg_line <= 0:
             return 0
         return int(size / avg_line)

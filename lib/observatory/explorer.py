@@ -20,12 +20,11 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from .config import ObservatoryConfig, spark_dir
-from .linker import fmt_ts, fmt_ago, fmt_num, fmt_size, flow_link
-from .readers import _load_json, _tail_jsonl, _count_jsonl, _file_size
-
+from .linker import flow_link, fmt_num, fmt_ts
+from .readers import _count_jsonl, _load_json, _tail_jsonl
 
 _SD = spark_dir()
 
@@ -220,9 +219,9 @@ def _export_cognitive(explore_dir: Path, limit: int) -> int:
         body.append(f"# {key[:80]}\n")
         body.append(f"> Back to [[_index|Cognitive Index]] | {flow_link()}\n")
         body.append(f"## Insight\n\n{insight}\n")
-        body.append(f"## Metadata\n")
-        body.append(f"| Field | Value |")
-        body.append(f"|-------|-------|")
+        body.append("## Metadata\n")
+        body.append("| Field | Value |")
+        body.append("|-------|-------|")
         body.append(f"| Category | {val.get('category', '?')} |")
         body.append(f"| Reliability | {val.get('reliability', 0):.0%} |")
         body.append(f"| Validations | {val.get('times_validated', 0)} |")
@@ -294,7 +293,7 @@ def _export_distillations(explore_dir: Path, limit: int) -> int:
     out.mkdir(parents=True, exist_ok=True)
     db_path = _SD / "eidos.db"
     if not db_path.exists():
-        (out / "_index.md").write_text(f"# Distillations\n\neidos.db not found.\n", encoding="utf-8")
+        (out / "_index.md").write_text("# Distillations\n\neidos.db not found.\n", encoding="utf-8")
         return 1
 
     try:
@@ -336,9 +335,9 @@ def _export_distillations(explore_dir: Path, limit: int) -> int:
         body.append(f"> Back to [[_index|Distillations Index]] | {flow_link()} | [[../stages/07-eidos|Stage 7: EIDOS]]\n")
         body.append(f"**Type:** {row.get('type', '?')} | **Confidence:** {row.get('confidence', 0):.2f}\n")
         body.append(f"## Statement\n\n{row.get('statement', '(empty)')}\n")
-        body.append(f"## Metrics\n")
-        body.append(f"| Field | Value |")
-        body.append(f"|-------|-------|")
+        body.append("## Metrics\n")
+        body.append("| Field | Value |")
+        body.append("|-------|-------|")
         body.append(f"| Validated | {row.get('validation_count', 0)} times |")
         body.append(f"| Contradicted | {row.get('contradiction_count', 0)} times |")
         body.append(f"| Retrieved | {row.get('times_retrieved', 0)} times |")
@@ -414,7 +413,7 @@ def _export_episodes(explore_dir: Path, limit: int) -> int:
     out.mkdir(parents=True, exist_ok=True)
     db_path = _SD / "eidos.db"
     if not db_path.exists():
-        (out / "_index.md").write_text(f"# Episodes\n\neidos.db not found.\n", encoding="utf-8")
+        (out / "_index.md").write_text("# Episodes\n\neidos.db not found.\n", encoding="utf-8")
         return 1
 
     try:
@@ -480,9 +479,9 @@ def _export_episodes(explore_dir: Path, limit: int) -> int:
         body.append(f"> Back to [[_index|Episodes Index]] | {flow_link()} | [[../stages/07-eidos|Stage 7: EIDOS]]\n")
 
         body.append(f"## Goal\n\n{goal}\n")
-        body.append(f"## Summary\n")
-        body.append(f"| Field | Value |")
-        body.append(f"|-------|-------|")
+        body.append("## Summary\n")
+        body.append("| Field | Value |")
+        body.append("|-------|-------|")
         body.append(f"| Outcome | **{ep.get('outcome', '?')}** |")
         body.append(f"| Phase | {ep.get('phase', '?')} |")
         body.append(f"| Steps | {ep.get('step_count', 0)} |")
@@ -586,9 +585,9 @@ def _export_verdicts(explore_dir: Path, limit: int) -> int:
 
         # Score breakdown
         if isinstance(score, dict):
-            body.append(f"## Score Breakdown\n")
-            body.append(f"| Dimension | Score |")
-            body.append(f"|-----------|-------|")
+            body.append("## Score Breakdown\n")
+            body.append("| Dimension | Score |")
+            body.append("|-----------|-------|")
             for dim in ["actionability", "novelty", "reasoning", "specificity", "outcome_linked", "ethics"]:
                 body.append(f"| {dim} | {score.get(dim, 0)} |")
             body.append(f"| **Total** | **{score.get('total', 0)}** |")
@@ -598,7 +597,7 @@ def _export_verdicts(explore_dir: Path, limit: int) -> int:
         # Issues
         issues = result.get("issues_found", [])
         if issues:
-            body.append(f"## Issues Found\n")
+            body.append("## Issues Found\n")
             for issue in issues:
                 body.append(f"- {issue}")
             body.append("")
@@ -738,7 +737,7 @@ def _export_advisory(explore_dir: Path, advice_limit: int) -> int:
         "total_helpful": total_helpful,
         "followed_rate": round(total_followed / max(total_given, 1) * 100, 1),
     })]
-    index.append(f"# Advisory Effectiveness\n")
+    index.append("# Advisory Effectiveness\n")
     index.append(f"> {flow_link()} | [[../stages/08-advisory|Stage 8: Advisory]]\n")
     index.append("> For calibrated event-level progress tracking: [[../helpfulness/_index|Helpfulness Calibration]].\n")
 
@@ -1621,7 +1620,7 @@ def generate_explorer(cfg: ObservatoryConfig) -> dict[str, int]:
 def _generate_explore_index(explore_dir: Path, counts: dict[str, int], cfg: ObservatoryConfig) -> None:
     """Generate the master explore/_index.md that links to all sections."""
     index = [_frontmatter({"type": "spark-explorer-index"})]
-    index.append(f"# Explore Spark Intelligence\n")
+    index.append("# Explore Spark Intelligence\n")
     index.append(f"> {flow_link()} | Browse individual items from every stage\n")
     index.append("## Data Stores\n")
     index.append("| Store | Items Exported | Max | Browse |")

@@ -23,8 +23,8 @@ def _llm_area_operator_now_synth(data: dict) -> str:
     When disabled (default), returns empty string.
     """
     try:
-        from ..llm_dispatch import llm_area_call
         from ..llm_area_prompts import format_prompt
+        from ..llm_dispatch import llm_area_call
 
         stage_keys = sorted(data.keys()) if isinstance(data, dict) else []
         prompt = format_prompt(
@@ -46,8 +46,8 @@ def _llm_area_canvas_enrich(canvas_content: str, data: dict) -> str:
     When disabled (default), returns canvas_content unchanged.
     """
     try:
-        from ..llm_dispatch import llm_area_call
         from ..llm_area_prompts import format_prompt
+        from ..llm_dispatch import llm_area_call
 
         prompt = format_prompt(
             "canvas_enrich",
@@ -155,15 +155,10 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
 
     Returns a summary dict with file counts and timing.
     """
-    from .readers import read_all_stages
-    from .flow_dashboard import generate_flow_dashboard
-    from .stage_pages import generate_all_stage_pages
     from .advisory_reverse_engineering import generate_advisory_reverse_engineering
-    from .tuneables_deep_dive import generate_tuneables_deep_dive
-    from .system_flow_comprehensive import generate_system_flow_comprehensive
-    from .system_flow_operator_playbook import generate_system_flow_operator_playbook
     from .canvas_generator import generate_canvas
     from .explorer import generate_explorer
+    from .flow_dashboard import generate_flow_dashboard
     from .llm_areas_status import generate_llm_areas_status
     from .readability_pack import (
         collect_metrics_snapshot,
@@ -171,6 +166,11 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
         load_previous_snapshot,
         save_snapshot,
     )
+    from .readers import read_all_stages
+    from .stage_pages import generate_all_stage_pages
+    from .system_flow_comprehensive import generate_system_flow_comprehensive
+    from .system_flow_operator_playbook import generate_system_flow_operator_playbook
+    from .tuneables_deep_dive import generate_tuneables_deep_dive
 
     t0 = time.time()
     cfg = load_config()
