@@ -31,6 +31,12 @@ class ObservatoryConfig:
     explore_tuning_max: int = 200
     explore_decisions_max: int = 200
     explore_feedback_max: int = 200
+    # EIDOS curriculum export settings
+    eidos_curriculum_enabled: bool = True
+    eidos_curriculum_interval_s: int = 86400
+    eidos_curriculum_max_rows: int = 300
+    eidos_curriculum_max_cards: int = 120
+    eidos_curriculum_include_archive: bool = True
 
 
 def load_config() -> ObservatoryConfig:
@@ -59,6 +65,11 @@ def load_config() -> ObservatoryConfig:
         explore_tuning_max=int(section.get("explore_tuning_max", 200)),
         explore_decisions_max=int(section.get("explore_decisions_max", 200)),
         explore_feedback_max=int(section.get("explore_feedback_max", 200)),
+        eidos_curriculum_enabled=bool(section.get("eidos_curriculum_enabled", True)),
+        eidos_curriculum_interval_s=int(section.get("eidos_curriculum_interval_s", 86400)),
+        eidos_curriculum_max_rows=int(section.get("eidos_curriculum_max_rows", 300)),
+        eidos_curriculum_max_cards=int(section.get("eidos_curriculum_max_cards", 120)),
+        eidos_curriculum_include_archive=bool(section.get("eidos_curriculum_include_archive", True)),
     )
 
 
