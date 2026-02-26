@@ -277,7 +277,7 @@
     "min_source_samples": 15,
     "attribution_window_s": 1800,
     "strict_attribution_require_trace": true,
-    "runtime_refiner_llm_enabled": true,
+    "runtime_refiner_llm_enabled": false,
     "runtime_refiner_llm_timeout_s": 6.0,
     "runtime_refiner_llm_max_chars": 260,
     "runtime_refiner_llm_provider": "claude"

@@ -184,24 +184,33 @@ def get_all_area_configs() -> Dict[str, Dict[str, Any]]:
 # Provider dispatch (delegates to advisory_synthesizer._query_provider)
 # ---------------------------------------------------------------------------
 
+_timeout_lock = __import__("threading").Lock()
+
+
 def _dispatch_provider(provider: str, prompt: str, timeout_s: float) -> Optional[str]:
-    """Call the LLM provider. Wraps advisory_synthesizer._query_provider."""
+    """Call the LLM provider. Wraps advisory_synthesizer._query_provider.
+
+    Uses a lock to protect the module-level AI_TIMEOUT_S mutation so
+    concurrent calls from different threads don't clobber each other's
+    timeout.
+    """
     try:
-        from .advisory_synthesizer import _query_provider, AI_TIMEOUT_S
+        # "claude" provider uses ask_claude via CLI — has its own timeout param
+        if provider == "claude":
+            from .llm import ask_claude
+            return ask_claude(prompt, timeout_s=int(timeout_s))
+
+        from .advisory_synthesizer import _query_provider
         import lib.advisory_synthesizer as _synth_mod
 
-        # Temporarily adjust timeout for this call
-        original_timeout = _synth_mod.AI_TIMEOUT_S
-        _synth_mod.AI_TIMEOUT_S = timeout_s
-        try:
-            # "claude" provider uses ask_claude via CLI
-            if provider == "claude":
-                from .llm import ask_claude
-                return ask_claude(prompt, timeout_s=int(timeout_s))
-            result = _query_provider(provider, prompt)
-            return result
-        finally:
-            _synth_mod.AI_TIMEOUT_S = original_timeout
+        with _timeout_lock:
+            original_timeout = _synth_mod.AI_TIMEOUT_S
+            _synth_mod.AI_TIMEOUT_S = timeout_s
+            try:
+                result = _query_provider(provider, prompt)
+                return result
+            finally:
+                _synth_mod.AI_TIMEOUT_S = original_timeout
     except Exception as exc:
         log_debug("llm_dispatch", f"provider dispatch failed: {provider}", exc)
         return None
