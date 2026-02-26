@@ -7,6 +7,7 @@ evaluated consistently from live storage state.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, Dict, List
@@ -403,7 +404,17 @@ def _load_loop_thresholds_from_tuneables(
             continue
 
     try:
-        return LoopThresholds(**values)
+        thresholds = LoopThresholds(**values)
+        # Quality-band gating is telemetry-only by default in Alpha.
+        # Runtime tuneables can re-enable it only when explicitly requested
+        # through a dedicated env guard.
+        raw_enforce_guard = str(
+            os.getenv("SPARK_ENFORCE_META_RALPH_QUALITY_BAND", "")
+        ).strip().lower()
+        enforce_guard = raw_enforce_guard in {"1", "true", "yes", "on"}
+        if thresholds.enforce_meta_ralph_quality_band and not enforce_guard:
+            thresholds.enforce_meta_ralph_quality_band = False
+        return thresholds
     except Exception:
         return default
 

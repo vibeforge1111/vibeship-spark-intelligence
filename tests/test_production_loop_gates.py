@@ -6,6 +6,7 @@ from pathlib import Path
 from lib.production_gates import (
     LoopMetrics,
     LoopThresholds,
+    _load_loop_thresholds_from_tuneables,
     evaluate_gates,
     load_live_metrics,
 )
@@ -279,3 +280,29 @@ def test_evaluate_gates_flags_strict_policy_and_coverage_failures():
     assert _check(result, "strict_attribution_policy")["ok"] is False
     assert _check(result, "strict_acted_on_rate")["ok"] is False
     assert _check(result, "strict_trace_coverage")["ok"] is False
+
+
+def test_threshold_loader_disables_meta_quality_enforcement_without_env(tmp_path, monkeypatch):
+    tuneables = tmp_path / "tuneables.json"
+    tuneables.write_text(
+        json.dumps({"production_gates": {"enforce_meta_ralph_quality_band": True}}),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("SPARK_ENFORCE_META_RALPH_QUALITY_BAND", raising=False)
+
+    thresholds = _load_loop_thresholds_from_tuneables(path=tuneables)
+
+    assert thresholds.enforce_meta_ralph_quality_band is False
+
+
+def test_threshold_loader_allows_meta_quality_enforcement_with_env(tmp_path, monkeypatch):
+    tuneables = tmp_path / "tuneables.json"
+    tuneables.write_text(
+        json.dumps({"production_gates": {"enforce_meta_ralph_quality_band": True}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SPARK_ENFORCE_META_RALPH_QUALITY_BAND", "1")
+
+    thresholds = _load_loop_thresholds_from_tuneables(path=tuneables)
+
+    assert thresholds.enforce_meta_ralph_quality_band is True

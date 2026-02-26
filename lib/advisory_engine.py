@@ -3467,6 +3467,8 @@ def _record_implicit_feedback(
         )
         if not recent or not recent.get("advice_ids"):
             return
+        recent_trace_id = str(recent.get("trace_id") or "").strip()
+        feedback_trace_id = recent_trace_id or str(trace_id or "").strip() or None
 
         shown_ids = set(state.shown_advice_ids.keys()) if isinstance(state.shown_advice_ids, dict) else set(state.shown_advice_ids or [])
         matching_ids = [aid for aid in recent.get("advice_ids", []) if aid in shown_ids]
@@ -3483,7 +3485,7 @@ def _record_implicit_feedback(
                 tool_name=tool_name,
                 advice_texts=[str(x or "").strip() for x in (recent.get("advice_texts") or []) if str(x or "").strip()],
                 advice_sources=(recent.get("sources") or [])[:5],
-                trace_id=trace_id,
+                trace_id=feedback_trace_id,
             )
         except Exception:
             tracker = None
@@ -3494,13 +3496,13 @@ def _record_implicit_feedback(
                 was_followed=True,
                 was_helpful=success,
                 notes=f"implicit_feedback:{'success' if success else 'failure'}:{tool_name}",
-                trace_id=trace_id,
+                trace_id=feedback_trace_id,
             )
         if tracker:
             tracker.record_outcome(
                 tool_name=tool_name,
                 success=success,
-                trace_id=trace_id,
+                trace_id=feedback_trace_id,
             )
 
         # LLM area: implicit_feedback_interpret — extract deeper feedback signals
@@ -3508,7 +3510,7 @@ def _record_implicit_feedback(
             tool_name=tool_name,
             success=success,
             advice_texts=recent.get("advice_texts") or [],
-            trace_id=trace_id,
+            trace_id=feedback_trace_id,
         )
 
         log_debug(

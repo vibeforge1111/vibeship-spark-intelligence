@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import lib.advisor as advisor_mod
+import lib.implicit_outcome_tracker as implicit_tracker_mod
 from lib import advisory_engine
 
 
@@ -213,3 +215,57 @@ def test_advice_source_counts_aggregates_sources():
     assert counts["semantic"] == 1
     assert counts["semantic-agentic"] == 1
     assert counts["cognitive"] == 1
+
+
+def test_record_implicit_feedback_prefers_retrieval_trace(monkeypatch):
+    class _DummyAdvisor:
+        def __init__(self):
+            self.calls = []
+
+        def _get_recent_advice_entry(self, *_args, **_kwargs):
+            return {
+                "trace_id": "trace-retrieval-1",
+                "advice_ids": ["aid-1"],
+                "advice_texts": ["Run focused tests after edit."],
+                "sources": ["cognitive"],
+            }
+
+        def report_outcome(self, advice_id, was_followed, was_helpful, notes, trace_id):
+            self.calls.append(
+                {
+                    "advice_id": advice_id,
+                    "was_followed": was_followed,
+                    "was_helpful": was_helpful,
+                    "trace_id": trace_id,
+                    "notes": notes,
+                }
+            )
+
+    class _DummyTracker:
+        def __init__(self):
+            self.advice_calls = []
+            self.outcome_calls = []
+
+        def record_advice(self, **kwargs):
+            self.advice_calls.append(kwargs)
+
+        def record_outcome(self, **kwargs):
+            self.outcome_calls.append(kwargs)
+
+    advisor = _DummyAdvisor()
+    tracker = _DummyTracker()
+    monkeypatch.setattr(advisor_mod, "get_advisor", lambda: advisor)
+    monkeypatch.setattr(implicit_tracker_mod, "get_implicit_tracker", lambda: tracker)
+
+    state = SimpleNamespace(shown_advice_ids={"aid-1": 1})
+    advisory_engine._record_implicit_feedback(
+        state,
+        tool_name="Edit",
+        success=True,
+        trace_id="trace-post-tool-mismatch",
+    )
+
+    assert len(advisor.calls) == 1
+    assert advisor.calls[0]["trace_id"] == "trace-retrieval-1"
+    assert tracker.advice_calls and tracker.advice_calls[0]["trace_id"] == "trace-retrieval-1"
+    assert tracker.outcome_calls and tracker.outcome_calls[0]["trace_id"] == "trace-retrieval-1"

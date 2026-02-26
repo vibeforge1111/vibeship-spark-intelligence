@@ -5586,6 +5586,13 @@ Output only JSON with `order` as a list of 0-based indices (descending by releva
         """
         # Update source effectiveness based on whether advice helped
         entry = self._get_recent_advice_entry(tool_name, trace_id=trace_id)
+        if not entry and trace_id:
+            # Fallback: post-tool traces can differ from retrieval traces; keep
+            # outcome linkage alive by falling back to latest tool-scoped entry.
+            entry = self._get_recent_advice_entry(tool_name, trace_id=None)
+        entry_trace_id = str((entry or {}).get("trace_id") or "").strip()
+        explicit_trace_id = str(trace_id or "").strip()
+        resolved_trace_id = explicit_trace_id or entry_trace_id or None
 
         # Use actual source from recent advice (not hardcoded "cognitive")
         source = "cognitive"  # Default fallback
@@ -5627,7 +5634,7 @@ Output only JSON with `order` as a list of 0-based indices (descending by releva
                     src = entry_sources[i] if i < len(entry_sources) else None
                     ralph.track_outcome(
                         aid, outcome_str, evidence,
-                        trace_id=trace_id,
+                        trace_id=resolved_trace_id,
                         insight_key=ik,
                         source=src,
                     )
@@ -5645,12 +5652,17 @@ Output only JSON with `order` as a list of 0-based indices (descending by releva
                         was_followed=was_followed,
                         was_helpful=was_helpful,
                         notes=f"Auto-linked from {tool_name}",
-                        trace_id=trace_id,
+                        trace_id=resolved_trace_id,
                     )
 
             # Also track tool-level outcome (even without specific advice)
             tool_outcome_id = f"tool:{tool_name}"
-            ralph.track_outcome(tool_outcome_id, outcome_str, evidence, trace_id=trace_id)
+            ralph.track_outcome(
+                tool_outcome_id,
+                outcome_str,
+                evidence,
+                trace_id=resolved_trace_id,
+            )
         except Exception:
             pass
 
