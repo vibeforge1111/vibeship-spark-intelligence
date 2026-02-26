@@ -45,7 +45,7 @@ def test_advice_rows_wrapper_works_without_trace_id():
     assert rows[0]["proof_refs"]["advice_id"] == "aid-2"
 
 
-def test_diagnostics_envelope_has_session_scope_and_provider():
+def test_diagnostics_envelope_has_session_scope_and_sources():
     bundle = {
         "memory_absent_declared": False,
         "sources": {"cognitive": {"count": 2}, "eidos": {"count": 0}},
@@ -63,7 +63,6 @@ def test_diagnostics_envelope_has_session_scope_and_provider():
     assert env["session_id"] == "session-1"
     assert env["trace_id"] == "trace-1"
     assert env["scope"] == "session"
-    assert env["provider_path"] == "packet_store"
     assert env["source_counts"]["cognitive"] == 2
     assert "eidos" in env["missing_sources"]
 

@@ -1058,21 +1058,6 @@ def _duplicate_repeat_state(state, advisory_text: str) -> Dict[str, Any]:
     }
 
 
-def _provider_path_from_route(route: str) -> str:
-    value = str(route or "").strip().lower()
-    if value.startswith("packet"):
-        return "packet_store"
-    if value.startswith("live"):
-        return "live_direct"
-    if "fallback" in value:
-        return "deterministic_fallback"
-    if value == "post_tool":
-        return "post_tool_feedback"
-    if value == "user_prompt":
-        return "prompt_prefetch"
-    return "unknown"
-
-
 def _session_lineage(session_id: str) -> Dict[str, Any]:
     sid = str(session_id or "").strip()
     if not sid:
@@ -1182,7 +1167,6 @@ def _diagnostics_envelope(
         "trace_id": str(trace_id or ""),
         "session_context_key": str(session_context_key or ""),
         "scope": resolved_scope,
-        "provider_path": _provider_path_from_route(route),
         "source_counts": source_counts,
         "missing_sources": missing_sources,
         "session_kind": lineage.get("session_kind"),
