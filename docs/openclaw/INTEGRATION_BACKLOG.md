@@ -29,7 +29,7 @@ Maintain an auditable backlog for Spark x OpenClaw integration changes, with:
 - [x] Stabilize realtime benchmark advisory signal check for dedupe-heavy windows (`scripts/openclaw_realtime_e2e_benchmark.py`).
 
 3. P2: Governance and lifecycle
-- [ ] Add formal advisory promotion/decay policy doc with exploration budget.
+- [x] Add formal advisory promotion/decay policy doc with exploration budget.
 - [ ] Add stale advisory re-test cadence and suppression expiry policy.
 - [ ] Add monthly config audit with signed changelog entry.
 - [x] Consolidate OpenClaw docs into canonical runtime path + tracking hub with legacy compatibility pointers.
