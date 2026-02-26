@@ -4,7 +4,6 @@ Scope:
 - Minimal pre-tool loop: retrieve -> gate -> synthesize -> emit
 - Strong trace binding on all emitted advice
 - Context/text repeat suppression on hot path
-- Keep post-tool and user-prompt paths delegated to legacy engine for now
 """
 
 from __future__ import annotations
@@ -24,6 +23,13 @@ ALPHA_TEXT_REPEAT_COOLDOWN_S = max(
     30.0,
     float(os.getenv("SPARK_ADVISORY_TEXT_REPEAT_COOLDOWN_S", "600") or 600),
 )
+ALPHA_PREFETCH_QUEUE_ENABLED = os.getenv("SPARK_ADVISORY_PREFETCH_QUEUE", "1") != "0"
+ALPHA_INLINE_PREFETCH_ENABLED = os.getenv("SPARK_ADVISORY_PREFETCH_INLINE", "1") != "0"
+try:
+    _alpha_inline_jobs = int(os.getenv("SPARK_ADVISORY_PREFETCH_INLINE_MAX_JOBS", "1") or 1)
+except Exception:
+    _alpha_inline_jobs = 1
+ALPHA_INLINE_PREFETCH_MAX_JOBS = max(1, min(20, _alpha_inline_jobs))
 ALPHA_LOG = Path.home() / ".spark" / "advisory_engine_alpha.jsonl"
 ALPHA_LOG_MAX_LINES = 2000
 
@@ -88,6 +94,54 @@ def _is_repeat_blocked(state: Any, tool_name: str, text_fingerprint: str, contex
     same_ctx = str(getattr(state, "last_advisory_context_fingerprint", "") or "") == context_fingerprint
     same_text = str(getattr(state, "last_advisory_text_fingerprint", "") or "") == text_fingerprint
     return bool(same_tool and (same_ctx or same_text))
+
+
+def _project_key() -> str:
+    try:
+        from .memory_banks import infer_project_key
+
+        key = infer_project_key()
+        if key:
+            return str(key)
+    except Exception:
+        pass
+    return "unknown_project"
+
+
+def _resolve_intent(prompt: str, tool_name: str = "*") -> Dict[str, Any]:
+    try:
+        from .advisory_intent_taxonomy import map_intent
+
+        return map_intent(prompt or "", tool_name=tool_name)
+    except Exception:
+        return {
+            "intent_family": "emergent_other",
+            "task_plane": "build_delivery",
+            "confidence": 0.0,
+            "reason": "fallback",
+        }
+
+
+def _session_context_key(session_id: str, intent_family: str) -> str:
+    seed = f"{session_id}|{intent_family or 'emergent_other'}"
+    return hashlib.sha1(seed.encode("utf-8", errors="ignore")).hexdigest()[:12]
+
+
+def _baseline_text(intent_family: str) -> str:
+    defaults = {
+        "auth_security": "Validate auth inputs and keep sensitive values out of logs before editing.",
+        "deployment_ops": "Use reversible deployment steps and verify rollback before release actions.",
+        "testing_validation": "Run focused tests after edits and confirm failing cases are reproducible.",
+        "schema_contracts": "Check contract compatibility before changing payload shapes or interfaces.",
+        "performance_latency": "Keep hot-path edits measurable and compare latency before and after.",
+        "emergent_other": "Use conservative, test-backed edits and verify assumptions before irreversible actions.",
+    }
+    return defaults.get(intent_family, defaults["emergent_other"])
+
+
+def _proof_hash(advice_text: str, advice_id: str, insight_key: str, source: str, trace_id: str) -> str:
+    raw = f"{advice_text.strip().lower()}|{advice_id}|{insight_key}|{source}|{trace_id}"
+    return hashlib.sha1(raw.encode("utf-8", errors="ignore")).hexdigest()[:20]
 
 
 def on_pre_tool(
@@ -325,20 +379,111 @@ def on_post_tool(
     trace_id: Optional[str] = None,
     error: Optional[str] = None,
 ) -> None:
-    """Delegate to legacy post-tool handler while alpha pretool is being validated."""
+    if not ALPHA_ENABLED:
+        return
+    start = time.time()
+    resolved_trace_id = str(trace_id or "").strip()
     try:
-        from .advisory_engine import on_post_tool as _legacy_on_post_tool
+        from .advisory_state import load_state, record_tool_call, resolve_recent_trace_id, save_state
 
-        _legacy_on_post_tool(
+        state = load_state(session_id)
+        if not resolved_trace_id:
+            resolved_trace_id = str(resolve_recent_trace_id(state, tool_name) or "").strip()
+        if not resolved_trace_id:
+            resolved_trace_id = f"spark-alpha-{session_id[:16]}-{tool_name.lower()}-post-{int(time.time() * 1000)}"
+
+        record_tool_call(
+            state,
+            tool_name,
+            tool_input,
+            success=bool(success),
+            trace_id=resolved_trace_id,
+        )
+
+        try:
+            from .outcome_predictor import record_outcome
+
+            record_outcome(
+                tool_name=tool_name,
+                intent_family=state.intent_family or "emergent_other",
+                phase=state.task_phase or "implementation",
+                success=bool(success),
+            )
+        except Exception as exc:
+            log_debug("advisory_engine_alpha", "post-tool outcome predictor failed", exc)
+
+        if state.shown_advice_ids:
+            try:
+                from .advisory_engine import _record_implicit_feedback
+
+                _record_implicit_feedback(state, tool_name, bool(success), resolved_trace_id)
+            except Exception as exc:
+                log_debug("advisory_engine_alpha", "post-tool implicit feedback failed", exc)
+
+        try:
+            from .advisory_packet_store import record_packet_outcome
+
+            last_packet_id = str(state.last_advisory_packet_id or "").strip()
+            last_tool = str(state.last_advisory_tool or "").strip().lower()
+            age_s = time.time() - float(state.last_advisory_at or 0.0)
+            if (
+                last_packet_id
+                and last_tool
+                and last_tool == str(tool_name or "").strip().lower()
+                and age_s <= 900
+            ):
+                record_packet_outcome(
+                    last_packet_id,
+                    status=("acted" if bool(success) else "blocked"),
+                    tool_name=str(tool_name or ""),
+                    trace_id=resolved_trace_id,
+                    notes=(str(error or "")[:200] if error else ""),
+                    source="alpha_implicit_post_tool",
+                    count_effectiveness=True,
+                )
+        except Exception as exc:
+            log_debug("advisory_engine_alpha", "post-tool packet outcome failed", exc)
+
+        if tool_name in {"Edit", "Write"}:
+            try:
+                from .advisory_packet_store import invalidate_packets
+
+                file_hint = (tool_input or {}).get("file_path", "")
+                if file_hint:
+                    invalidate_packets(
+                        project_key=_project_key(),
+                        reason=f"post_tool_{str(tool_name or '').lower()}",
+                        file_hint=file_hint,
+                    )
+                else:
+                    invalidate_packets(
+                        project_key=_project_key(),
+                        reason=f"post_tool_{str(tool_name or '').lower()}",
+                    )
+            except Exception as exc:
+                log_debug("advisory_engine_alpha", "post-tool packet invalidate failed", exc)
+
+        save_state(state)
+        _log_alpha(
+            "post_tool_recorded",
             session_id=session_id,
             tool_name=tool_name,
-            success=bool(success),
-            tool_input=tool_input,
-            trace_id=trace_id,
-            error=error,
+            trace_id=resolved_trace_id,
+            emitted=False,
+            elapsed_ms=(time.time() - start) * 1000.0,
+            extra={"success": bool(success)},
         )
     except Exception as exc:
-        log_debug("advisory_engine_alpha", "on_post_tool delegate failed", exc)
+        log_debug("advisory_engine_alpha", "on_post_tool failed", exc)
+        _log_alpha(
+            "post_tool_error",
+            session_id=session_id,
+            tool_name=tool_name,
+            trace_id=resolved_trace_id,
+            emitted=False,
+            elapsed_ms=(time.time() - start) * 1000.0,
+            extra={"error": str(exc)[:240]},
+        )
 
 
 def on_user_prompt(
@@ -346,14 +491,113 @@ def on_user_prompt(
     prompt_text: str,
     trace_id: Optional[str] = None,
 ) -> None:
-    """Delegate to legacy user-prompt handler while alpha pretool is being validated."""
+    if not ALPHA_ENABLED:
+        return
+    start = time.time()
+    resolved_trace_id = str(trace_id or "").strip() or f"spark-alpha-{session_id[:16]}-user-{int(time.time() * 1000)}"
     try:
-        from .advisory_engine import on_user_prompt as _legacy_on_user_prompt
+        from .advisory_packet_store import build_packet, enqueue_prefetch_job, save_packet
+        from .advisory_state import load_state, record_user_intent, save_state
 
-        _legacy_on_user_prompt(
+        state = load_state(session_id)
+        record_user_intent(state, prompt_text)
+        intent = _resolve_intent(state.user_intent or prompt_text, tool_name="*")
+        state.intent_family = str(intent.get("intent_family") or "emergent_other")
+        state.intent_confidence = float(intent.get("confidence", 0.0) or 0.0)
+        state.task_plane = str(intent.get("task_plane") or "build_delivery")
+        state.intent_reason = str(intent.get("reason") or "fallback")
+
+        project_key = _project_key()
+        session_ctx = _session_context_key(state.session_id, state.intent_family)
+        save_state(state)
+
+        baseline_text = _baseline_text(state.intent_family)
+        baseline_advice_id = f"baseline_{state.intent_family}"
+        baseline_insight_key = f"intent:{state.intent_family}"
+        proof_refs = {
+            "advice_id": baseline_advice_id,
+            "insight_key": baseline_insight_key,
+            "source": "baseline",
+            "trace_id": resolved_trace_id,
+        }
+        baseline_packet = build_packet(
+            project_key=project_key,
+            session_context_key=session_ctx,
+            tool_name="*",
+            intent_family=state.intent_family,
+            task_plane=state.task_plane,
+            advisory_text=baseline_text,
+            source_mode="baseline_deterministic_alpha",
+            advice_items=[
+                {
+                    "advice_id": baseline_advice_id,
+                    "insight_key": baseline_insight_key,
+                    "text": baseline_text,
+                    "confidence": max(0.75, float(state.intent_confidence or 0.75)),
+                    "source": "baseline",
+                    "context_match": 0.8,
+                    "reason": "alpha_session_baseline",
+                    "proof_refs": proof_refs,
+                    "evidence_hash": _proof_hash(
+                        baseline_text,
+                        baseline_advice_id,
+                        baseline_insight_key,
+                        "baseline",
+                        resolved_trace_id,
+                    ),
+                }
+            ],
+            lineage={"sources": ["baseline"], "memory_absent_declared": False, "trace_id": resolved_trace_id},
+            trace_id=resolved_trace_id,
+        )
+        save_packet(baseline_packet)
+
+        if ALPHA_PREFETCH_QUEUE_ENABLED:
+            enqueue_prefetch_job(
+                {
+                    "session_id": session_id,
+                    "project_key": project_key,
+                    "intent_family": state.intent_family,
+                    "task_plane": state.task_plane,
+                    "session_context_key": session_ctx,
+                    "prompt_excerpt": str(prompt_text or "")[:180],
+                    "trace_id": resolved_trace_id,
+                    "alpha_route": True,
+                }
+            )
+            if ALPHA_INLINE_PREFETCH_ENABLED:
+                try:
+                    from .advisory_prefetch_worker import process_prefetch_queue
+
+                    process_prefetch_queue(
+                        max_jobs=ALPHA_INLINE_PREFETCH_MAX_JOBS,
+                        max_tools_per_job=3,
+                    )
+                except Exception as exc:
+                    log_debug("advisory_engine_alpha", "inline prefetch worker failed", exc)
+
+        _log_alpha(
+            "user_prompt_prefetch",
             session_id=session_id,
-            prompt_text=prompt_text,
-            trace_id=trace_id,
+            tool_name="*",
+            trace_id=resolved_trace_id,
+            emitted=False,
+            elapsed_ms=(time.time() - start) * 1000.0,
+            extra={
+                "intent_family": state.intent_family,
+                "task_plane": state.task_plane,
+                "packet_id": str(baseline_packet.get("packet_id") or ""),
+                "prefetch_queue_enabled": bool(ALPHA_PREFETCH_QUEUE_ENABLED),
+            },
         )
     except Exception as exc:
-        log_debug("advisory_engine_alpha", "on_user_prompt delegate failed", exc)
+        log_debug("advisory_engine_alpha", "on_user_prompt failed", exc)
+        _log_alpha(
+            "user_prompt_error",
+            session_id=session_id,
+            tool_name="*",
+            trace_id=resolved_trace_id,
+            emitted=False,
+            elapsed_ms=(time.time() - start) * 1000.0,
+            extra={"error": str(exc)[:240]},
+        )
