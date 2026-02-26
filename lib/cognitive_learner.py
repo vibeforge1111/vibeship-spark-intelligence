@@ -28,6 +28,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .context_envelope import build_context_envelope
 from .noise_classifier import classify as classify_noise
 from .noise_classifier import enforce_enabled as noise_enforce_enabled
 from .noise_classifier import record_shadow as record_noise_shadow
@@ -233,45 +234,24 @@ def _backfill_actionable_context(
     context: str,
     insight: str,
     advisory_quality: Dict[str, Any],
+    *,
+    category: str = "",
+    source: str = "",
 ) -> str:
     """Backfill short contexts with actionable structure for future retrieval."""
-    base = _clip_context(context)
-    parts: List[str] = []
-    if base:
-        parts.append(base)
-
-    structure = advisory_quality.get("structure") if isinstance(advisory_quality, dict) else {}
-    if isinstance(structure, dict):
-        condition = str(structure.get("condition") or "").strip()
-        action = str(structure.get("action") or "").strip()
-        reasoning = str(structure.get("reasoning") or "").strip()
-        outcome = str(structure.get("outcome") or "").strip()
-
-        if action:
-            if condition:
-                parts.append(f"When {condition}")
-            parts.append(f"Action: {action}")
-            if reasoning:
-                parts.append(f"Reason: {reasoning}")
-            elif outcome:
-                parts.append(f"Outcome: {outcome}")
-
-    merged = " | ".join([p for p in parts if p]).strip(" |")
-    if merged and len(merged) >= 80:
-        return _clip_context(merged)
-
-    if merged:
-        seed = merged
-    else:
-        seed = re.sub(r"\s+", " ", str(insight or "")).strip()
-    if not seed:
-        return base
-
-    # Fallback: keep a semantic sentence window from the insight itself.
-    segments = [s.strip() for s in re.split(r"(?<=[.!?])\s+|\s*[;|]\s+", seed) if s.strip()]
-    if segments:
-        seed = " ".join(segments[:3])
-    return _clip_context(seed)
+    enriched = build_context_envelope(
+        context=context,
+        insight=insight,
+        category=category,
+        source=source,
+        advisory_quality=advisory_quality,
+        min_chars=120,
+        max_chars=INSIGHT_CONTEXT_CHARS,
+    )
+    if enriched:
+        return enriched
+    # Safety fallback for degenerate inputs.
+    return _clip_context(context or insight)
 
 
 def _coerce_int(value: Any, default: int = 0) -> int:
@@ -1720,7 +1700,13 @@ class CognitiveLearner:
         key_part = insight[:40].replace(" ", "_").lower()
         key = self._generate_key(category, key_part)
         emotion_state = _capture_emotion_state_snapshot()
-        normalized_context = _backfill_actionable_context(context, insight, adv_quality_dict)
+        normalized_context = _backfill_actionable_context(
+            context,
+            insight,
+            adv_quality_dict,
+            category=category.value,
+            source=source,
+        )
         context_evidence = _clip_evidence(normalized_context or context or insight)
 
         # LLM area: evidence_compress — compress verbose evidence before storage
