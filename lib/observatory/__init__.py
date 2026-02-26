@@ -164,6 +164,7 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
     from .system_flow_operator_playbook import generate_system_flow_operator_playbook
     from .canvas_generator import generate_canvas
     from .explorer import generate_explorer
+    from .llm_areas_status import generate_llm_areas_status
     from .readability_pack import (
         collect_metrics_snapshot,
         generate_readability_pack,
@@ -234,6 +235,11 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
     tuneables_dive_content = generate_tuneables_deep_dive(data)
     tuneables_dive_path.write_text(tuneables_dive_content, encoding="utf-8")
 
+    # Generate LLM areas status page
+    llm_areas_path = obs_dir / "llm_areas_status.md"
+    llm_areas_content = generate_llm_areas_status(data)
+    llm_areas_path.write_text(llm_areas_content, encoding="utf-8")
+
     # Generate comprehensive full-system reverse-engineering page
     comprehensive_path = obs_dir / "system_flow_comprehensive.md"
     comprehensive_content = generate_system_flow_comprehensive(data)
@@ -254,7 +260,7 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
     save_snapshot(obs_dir, current_snapshot)
 
     # Generate stage pages
-    files_written = 10  # flow + reverse + tuneables_dive + comprehensive + playbook + 5 readability pages
+    files_written = 11  # flow + reverse + tuneables_dive + llm_areas + comprehensive + playbook + 5 readability pages
     if curriculum_summary.get("written"):
         files_written += 1  # eidos_curriculum.md
     for filename, content in generate_all_stage_pages(data):

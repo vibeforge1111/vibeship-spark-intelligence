@@ -269,3 +269,27 @@ def llm_area_call(
         text=text, used_llm=True, provider=provider,
         latency_ms=latency_ms, area_id=area_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Hot-reload registration
+# ---------------------------------------------------------------------------
+
+def _reload_llm_areas_from(_section_data) -> None:
+    """Hot-reload callback for llm_areas config.
+
+    Config is read fresh from resolve_section() on every llm_area_call(),
+    so there's no cached state to invalidate. This callback exists to
+    ensure the tuneables_reload framework recognises 'llm_areas' as a
+    live section (used by Observatory diagnostics and the deep-dive page).
+    """
+    log_debug("llm_dispatch", "llm_areas config reloaded", None)
+
+
+try:
+    from .tuneables_reload import register_reload as _llm_areas_register
+    _llm_areas_register(
+        "llm_areas", _reload_llm_areas_from, label="llm_dispatch.reload_from"
+    )
+except Exception:
+    pass

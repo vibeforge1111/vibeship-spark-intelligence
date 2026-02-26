@@ -110,6 +110,7 @@ KNOWN_RELOAD_SECTIONS = {
     "synthesizer": ["lib/advisory_synthesizer.py"],
     "triggers": ["lib/semantic_retriever.py"],
     "values": ["lib/pipeline.py", "lib/eidos/models.py"],
+    "llm_areas": ["lib/llm_dispatch.py"],
 }
 
 # Schema sections from tuneables_schema.py (single source of truth).
@@ -165,6 +166,7 @@ SECTION_IMPACT = {
     "sync": "MEDIUM",
     "queue": "MEDIUM",
     "request_tracker": "LOW",
+    "llm_areas": "HIGH",
 }
 
 # Consumer map (from tuneables_schema.py SECTION_CONSUMERS).
