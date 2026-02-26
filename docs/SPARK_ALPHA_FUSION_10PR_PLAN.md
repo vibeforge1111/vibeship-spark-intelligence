@@ -51,6 +51,7 @@ Completed commits:
 31. `a061ca7` PR-10/PR-05 follow-up: deleted keyword cognitive fallback + legacy parser fallback paths
 32. `ca0b106` PR-10 follow-up: removed orchestrator auto-fallback and set startup route default to alpha
 33. `a7562e2` PR-10 follow-up: removed advisory-emitter legacy compatibility shim in engine
+34. `22f56ea` PR-10 follow-up: removed duplicate `route_hint` ledger field and hardened dual-path test hermeticity
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -152,12 +153,13 @@ Current measured state:
 4. Removed dead fallback control surface (unused fallback env/tuneable plumbing + dead helper functions).
 5. Removed orchestrator automatic alpha->engine fallback path (engine now explicit-route only).
 6. Removed advisory-emitter legacy compatibility shim (`_emit_advisory_compat`) from advisory engine hot path.
-7. Remaining: larger advisory-stack file deletion set after live canary pass.
-8. Pending broader sweep once PR-03/04/05/06 are proven:
+7. Removed duplicate route-only ledger field (`route_hint`) from advisory decision entries.
+8. Remaining: larger advisory-stack file deletion set after live canary pass.
+9. Pending broader sweep once PR-03/04/05/06 are proven:
    - Legacy advisory stack (targeting 17-file collapse from V2)
    - Redundant noise filters no longer used
    - Legacy storage write paths replaced by SQLite spine
-9. Output required: explicit deleted file list + LOC removed + rollback tag.
+10. Output required: explicit deleted file list + LOC removed + rollback tag.
 
 ## Methods Decision (RL Governor vs VibeForge Loop)
 Default path for alpha:

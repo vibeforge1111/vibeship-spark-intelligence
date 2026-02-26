@@ -231,6 +231,11 @@ Branch: feat/spark-alpha
 - Advisory engine now calls emitter via the canonical keyword-argument path only.
 - Updated advisory engine/router tests that monkeypatched old positional-only emitter signatures.
 
+34. `22f56ea` - `refactor(alpha-pr10): drop duplicate route_hint ledger field and harden dual-path test hermeticity`
+- Removed duplicate advisory decision ledger field `route_hint` (redundant with `route`).
+- Updated dual-path router test harness to isolate advisor recent-delivery files per test temp dir.
+- Keeps PR-10 telemetry cleanup while making repeated local test runs deterministic.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
