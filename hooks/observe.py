@@ -868,31 +868,7 @@ def main():
             if elapsed_ms > PRETOOL_BUDGET_MS:
                 log_debug("observe", f"OBS_PRETOOL_BUDGET_EXCEEDED:{tool_name}:{elapsed_ms:.1f}ms>{PRETOOL_BUDGET_MS:.0f}ms", None)
         except Exception as e:
-            log_debug("observe", "advisory engine failed, considering legacy fallback", e)
-            # Fallback: legacy advisor (fire-and-forget, no emission)
-            # Fail-open: skip fallback if pretool budget is already exhausted.
-            elapsed_ms = (time.time() * 1000.0) - pretool_start_ms
-            if elapsed_ms > PRETOOL_BUDGET_MS:
-                log_debug("observe", f"OBS_PRETOOL_SKIP_LEGACY_FALLBACK:{tool_name}:{elapsed_ms:.1f}ms", None)
-            else:
-                try:
-                    from lib.advisor import advise_on_tool
-                    advice = advise_on_tool(tool_name, tool_input, trace_id=trace_id)
-                    if advice:
-                        log_debug("observe", f"Legacy advisor: {len(advice)} items for {tool_name}", None)
-                        if ADVICE_FEEDBACK_ENABLED:
-                            try:
-                                from lib.advice_feedback import record_advice_request
-                                record_advice_request(
-                                    session_id=session_id,
-                                    tool=tool_name,
-                                    advice_ids=[a.advice_id for a in advice],
-                                    min_interval_s=ADVICE_FEEDBACK_MIN_S,
-                                )
-                            except Exception as feedback_err:
-                                log_debug("observe", "OBS_LEGACY_FEEDBACK_RECORD_FAILED", feedback_err)
-                except Exception as fallback_err:
-                    log_debug("observe", "OBS_LEGACY_FALLBACK_FAILED", fallback_err)
+            log_debug("observe", "advisory orchestrator pre-tool failed", e)
         save_prediction(session_id, tool_name, prediction)
 
         # EIDOS: Create step and check control plane

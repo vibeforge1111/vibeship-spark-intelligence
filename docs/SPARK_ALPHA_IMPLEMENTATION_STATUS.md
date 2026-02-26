@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, post PR-07 replay arena implementation)
+Last updated: 2026-02-27 (local branch snapshot, post PR-10 initial deletion sweep)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -92,6 +92,22 @@ Branch: feat/spark-alpha
   - consecutive pass streak tracking
 - Added replay arena unit tests (`tests/test_spark_alpha_replay_arena.py`).
 
+12. `(working tree)` - `refactor(alpha-utils): dedup JSONL helpers into shared module`
+- Added shared JSONL helper module (`lib/jsonl_utils.py`) with:
+  - `tail_jsonl_objects(...)`
+  - `append_jsonl_capped(...)`
+- Replaced duplicated local helper implementations in:
+  - `lib/advisory_engine.py`
+  - `lib/advisory_engine_alpha.py`
+  - `lib/advisory_orchestrator.py`
+  - `lib/advisory_quarantine.py`
+
+13. `(working tree)` - `feat(alpha-deletion): remove legacy advisory fallback paths`
+- Removed hook-level legacy fallback path in `hooks/observe.py` that directly called `lib.advisor.advise_on_tool` when orchestrator failed.
+- Removed legacy `live_quick` pre-retrieval fallback branch from `lib/advisory_engine.py`.
+- Removed packet no-emit fallback emission branch from `lib/advisory_engine.py` (gate-suppressed now remains explicit no-emit).
+- Updated dual-path router tests to match the new no-fallback behavior.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -111,12 +127,14 @@ Branch: feat/spark-alpha
 - `pytest tests/test_memory_retrieval_ab.py -q` -> `11 passed`
 - `pytest tests/test_advisory_orchestrator.py -q` -> `5 passed`
 - `pytest tests/test_spark_alpha_replay_arena.py -q` -> `4 passed`
+- `pytest tests/test_advisory_dual_path_router.py -q` -> `10 passed`
 - `python scripts/spark_alpha_replay_arena.py --episodes 60 --seed 42` -> alpha winner, promotion gate pass, streak reached `5/3`
+- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `7/3`
 - Replay artifacts:
-  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_011558.json`
-  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_011558.md`
-  - `benchmarks/out/replay_arena/spark_alpha_replay_scorecards_20260227_011558.json`
-  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_diff_20260227_011558.json`
+  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.json`
+  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`
+  - `benchmarks/out/replay_arena/spark_alpha_replay_scorecards_20260227_013933.json`
+  - `benchmarks/out/replay_arena/spark_alpha_replay_arena_diff_20260227_013933.json`
 
 Notable metrics now:
 - `context.p50`: 230
@@ -139,8 +157,8 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 9. PR-03 deletion commitment is still pending (legacy scorer path removal after replay wins).
 10. PR-04 deletion commitment is still pending (JSONL/legacy path retirement after parity criteria).
 11. PR-05 deletion commitment is still pending (retire superseded rank paths after replay/canary wins).
-12. PR-06 deletion commitment is still pending (remove legacy advisory path files after replay + live canary pass).
-13. PR-07 now exists, but its criteria still need repeated run evidence on larger episode sets before using it as sole cutover authority.
+12. PR-06 broad file deletion commitment is still pending (full legacy advisory file removals after live canary pass).
+13. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup and dead fallback removal.
 
 ## In progress right now
 

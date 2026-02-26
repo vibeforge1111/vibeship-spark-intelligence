@@ -17,6 +17,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from .advisory_quarantine import record_quarantine_item
 from .diagnostics import log_debug
 from .error_taxonomy import build_error_fields
+from .jsonl_utils import append_jsonl_capped as _append_jsonl_capped
+from .jsonl_utils import tail_jsonl_objects as _tail_jsonl
 
 ENGINE_ENABLED = os.getenv("SPARK_ADVISORY_ENGINE", "1") != "0"
 ENGINE_LOG = Path.home() / ".spark" / "advisory_engine.jsonl"
@@ -29,13 +31,6 @@ INCLUDE_MIND_IN_MEMORY = os.getenv("SPARK_ADVISORY_INCLUDE_MIND", "0") == "1"
 ENABLE_PREFETCH_QUEUE = os.getenv("SPARK_ADVISORY_PREFETCH_QUEUE", "1") != "0"
 ENABLE_INLINE_PREFETCH_WORKER = os.getenv("SPARK_ADVISORY_PREFETCH_INLINE", "1") != "0"
 PACKET_FALLBACK_EMIT_ENABLED = os.getenv("SPARK_ADVISORY_PACKET_FALLBACK_EMIT", "0") == "1"
-
-# When live advisory is running out of budget, emit a cheap deterministic hint
-# instead of returning no advice (increases real-time advisory delivery).
-LIVE_QUICK_FALLBACK_ENABLED = os.getenv("SPARK_ADVISORY_LIVE_QUICK_FALLBACK", "0") == "1"
-LIVE_QUICK_FALLBACK_MIN_REMAINING_MS = float(
-    os.getenv("SPARK_ADVISORY_LIVE_QUICK_MIN_REMAINING_MS", "900")
-)
 
 FALLBACK_RATE_GUARD_ENABLED = os.getenv("SPARK_ADVISORY_FALLBACK_RATE_GUARD", "1") != "0"
 FALLBACK_RATE_GUARD_MAX_RATIO = float(
@@ -193,59 +188,6 @@ try:
     )
 except Exception:
     INLINE_PREFETCH_MAX_JOBS = 1
-
-
-def _tail_jsonl(path: Path, count: int) -> List[Dict[str, Any]]:
-    if count <= 0 or not path.exists():
-        return []
-    chunk_size = 64 * 1024
-    try:
-        with path.open("rb") as f:
-            f.seek(0, os.SEEK_END)
-            pos = f.tell()
-            buffer = b""
-            lines: List[bytes] = []
-            while pos > 0 and len(lines) <= count:
-                read_size = min(chunk_size, pos)
-                pos -= read_size
-                f.seek(pos)
-                data = f.read(read_size)
-                buffer = data + buffer
-                if b"\n" in buffer:
-                    parts = buffer.split(b"\n")
-                    buffer = parts[0]
-                    lines = parts[1:] + lines
-            if buffer:
-                lines = [buffer] + lines
-        out: List[Dict[str, Any]] = []
-        for ln in lines[-count:]:
-            ln = ln.strip()
-            if not ln:
-                continue
-            try:
-                row = json.loads(ln.decode("utf-8", errors="ignore"))
-            except Exception:
-                continue
-            if isinstance(row, dict):
-                out.append(row)
-        return out
-    except Exception:
-        return []
-
-
-def _append_jsonl_capped(path: Path, entry: Dict[str, Any], max_lines: int) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
-        if max_lines <= 0:
-            return
-        probe = _tail_jsonl(path, max_lines + 1)
-        if len(probe) <= max_lines:
-            return
-        path.write_text("\n".join(json.dumps(r) for r in probe[-max_lines:]) + "\n", encoding="utf-8")
-    except Exception:
-        return
 
 
 def _emit_advisory_compat(
@@ -431,8 +373,6 @@ def apply_engine_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     global ENABLE_PREFETCH_QUEUE
     global ENABLE_INLINE_PREFETCH_WORKER
     global PACKET_FALLBACK_EMIT_ENABLED
-    global LIVE_QUICK_FALLBACK_ENABLED
-    global LIVE_QUICK_FALLBACK_MIN_REMAINING_MS
     global FALLBACK_RATE_GUARD_ENABLED
     global FALLBACK_RATE_GUARD_MAX_RATIO
     global FALLBACK_RATE_GUARD_WINDOW
@@ -487,22 +427,6 @@ def apply_engine_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
             PACKET_FALLBACK_EMIT_ENABLED,
         )
         applied.append("packet_fallback_emit_enabled")
-
-    if "live_quick_fallback_enabled" in cfg:
-        LIVE_QUICK_FALLBACK_ENABLED = _parse_bool(
-            cfg.get("live_quick_fallback_enabled"),
-            LIVE_QUICK_FALLBACK_ENABLED,
-        )
-        applied.append("live_quick_fallback_enabled")
-
-    if "live_quick_min_remaining_ms" in cfg:
-        try:
-            LIVE_QUICK_FALLBACK_MIN_REMAINING_MS = max(
-                100.0, min(5000.0, float(cfg.get("live_quick_min_remaining_ms")))
-            )
-            applied.append("live_quick_min_remaining_ms")
-        except Exception:
-            warnings.append("invalid_live_quick_min_remaining_ms")
 
     if "fallback_rate_guard_enabled" in cfg:
         FALLBACK_RATE_GUARD_ENABLED = _parse_bool(
@@ -1997,60 +1921,18 @@ def on_pre_tool(
             packet_id = str(packet.get("packet_id") or "")
             advice_items = _packet_to_advice(packet)
         else:
-            # If we're low on remaining budget, skip heavy retrieval and emit a
-            # cheap deterministic hint instead. This improves real-time advisory
-            # delivery (better than returning None due to slow paths).
-            elapsed_ms_pre = (time.time() * 1000.0) - start_ms
-            remaining_ms_pre = MAX_ENGINE_MS - elapsed_ms_pre
-            if (LIVE_QUICK_FALLBACK_ENABLED
-                    and remaining_ms_pre < float(LIVE_QUICK_FALLBACK_MIN_REMAINING_MS)
-                    and _fallback_budget_allows("quick")):
-                try:
-                    from .advisor import Advice, get_quick_advice
-
-                    quick_text = (get_quick_advice(tool_name) or "").strip()
-                    if not quick_text:
-                        quick_text = _baseline_text(intent_family).strip()
-                    advice_items = [
-                        Advice(
-                            advice_id=f"quick_{tool_name.lower()}_0",
-                            insight_key="quick_fallback",
-                            text=quick_text,
-                            confidence=0.78,
-                            source="quick",
-                            context_match=0.78,
-                            reason=f"quick_fallback remaining_ms={int(remaining_ms_pre)}",
-                        )
-                    ]
-                    route = "live_quick"
-                    _fallback_budget_record("quick")
-                except Exception:
-                    # Quick fallback failed — fall through to full retrieval below
-                    t_live = time.time() * 1000.0
-                    advice_items = advise_on_tool(
-                        tool_name,
-                        tool_input or {},
-                        context=state.user_intent,
-                        include_mind=INCLUDE_MIND_IN_MEMORY,
-                        track_retrieval=False,
-                        log_recent=False,
-                        trace_id=resolved_trace_id,
-                    )
-                    _mark("advisor_retrieval", t_live)
-                    route = "live"
-            else:
-                t_live = time.time() * 1000.0
-                advice_items = advise_on_tool(
-                    tool_name,
-                    tool_input or {},
-                    context=state.user_intent,
-                    include_mind=INCLUDE_MIND_IN_MEMORY,
-                    track_retrieval=False,  # track retrieval only for *delivered* advice (after gating)
-                    log_recent=False,  # recent_advice should reflect *delivered* advice, not retrieval fanout
-                    trace_id=resolved_trace_id,
-                )
-                _mark("advisor_retrieval", t_live)
-                route = "live"
+            t_live = time.time() * 1000.0
+            advice_items = advise_on_tool(
+                tool_name,
+                tool_input or {},
+                context=state.user_intent,
+                include_mind=INCLUDE_MIND_IN_MEMORY,
+                track_retrieval=False,  # track retrieval only for *delivered* advice (after gating)
+                log_recent=False,  # recent_advice should reflect *delivered* advice, not retrieval fanout
+                trace_id=resolved_trace_id,
+            )
+            _mark("advisor_retrieval", t_live)
+            route = "live"
         advice_source_counts = _advice_source_counts(advice_items)
 
         if not advice_items:
@@ -2149,282 +2031,21 @@ def on_pre_tool(
                     )
                 except Exception as e:
                     log_debug("advisory_engine", "AE_PKT_USAGE_NO_EMIT", e)
-
-            # --- NO-EMIT FALLBACK ---
-            # If the packet path failed the gate, try a bounded deterministic
-            # fallback using baseline text for this intent family, instead of
-            # returning None (which wastes the entire advisory opportunity).
-            # Budget-capped (Batch 3): max FALLBACK_BUDGET_CAP per window.
-            fallback_text = ""
-            if (PACKET_FALLBACK_EMIT_ENABLED
-                    and route and route.startswith("packet")
-                    and _fallback_budget_allows("packet")):
-                elapsed_fb = (time.time() * 1000.0) - start_ms
-                if elapsed_fb < MAX_ENGINE_MS - 200:  # only if budget remains
-                    fallback_text = _baseline_text(intent_family).strip()
-                    if fallback_text:
-                        route = f"{route}_fallback"
-                        _fallback_budget_record("packet")
-
-            if not fallback_text:
-                suppression_meta = _gate_suppression_metadata(gate_result)
-                _record_advisory_gate_drop(
-                    stage="gate_no_emit",
-                    reason="AE_GATE_SUPPRESSED",
-                    tool_name=tool_name,
-                    intent_family=intent_family,
-                    task_plane=task_plane,
-                    route=route,
-                    packet_id=packet_id,
-                    advice_items=advice_items,
-                    extras={
-                        **suppression_meta,
-                        "fallback_candidate_blocked": bool(
-                            route and route.startswith("packet") and not PACKET_FALLBACK_EMIT_ENABLED
-                        ),
-                    },
-                )
-                _record_advisory_decision_ledger(
-                    stage="gate_no_emit",
-                    outcome="blocked",
-                    tool_name=tool_name,
-                    intent_family=intent_family,
-                    task_plane=task_plane,
-                    route=route,
-                    packet_id=packet_id,
-                    advice_items=advice_items,
-                    gate_result=gate_result,
-                    session_id=session_id,
-                    trace_id=resolved_trace_id,
-                    extras={
-                        "error_kind": "policy",
-                        "error_code": "AE_GATE_SUPPRESSED",
-                        "suppressed_reasons": suppression_meta.get("suppressed_reasons", []),
-                    },
-                )
-                save_state(state)
-                _log_engine_event(
-                    "no_emit",
-                    tool_name,
-                    len(advice_items),
-                    0,
-                    start_ms,
-                    extra={
-                        **_diag(route),
-                        "route": route,
-                        "intent_family": intent_family,
-                        "task_plane": task_plane,
-                        "packet_id": packet_id,
-                        "stage_ms": stage_ms,
-                        "delivery_mode": "none",
-                        "advice_source_counts": advice_source_counts,
-                        "fallback_candidate_blocked": bool(route and route.startswith("packet") and not PACKET_FALLBACK_EMIT_ENABLED),
-                        "error_kind": "policy",
-                        "error_code": "AE_GATE_SUPPRESSED",
-                        **suppression_meta,
-                    },
-                )
-                _record_rejection("gate_no_emit")
-                return None
-
-            # Emit the fallback deterministic text
-            action_meta = _ensure_actionability(fallback_text, tool_name, task_plane)
-            fallback_text = str(action_meta.get("text") or fallback_text)
-            if ACTION_FIRST_ENABLED:
-                fallback_text = _action_first_format(fallback_text)
-            fallback_guard = _fallback_guard_allows()
-            if not fallback_guard.get("allowed"):
-                _record_advisory_gate_drop(
-                    stage="fallback_rate_limit",
-                    reason="AE_FALLBACK_RATE_LIMIT",
-                    tool_name=tool_name,
-                    intent_family=intent_family,
-                    task_plane=task_plane,
-                    route=route,
-                    packet_id=packet_id,
-                    advice_items=advice_items,
-                    extras={
-                        "route": route,
-                        "fallback_rate_recent": fallback_guard.get("ratio"),
-                        "fallback_rate_limit": fallback_guard.get("limit"),
-                        "fallback_delivered_recent": fallback_guard.get("delivered_recent"),
-                        "fallback_window": fallback_guard.get("window"),
-                    },
-                )
-                _record_advisory_decision_ledger(
-                    stage="fallback_rate_limit",
-                    outcome="blocked",
-                    tool_name=tool_name,
-                    intent_family=intent_family,
-                    task_plane=task_plane,
-                    route=route,
-                    packet_id=packet_id,
-                    advice_items=advice_items,
-                    gate_result=gate_result,
-                    session_id=session_id,
-                    trace_id=resolved_trace_id,
-                    extras={
-                        "error_kind": "policy",
-                        "error_code": "AE_FALLBACK_RATE_LIMIT",
-                        "fallback_rate_recent": fallback_guard.get("ratio"),
-                        "fallback_rate_limit": fallback_guard.get("limit"),
-                    },
-                )
-                save_state(state)
-                _log_engine_event(
-                    "no_emit",
-                    tool_name,
-                    len(advice_items),
-                    0,
-                    start_ms,
-                    extra={
-                        **_diag(route),
-                        "route": route,
-                        "intent_family": intent_family,
-                        "task_plane": task_plane,
-                        "packet_id": packet_id,
-                        "stage_ms": stage_ms,
-                        "delivery_mode": "none",
-                        "advice_source_counts": advice_source_counts,
-                        "error_kind": "policy",
-                        "error_code": "AE_FALLBACK_RATE_LIMIT",
-                        "fallback_guard_blocked": True,
-                        "fallback_rate_recent": fallback_guard.get("ratio"),
-                        "fallback_rate_limit": fallback_guard.get("limit"),
-                        "fallback_delivered_recent": fallback_guard.get("delivered_recent"),
-                        "fallback_window": fallback_guard.get("window"),
-                    },
-                )
-                _record_rejection("fallback_rate_limit")
-                return None
-            repeat_meta = _duplicate_repeat_state(state, fallback_text)
-            if repeat_meta["repeat"]:
-                _record_advisory_gate_drop(
-                    stage="fallback_duplicate",
-                    reason="AE_DUPLICATE_SUPPRESSED",
-                    tool_name=tool_name,
-                    intent_family=intent_family,
-                    task_plane=task_plane,
-                    route=route,
-                    packet_id=packet_id,
-                    advice_items=[None] if not advice_items else advice_items,
-                    extras={
-                        "advisory_fingerprint": repeat_meta["fingerprint"],
-                        "repeat_age_s": repeat_meta["age_s"],
-                        "repeat_cooldown_s": repeat_meta["cooldown_s"],
-                        "actionability_added": bool(action_meta.get("added")),
-                        "actionability_command": action_meta.get("command"),
-                    },
-                )
-                _record_advisory_decision_ledger(
-                    stage="fallback_duplicate",
-                    outcome="blocked",
-                    tool_name=tool_name,
-                    intent_family=intent_family,
-                    task_plane=task_plane,
-                    route=route,
-                    packet_id=packet_id,
-                    advice_items=[None] if not advice_items else advice_items,
-                    gate_result=gate_result,
-                    session_id=session_id,
-                    trace_id=resolved_trace_id,
-                    extras={
-                        "error_kind": "policy",
-                        "error_code": "AE_DUPLICATE_SUPPRESSED",
-                        "advisory_fingerprint": repeat_meta["fingerprint"],
-                        "repeat_age_s": repeat_meta["age_s"],
-                        "repeat_cooldown_s": repeat_meta["cooldown_s"],
-                        "actionability_added": bool(action_meta.get("added")),
-                        "actionability_command": action_meta.get("command"),
-                    },
-                )
-                save_state(state)
-                _log_engine_event(
-                    "duplicate_suppressed",
-                    tool_name,
-                    len(advice_items),
-                    0,
-                    start_ms,
-                    extra={
-                        **_diag(route),
-                        "route": route,
-                        "intent_family": intent_family,
-                        "task_plane": task_plane,
-                        "packet_id": packet_id,
-                        "stage_ms": stage_ms,
-                        "delivery_mode": "none",
-                        "advice_source_counts": advice_source_counts,
-                        "error_kind": "policy",
-                        "error_code": "AE_DUPLICATE_SUPPRESSED",
-                        "advisory_fingerprint": repeat_meta["fingerprint"],
-                        "repeat_age_s": repeat_meta["age_s"],
-                        "repeat_cooldown_s": repeat_meta["cooldown_s"],
-                        "actionability_added": bool(action_meta.get("added")),
-                        "actionability_command": action_meta.get("command"),
-                    },
-                )
-                return None
-
-            fallback_emitted = False
-            fallback_error: Optional[Dict[str, Any]] = None
-            # Safety check on fallback text before emit
-            try:
-                from .promoter import is_unsafe_insight as _is_unsafe
-                if fallback_text and _is_unsafe(fallback_text):
-                    log_debug("advisory_engine", f"SAFETY_BLOCK: unsafe fallback blocked for {tool_name}", None)
-                    _record_rejection("safety_blocked_fallback")
-                    save_state(state)
-                    return None
-            except Exception as _sfb_err:
-                log_debug("advisory_engine", "SAFETY_CHECK_FALLBACK_fail_open", _sfb_err)
-            try:
-                from .advisory_emitter import emit_advisory
-                fallback_emitted = _emit_advisory_compat(
-                    emit_advisory,
-                    gate_result,
-                    fallback_text,
-                    advice_items,
-                    trace_id=resolved_trace_id,
-                    tool_name=tool_name,
-                    route=route,
-                    task_plane=task_plane,
-                )
-                if fallback_emitted:
-                    state.last_advisory_packet_id = ""
-                    state.last_advisory_route = str(route or "")
-                    state.last_advisory_tool = str(tool_name or "")
-                    state.last_advisory_advice_ids = []
-                    state.last_advisory_at = time.time()
-                    state.last_advisory_text_fingerprint = repeat_meta["fingerprint"]
-                    state.last_advisory_context_fingerprint = context_fp
-            except Exception as e:
-                log_debug("advisory_engine", "AE_FALLBACK_EMIT_FAILED", e)
-                fallback_error = build_error_fields(str(e), "AE_FALLBACK_EMIT_FAILED")
-            save_state(state)
-            _log_engine_event(
-                "fallback_emit" if fallback_emitted else "fallback_emit_failed",
-                tool_name,
-                len(advice_items),
-                1 if fallback_emitted else 0,
-                start_ms,
-                extra={
-                    **_diag(route),
-                    "route": route,
-                    "intent_family": intent_family,
-                    "packet_id": packet_id,
-                    "stage_ms": stage_ms,
-                    "delivery_mode": "fallback" if fallback_emitted else "none",
-                    "route_type": "fallback",
-                    "emitted_text_preview": fallback_text[:220],
-                    "advice_source_counts": advice_source_counts,
-                    "actionability_added": bool(action_meta.get("added")),
-                    "actionability_command": action_meta.get("command"),
-                    **(fallback_error or {}),
-                },
+            suppression_meta = _gate_suppression_metadata(gate_result)
+            _record_advisory_gate_drop(
+                stage="gate_no_emit",
+                reason="AE_GATE_SUPPRESSED",
+                tool_name=tool_name,
+                intent_family=intent_family,
+                task_plane=task_plane,
+                route=route,
+                packet_id=packet_id,
+                advice_items=advice_items,
+                extras=suppression_meta,
             )
             _record_advisory_decision_ledger(
-                stage="fallback_emit" if fallback_emitted else "fallback_emit_failed",
-                outcome="emitted" if fallback_emitted else "blocked",
+                stage="gate_no_emit",
+                outcome="blocked",
                 tool_name=tool_name,
                 intent_family=intent_family,
                 task_plane=task_plane,
@@ -2435,11 +2056,34 @@ def on_pre_tool(
                 session_id=session_id,
                 trace_id=resolved_trace_id,
                 extras={
-                    "event": "fallback_emit" if fallback_emitted else "fallback_emit_failed",
-                    "advice_text_preview": fallback_text[:140],
+                    "error_kind": "policy",
+                    "error_code": "AE_GATE_SUPPRESSED",
+                    "suppressed_reasons": suppression_meta.get("suppressed_reasons", []),
                 },
             )
-            return fallback_text
+            save_state(state)
+            _log_engine_event(
+                "no_emit",
+                tool_name,
+                len(advice_items),
+                0,
+                start_ms,
+                extra={
+                    **_diag(route),
+                    "route": route,
+                    "intent_family": intent_family,
+                    "task_plane": task_plane,
+                    "packet_id": packet_id,
+                    "stage_ms": stage_ms,
+                    "delivery_mode": "none",
+                    "advice_source_counts": advice_source_counts,
+                    "error_kind": "policy",
+                    "error_code": "AE_GATE_SUPPRESSED",
+                    **suppression_meta,
+                },
+            )
+            _record_rejection("gate_no_emit")
+            return None
 
         advice_by_id = {str(getattr(item, "advice_id", "")): item for item in advice_items}
         emitted_advice = []

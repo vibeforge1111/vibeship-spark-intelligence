@@ -365,12 +365,13 @@ def test_pre_tool_packet_no_emit_does_not_fallback_when_disabled(monkeypatch, tm
     assert lines
     row = json.loads(lines[-1])
     assert row["event"] == "no_emit"
-    assert row.get("fallback_candidate_blocked") is True
+    assert row.get("fallback_candidate_blocked") is None
+    assert row.get("error_code") == "AE_GATE_SUPPRESSED"
     assert row.get("gate_reason") == "test_suppressed"
     assert row.get("suppressed_count") == 1
 
 
-def test_pre_tool_packet_fallback_blocked_by_rate_guard(monkeypatch, tmp_path):
+def test_pre_tool_packet_no_emit_remains_gate_suppressed_when_flag_enabled(monkeypatch, tmp_path):
     _patch_state_and_store(monkeypatch, tmp_path)
 
     pkt = packet_store.build_packet(
@@ -387,18 +388,6 @@ def test_pre_tool_packet_fallback_blocked_by_rate_guard(monkeypatch, tmp_path):
     packet_store.save_packet(pkt)
 
     monkeypatch.setattr(engine, "PACKET_FALLBACK_EMIT_ENABLED", True)
-    monkeypatch.setattr(
-        engine,
-        "_fallback_guard_allows",
-        lambda: {
-            "allowed": False,
-            "reason": "ratio_exceeded",
-            "ratio": 0.8,
-            "limit": 0.55,
-            "delivered_recent": 20,
-            "window": 80,
-        },
-    )
     monkeypatch.setattr("lib.advisory_gate.evaluate", _suppress_all_gate)
     monkeypatch.setattr(
         "lib.advisory_memory_fusion.build_memory_bundle",
@@ -419,8 +408,8 @@ def test_pre_tool_packet_fallback_blocked_by_rate_guard(monkeypatch, tmp_path):
     assert lines
     row = json.loads(lines[-1])
     assert row["event"] == "no_emit"
-    assert row.get("error_code") == "AE_FALLBACK_RATE_LIMIT"
-    assert row.get("fallback_guard_blocked") is True
+    assert row.get("error_code") == "AE_GATE_SUPPRESSED"
+    assert row.get("fallback_guard_blocked") is None
 
 
 def test_pre_tool_selective_ai_uses_auto_mode_for_warning(monkeypatch, tmp_path):
