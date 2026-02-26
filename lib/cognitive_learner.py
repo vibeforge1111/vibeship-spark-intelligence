@@ -1641,7 +1641,10 @@ class CognitiveLearner:
             if context_evidence and context_evidence not in existing.evidence:
                 existing.evidence.append(context_evidence)
                 existing.evidence = existing.evidence[-10:]
-            if normalized_context and len(normalized_context) > len(str(existing.context or "")):
+            # Only backfill context when existing is empty or very short —
+            # never overwrite a human-provided or previously-rich context.
+            existing_ctx = str(existing.context or "")
+            if normalized_context and len(existing_ctx) < 20:
                 existing.context = normalized_context
             if emotion_state:
                 existing.emotion_state = emotion_state
