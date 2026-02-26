@@ -1347,7 +1347,6 @@ def _record_advisory_decision_ledger(
             "task_plane": str(task_plane or ""),
             "route": route_clean,
             "packet_id": str(packet_id or ""),
-            "route_hint": str(route_clean or ""),
             "selected_count": int(len(selected_ids)),
             "suppressed_count": int(len(suppressed_ids)),
             "selected_ids": selected_ids[:12],

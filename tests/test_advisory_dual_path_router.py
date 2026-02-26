@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+import lib.advisor as advisor_mod
 from lib.advisor import Advice
 from lib.advisory_gate import GateDecision, GateResult
 import lib.advice_feedback as advice_feedback
@@ -27,6 +28,10 @@ def _patch_state_and_store(monkeypatch, tmp_path):
     # Make tests independent of host env vars (e.g. SPARK_ADVISORY_ACTION_FIRST=1).
     monkeypatch.setattr(engine, "ACTION_FIRST_ENABLED", False)
     monkeypatch.setattr(engine, "ACTIONABILITY_ENFORCE", True)
+    # Keep retrieval/outcome repeat checks hermetic.
+    advisor_dir = tmp_path / "advisor"
+    monkeypatch.setattr(advisor_mod, "ADVISOR_DIR", advisor_dir)
+    monkeypatch.setattr(advisor_mod, "RECENT_ADVICE_LOG", advisor_dir / "recent_advice.jsonl")
 
 
 def _allow_all_gate(advice_items, state, tool_name, tool_input=None, **kwargs):
