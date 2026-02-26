@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-26 (local branch snapshot, post PR-05 deterministic RRF retrieval fusion)
+Last updated: 2026-02-26 (local branch snapshot, post PR-06 advisory alpha vertical slice routing)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -63,6 +63,23 @@ Branch: feat/spark-alpha
   - `tests/test_advisor.py`
   - `tests/test_memory_retrieval_ab.py`
 
+10. `(working tree)` - `feat(alpha-advisory): add advisory alpha vertical slice + route orchestrator`
+- Added compact alpha hot path (`lib/advisory_engine_alpha.py`) for:
+  - retrieve -> gate -> synthesize -> emit
+  - strict trace-bound delivery metadata
+  - context/text repeat suppression and deduped emission candidates
+- Added route orchestrator (`lib/advisory_orchestrator.py`) with:
+  - route modes: `engine | alpha | canary`
+  - deterministic canary routing via `SPARK_ADVISORY_ALPHA_CANARY_PERCENT`
+  - alpha-to-engine fallback on route errors
+  - route decision telemetry (`~/.spark/advisory_route_decisions.jsonl`)
+- Wired all hook entry points to orchestrator (`hooks/observe.py`):
+  - pre-tool
+  - post-tool
+  - user-prompt
+- Added alpha-vs-engine comparison script (`scripts/advisory_alpha_quality_report.py`).
+- Added explicit legacy deletion candidate manifest for PR-10 (`docs/SPARK_ALPHA_PR06_LEGACY_DELETION_CANDIDATES.md`).
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -80,6 +97,7 @@ Branch: feat/spark-alpha
 - `pytest tests/test_memory_spine_sqlite.py -q` -> `2 passed`
 - `pytest tests/test_advisor.py -q` -> `97 passed`
 - `pytest tests/test_memory_retrieval_ab.py -q` -> `11 passed`
+- `pytest tests/test_advisory_orchestrator.py -q` -> `5 passed`
 
 Notable metrics now:
 - `context.p50`: 230
@@ -102,7 +120,8 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 9. PR-03 deletion commitment is still pending (legacy scorer path removal after replay wins).
 10. PR-04 deletion commitment is still pending (JSONL/legacy path retirement after parity criteria).
 11. PR-05 deletion commitment is still pending (retire superseded rank paths after replay/canary wins).
+12. PR-06 deletion commitment is still pending (remove legacy advisory path files after replay + live canary pass).
 
 ## In progress right now
 
-- PR-05 deterministic RRF retrieval fusion is in local working tree and ready to commit.
+- PR-06 advisory alpha vertical slice is in local working tree and ready to commit.

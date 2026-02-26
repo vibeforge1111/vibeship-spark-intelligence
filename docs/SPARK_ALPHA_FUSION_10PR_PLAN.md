@@ -27,6 +27,7 @@ Completed commits:
 7. `(working tree)` PR-03 dual scoring challenger integration (shadow + enforce gated)
 8. `(working tree)` PR-04 SQLite dual-write for cognitive insights (JSON still canonical)
 9. `(working tree)` PR-05 deterministic RRF retrieval fusion signal (runtime + AB harness)
+10. `(working tree)` PR-06 advisory alpha vertical slice route + canary orchestration
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -75,8 +76,10 @@ Current measured state:
 
 ### PR-06 Advisory Alpha Vertical Slice  (Partial)
 1. Emission reliability and trace binding improved.
-2. Remaining: consolidated alpha path coverage across all tool routes.
-3. Deletion commitment: remove legacy advisory path files once replay arena + live canary pass.
+2. Added compact `advisory_engine_alpha` pre-tool path (retrieve -> gate -> synthesize -> emit).
+3. Added route orchestrator for pre/post/prompt flows with canary routing and fallback.
+4. Remaining: expand alpha ownership for post-tool and prompt paths (currently delegated) and validate via replay/canary.
+5. Deletion commitment: remove legacy advisory path files once replay arena + live canary pass.
 
 ### PR-07 Replay Arena (Champion/Challenger)  (Pending, Required)
 1. Deterministic replay on identical episodes.

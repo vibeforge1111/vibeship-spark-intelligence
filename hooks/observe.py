@@ -845,7 +845,7 @@ def main():
         # This replaces the old fire-and-forget advisor call.
         # The engine handles retrieval, filtering, synthesis, and emission.
         try:
-            from lib.advisory_engine import on_pre_tool
+            from lib.advisory_orchestrator import on_pre_tool
             emitted_text = on_pre_tool(
                 session_id=session_id,
                 tool_name=tool_name,
@@ -936,7 +936,7 @@ def main():
 
         # Advisory Engine: record outcome for implicit feedback loop
         try:
-            from lib.advisory_engine import on_post_tool
+            from lib.advisory_orchestrator import on_post_tool
             on_post_tool(
                 session_id=session_id,
                 tool_name=tool_name,
@@ -1005,7 +1005,7 @@ def main():
         trace_id = _resolve_post_trace_id(session_id, tool_name, trace_id)
         # Advisory Engine: record failure outcome for implicit feedback
         try:
-            from lib.advisory_engine import on_post_tool
+            from lib.advisory_orchestrator import on_post_tool
             on_post_tool(
                 session_id=session_id,
                 tool_name=tool_name,
@@ -1156,7 +1156,7 @@ def main():
 
             # Advisory Engine: capture user intent for contextual retrieval
             try:
-                from lib.advisory_engine import on_user_prompt
+                from lib.advisory_orchestrator import on_user_prompt
                 on_user_prompt(session_id, txt, trace_id=trace_id)
             except Exception as e:
                 log_debug("observe", "advisory engine intent capture failed", e)
