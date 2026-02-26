@@ -13,23 +13,22 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Dict
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lib.advisory_gate import (
-    evaluate,
-    _evaluate_single,
-    _assign_authority,
-    _source_ttl_scale,
-    _tool_cooldown_scale,
-    _shown_ttl_for_advice,
+    AUTHORITY_THRESHOLDS,
     AuthorityLevel,
     GateResult,
-    AUTHORITY_THRESHOLDS,
+    _assign_authority,
+    _evaluate_single,
+    _shown_ttl_for_advice,
+    _source_ttl_scale,
+    _tool_cooldown_scale,
+    evaluate,
 )
-
 
 # ── Minimal mock objects ──────────────────────────────────────────────
 

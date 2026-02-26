@@ -378,8 +378,7 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
     if not tuneables.exists():
         # Fall through to resolver so schema defaults still apply.
         pass
-    from .config_authority import resolve_section
-    from .config_authority import env_bool, env_float, env_int, env_str
+    from .config_authority import env_bool, env_float, env_int, env_str, resolve_section
     cfg = resolve_section(
         "advisory_engine",
         runtime_path=tuneables,
@@ -3277,8 +3276,8 @@ def _llm_area_suppression_triage(suppressed: List[Dict[str, Any]]) -> List[Dict[
     if not suppressed:
         return suppressed
     try:
-        from .llm_dispatch import llm_area_call
         from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         reasons = [s.get("reason", "") for s in suppressed[:5]]
         prompt = format_prompt(
@@ -3314,8 +3313,8 @@ def _llm_area_dedupe_optimize(
     When disabled (default), returns base_key unchanged.
     """
     try:
-        from .llm_dispatch import llm_area_call
         from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         prompt = format_prompt(
             "dedupe_optimize",
@@ -3342,8 +3341,8 @@ def _llm_area_implicit_feedback_interpret(
     When disabled (default), does nothing (no-op).
     """
     try:
-        from .llm_dispatch import llm_area_call
         from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
 
         advice_summary = "; ".join(str(t)[:100] for t in advice_texts[:3])
         prompt = format_prompt(
@@ -3359,7 +3358,7 @@ def _llm_area_implicit_feedback_interpret(
             try:
                 data = _json.loads(result.text)
                 if isinstance(data, dict) and data.get("insight"):
-                    from .cognitive_learner import get_cognitive_learner, CognitiveCategory
+                    from .cognitive_learner import CognitiveCategory, get_cognitive_learner
                     learner = get_cognitive_learner()
                     learner.add_insight(
                         CognitiveCategory.META_LEARNING,

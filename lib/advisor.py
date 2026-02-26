@@ -17,30 +17,32 @@ The Solution:
 KISS Principle: Single file, simple API, maximum impact.
 """
 
+import hashlib
 import json
 import logging
+import math
+import os
+import re
+import sys
 import threading
 import time
-import hashlib
-import os
-import sys
-import re
-import math
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, List, Any, Tuple
-from dataclasses import dataclass, field, asdict
+from typing import Any, Dict, List, Optional, Tuple
+
+from .advisory_quarantine import record_quarantine_item
 
 # Import existing Spark components
-from .cognitive_learner import get_cognitive_learner, CognitiveCategory
-from .mind_bridge import get_mind_bridge, HAS_REQUESTS
-from .memory_banks import retrieve as bank_retrieve, infer_project_key
-from .advisory_quarantine import record_quarantine_item
+from .cognitive_learner import get_cognitive_learner
 from .distillation_transformer import transform_for_advisory as _transform_distillation
+from .memory_banks import infer_project_key
+from .memory_banks import retrieve as bank_retrieve
+from .mind_bridge import HAS_REQUESTS, get_mind_bridge
 
 # EIDOS integration for distillation retrieval
 try:
-    from .eidos import get_retriever, StructuralRetriever
+    from .eidos import StructuralRetriever, get_retriever
     HAS_EIDOS = True
 except ImportError:
     HAS_EIDOS = False
@@ -672,7 +674,7 @@ def _load_advisor_config() -> None:
                     return
             except Exception:
                 return
-        from .config_authority import resolve_section, env_bool, env_int, env_float, env_str
+        from .config_authority import env_bool, env_float, env_int, resolve_section
         tuneables = Path.home() / ".spark" / "tuneables.json"
         if not tuneables.exists():
             return
@@ -1416,8 +1418,8 @@ class SparkAdvisor:
         2. Merge with in-memory deltas
         3. Write atomically via temp file
         """
-        import tempfile
         import os
+        import tempfile
 
         try:
             # Read current disk state to merge (handles multiple processes)
@@ -1801,7 +1803,7 @@ class SparkAdvisor:
         # Resolve retrieval section via config-authority (handles env overrides).
         retrieval_cfg: Dict[str, Any] = {}
         try:
-            from .config_authority import resolve_section, env_bool, env_int, env_float, env_str
+            from .config_authority import env_bool, env_float, env_int, env_str, resolve_section
             retrieval_cfg = resolve_section(
                 "retrieval",
                 env_overrides={
@@ -2020,7 +2022,7 @@ class SparkAdvisor:
 
         cfg = dict(MEMORY_EMOTION_DEFAULTS)
         try:
-            from .config_authority import resolve_section, env_bool, env_float
+            from .config_authority import env_bool, env_float, resolve_section
             section = resolve_section(
                 "memory_emotion",
                 env_overrides={
@@ -2759,8 +2761,8 @@ class SparkAdvisor:
         When disabled (default), returns query unchanged.
         """
         try:
-            from .llm_dispatch import llm_area_call
             from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
 
             prompt = format_prompt(
                 "retrieval_rewrite",
@@ -2786,8 +2788,8 @@ class SparkAdvisor:
         When disabled (default), returns base_reason unchanged.
         """
         try:
-            from .llm_dispatch import llm_area_call
             from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
 
             prompt = format_prompt(
                 "retrieval_explain",
@@ -4204,7 +4206,7 @@ class SparkAdvisor:
             from lib.convo_analyzer import get_convo_analyzer
 
             analyzer = get_convo_analyzer()
-            stats = analyzer.get_stats()
+            analyzer.get_stats()
 
             # Surface top DNA patterns as advice
             for dna_key, dna in list(analyzer.dna_patterns.items())[:3]:
