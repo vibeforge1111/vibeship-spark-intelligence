@@ -6,6 +6,7 @@ Generates:
     distillations/ _index.md + per-distillation pages
     episodes/      _index.md + per-episode pages (with steps)
     advisory/      _index.md (source breakdown + recent advice)
+    helpfulness/   _index.md (calibrated helpfulness progress tracking)
     promotions/    _index.md + per-batch pages
     verdicts/      _index.md + per-verdict pages
 """
@@ -16,15 +17,136 @@ import json
 import re
 import sqlite3
 import time
+from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from .config import ObservatoryConfig, spark_dir
-from .linker import fmt_ts, fmt_ago, fmt_num, fmt_size, flow_link
-from .readers import _load_json, _tail_jsonl, _count_jsonl, _file_size
-
+from .linker import flow_link, fmt_num, fmt_ts
+from .readers import _count_jsonl, _load_json, _tail_jsonl
 
 _SD = spark_dir()
+
+
+_MOJIBAKE_REPLACEMENTS = {
+    "\u00e2\u20ac\u201d": "-",
+    "\u00e2\u20ac\u201c": "-",
+    "\u00e2\u20ac\u02dc": "'",
+    "\u00e2\u20ac\u2122": "'",
+    "\u00e2\u20ac\u0153": '"',
+    "\u00e2\u20ac\u009d": '"',
+    "\u00e2\u20ac\u00a6": "...",
+    "\u00c2 ": " ",
+    "\u00c2": "",
+}
+
+_UNICODE_PUNCT_TRANSLATE = str.maketrans({
+    "\u2014": "-",
+    "\u2013": "-",
+    "\u2018": "'",
+    "\u2019": "'",
+    "\u201c": '"',
+    "\u201d": '"',
+    "\u2026": "...",
+})
+
+
+def _parse_ts(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return 0.0
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return float(text)
+    except Exception:
+        pass
+    try:
+        return datetime.fromisoformat(text).timestamp()
+    except Exception:
+        return 0.0
+
+
+def _clean_text_preview(value: Any, max_len: int = 200) -> str:
+    text = str(value or "").replace("\n", " ").replace("\r", " ").strip()
+    if not text:
+        return ""
+    # Attempt to repair classic UTF-8/latin-1 mojibake first.
+    if any(tok in text for tok in ("\u00c3", "\u00c2", "\u00e2")):
+        try:
+            repaired = text.encode("latin-1").decode("utf-8")
+            if repaired:
+                text = repaired
+        except Exception:
+            pass
+    for bad, good in _MOJIBAKE_REPLACEMENTS.items():
+        text = text.replace(bad, good)
+    text = text.translate(_UNICODE_PUNCT_TRANSLATE)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:max_len]
+
+
+def _collapse_recent_advice(entries: list[dict[str, Any]], max_items: int = 50) -> tuple[list[dict[str, Any]], int]:
+    collapsed: dict[str, dict[str, Any]] = {}
+    considered = 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        texts = entry.get("advice_texts") or []
+        if not isinstance(texts, list) or not texts:
+            continue
+        sources = entry.get("sources") or []
+        if not isinstance(sources, list):
+            sources = []
+        pairs: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for idx, raw_text in enumerate(texts[:5]):
+            txt = _clean_text_preview(raw_text, max_len=200)
+            if not txt:
+                continue
+            src = _clean_text_preview(sources[idx] if idx < len(sources) else "?", max_len=40) or "?"
+            pair = (src, txt)
+            if pair in seen:
+                continue
+            seen.add(pair)
+            pairs.append(pair)
+        if not pairs:
+            continue
+        tool = _clean_text_preview(entry.get("tool", "?"), max_len=40) or "?"
+        ts_raw = entry.get("timestamp")
+        ts = _parse_ts(ts_raw if ts_raw is not None else entry.get("ts"))
+        ts_text = str(ts_raw if ts_raw is not None else entry.get("ts") or "?")[:19]
+        signature = json.dumps({"tool": tool.lower(), "pairs": pairs}, ensure_ascii=True, sort_keys=True)
+        considered += 1
+        agg = collapsed.get(signature)
+        if agg is None:
+            collapsed[signature] = {
+                "tool": tool,
+                "pairs": pairs,
+                "ts": ts,
+                "ts_text": ts_text,
+                "count": 1,
+            }
+            continue
+        agg["count"] = int(agg.get("count", 0)) + 1
+        if ts >= float(agg.get("ts", 0.0)):
+            agg["ts"] = ts
+            agg["ts_text"] = ts_text
+            agg["tool"] = tool
+            agg["pairs"] = pairs
+
+    rows = sorted(
+        collapsed.values(),
+        key=lambda r: (float(r.get("ts", 0.0)), int(r.get("count", 0))),
+        reverse=True,
+    )[:max_items]
+    duplicates_collapsed = max(0, considered - len(rows))
+    return rows, duplicates_collapsed
 
 
 def _slug(text: str, max_len: int = 60) -> str:
@@ -53,15 +175,6 @@ def _frontmatter(meta: dict) -> str:
             lines.append(f"{k}: {v}")
     lines.append("---\n")
     return "\n".join(lines)
-
-
-def _safe_non_negative_int(value: Any, default: int = 0) -> int:
-    """Best-effort parse for counters loaded from JSON."""
-    try:
-        parsed = int(value)
-    except Exception:
-        return max(default, 0)
-    return max(parsed, 0)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -106,9 +219,9 @@ def _export_cognitive(explore_dir: Path, limit: int) -> int:
         body.append(f"# {key[:80]}\n")
         body.append(f"> Back to [[_index|Cognitive Index]] | {flow_link()}\n")
         body.append(f"## Insight\n\n{insight}\n")
-        body.append(f"## Metadata\n")
-        body.append(f"| Field | Value |")
-        body.append(f"|-------|-------|")
+        body.append("## Metadata\n")
+        body.append("| Field | Value |")
+        body.append("|-------|-------|")
         body.append(f"| Category | {val.get('category', '?')} |")
         body.append(f"| Reliability | {val.get('reliability', 0):.0%} |")
         body.append(f"| Validations | {val.get('times_validated', 0)} |")
@@ -180,7 +293,7 @@ def _export_distillations(explore_dir: Path, limit: int) -> int:
     out.mkdir(parents=True, exist_ok=True)
     db_path = _SD / "eidos.db"
     if not db_path.exists():
-        (out / "_index.md").write_text(f"# Distillations\n\neidos.db not found.\n", encoding="utf-8")
+        (out / "_index.md").write_text("# Distillations\n\neidos.db not found.\n", encoding="utf-8")
         return 1
 
     try:
@@ -222,9 +335,9 @@ def _export_distillations(explore_dir: Path, limit: int) -> int:
         body.append(f"> Back to [[_index|Distillations Index]] | {flow_link()} | [[../stages/07-eidos|Stage 7: EIDOS]]\n")
         body.append(f"**Type:** {row.get('type', '?')} | **Confidence:** {row.get('confidence', 0):.2f}\n")
         body.append(f"## Statement\n\n{row.get('statement', '(empty)')}\n")
-        body.append(f"## Metrics\n")
-        body.append(f"| Field | Value |")
-        body.append(f"|-------|-------|")
+        body.append("## Metrics\n")
+        body.append("| Field | Value |")
+        body.append("|-------|-------|")
         body.append(f"| Validated | {row.get('validation_count', 0)} times |")
         body.append(f"| Contradicted | {row.get('contradiction_count', 0)} times |")
         body.append(f"| Retrieved | {row.get('times_retrieved', 0)} times |")
@@ -300,7 +413,7 @@ def _export_episodes(explore_dir: Path, limit: int) -> int:
     out.mkdir(parents=True, exist_ok=True)
     db_path = _SD / "eidos.db"
     if not db_path.exists():
-        (out / "_index.md").write_text(f"# Episodes\n\neidos.db not found.\n", encoding="utf-8")
+        (out / "_index.md").write_text("# Episodes\n\neidos.db not found.\n", encoding="utf-8")
         return 1
 
     try:
@@ -366,9 +479,9 @@ def _export_episodes(explore_dir: Path, limit: int) -> int:
         body.append(f"> Back to [[_index|Episodes Index]] | {flow_link()} | [[../stages/07-eidos|Stage 7: EIDOS]]\n")
 
         body.append(f"## Goal\n\n{goal}\n")
-        body.append(f"## Summary\n")
-        body.append(f"| Field | Value |")
-        body.append(f"|-------|-------|")
+        body.append("## Summary\n")
+        body.append("| Field | Value |")
+        body.append("|-------|-------|")
         body.append(f"| Outcome | **{ep.get('outcome', '?')}** |")
         body.append(f"| Phase | {ep.get('phase', '?')} |")
         body.append(f"| Steps | {ep.get('step_count', 0)} |")
@@ -434,14 +547,13 @@ def _export_verdicts(explore_dir: Path, limit: int) -> int:
 
     rh = _load_json(_SD / "meta_ralph" / "roast_history.json") or {}
     history = rh.get("history", []) if isinstance(rh, dict) else []
-    history_count = len(history)
-    total = _safe_non_negative_int(
-        rh.get("total_roasted", history_count) if isinstance(rh, dict) else history_count,
-        history_count,
-    )
-    total = max(total, history_count)
+    total = len(history)
+    if isinstance(rh, dict):
+        try:
+            total = max(total, int(rh.get("total_roasted", total) or total))
+        except Exception:
+            total = total
     recent = history[-limit:] if history else []
-    start_idx = max(total - len(recent), 0)
 
     # Verdict distribution
     verdicts: dict[str, int] = {}
@@ -452,7 +564,7 @@ def _export_verdicts(explore_dir: Path, limit: int) -> int:
     # Generate per-verdict detail pages grouped by batch (same timestamp)
     pages_written = 0
     for i, entry in enumerate(recent):
-        idx = start_idx + i
+        idx = total - limit + i if total > limit else i
         slug = f"verdict_{idx:05d}"
         result = entry.get("result", {})
         score = result.get("score", {})
@@ -478,9 +590,9 @@ def _export_verdicts(explore_dir: Path, limit: int) -> int:
 
         # Score breakdown
         if isinstance(score, dict):
-            body.append(f"## Score Breakdown\n")
-            body.append(f"| Dimension | Score |")
-            body.append(f"|-----------|-------|")
+            body.append("## Score Breakdown\n")
+            body.append("| Dimension | Score |")
+            body.append("|-----------|-------|")
             for dim in ["actionability", "novelty", "reasoning", "specificity", "outcome_linked", "ethics"]:
                 body.append(f"| {dim} | {score.get(dim, 0)} |")
             body.append(f"| **Total** | **{score.get('total', 0)}** |")
@@ -490,7 +602,7 @@ def _export_verdicts(explore_dir: Path, limit: int) -> int:
         # Issues
         issues = result.get("issues_found", [])
         if issues:
-            body.append(f"## Issues Found\n")
+            body.append("## Issues Found\n")
             for issue in issues:
                 body.append(f"- {issue}")
             body.append("")
@@ -517,11 +629,11 @@ def _export_verdicts(explore_dir: Path, limit: int) -> int:
 
     # Distribution
     if verdicts:
-        index.append("## Verdict Distribution (retained history window)\n")
+        index.append("## Verdict Distribution (all time)\n")
         index.append("| Verdict | Count | % |")
         index.append("|---------|-------|---|")
         for v, count in sorted(verdicts.items(), key=lambda x: -x[1]):
-            pct = round(count / max(history_count, 1) * 100, 1)
+            pct = round(count / max(total, 1) * 100, 1)
             index.append(f"| {v} | {count} | {pct}% |")
         index.append("")
 
@@ -530,7 +642,7 @@ def _export_verdicts(explore_dir: Path, limit: int) -> int:
     index.append("| # | Time | Source | Verdict | Score | Link |")
     index.append("|---|------|--------|---------|-------|------|")
     for i, entry in enumerate(recent):
-        idx = start_idx + i
+        idx = total - limit + i if total > limit else i
         slug = f"verdict_{idx:05d}"
         result = entry.get("result", {})
         score = result.get("score", {})
@@ -616,6 +728,7 @@ def _export_advisory(explore_dir: Path, advice_limit: int) -> int:
 
     eff = _load_json(_SD / "advisor" / "effectiveness.json") or {}
     metrics = _load_json(_SD / "advisor" / "metrics.json") or {}
+    helpfulness_summary = _load_json(_SD / "advisor" / "helpfulness_summary.json") or {}
     recent = _tail_jsonl(_SD / "advisor" / "advice_log.jsonl", advice_limit)
 
     total_given = eff.get("total_advice_given", 0)
@@ -629,8 +742,9 @@ def _export_advisory(explore_dir: Path, advice_limit: int) -> int:
         "total_helpful": total_helpful,
         "followed_rate": round(total_followed / max(total_given, 1) * 100, 1),
     })]
-    index.append(f"# Advisory Effectiveness\n")
+    index.append("# Advisory Effectiveness\n")
     index.append(f"> {flow_link()} | [[../stages/08-advisory|Stage 8: Advisory]]\n")
+    index.append("> For calibrated event-level progress tracking: [[../helpfulness/_index|Helpfulness Calibration]].\n")
 
     index.append("## Overall\n")
     index.append("| Metric | Value |")
@@ -646,6 +760,27 @@ def _export_advisory(explore_dir: Path, advice_limit: int) -> int:
     index.append(f"| Cognitive helpful rate | {cognitive_helpful_rate:.1%} |")
     index.append("")
 
+    if isinstance(helpfulness_summary, dict) and helpfulness_summary:
+        labels = helpfulness_summary.get("labels", {}) if isinstance(helpfulness_summary.get("labels"), dict) else {}
+        index.append("## Calibrated Helpfulness (Watcher)\n")
+        index.append("| Metric | Value |")
+        index.append("|--------|-------|")
+        index.append(f"| Total events | {fmt_num(helpfulness_summary.get('total_events', 0))} |")
+        index.append(f"| Known helpfulness events | {fmt_num(helpfulness_summary.get('known_helpfulness_total', 0))} |")
+        index.append(f"| Helpful rate | {helpfulness_summary.get('helpful_rate_pct', 0.0)}% |")
+        index.append(f"| Unknown rate | {helpfulness_summary.get('unknown_rate_pct', 0.0)}% |")
+        index.append(f"| Conflict rate | {helpfulness_summary.get('conflict_rate_pct', 0.0)}% |")
+        index.append(f"| LLM review queue | {fmt_num(helpfulness_summary.get('llm_review_queue_count', 0))} |")
+        index.append(f"| LLM review applied | {fmt_num(helpfulness_summary.get('llm_review_applied_count', 0))} |")
+        index.append("")
+        if labels:
+            index.append("### Label Distribution\n")
+            index.append("| Label | Count |")
+            index.append("|-------|-------|")
+            for label, count in sorted(labels.items(), key=lambda x: -x[1]):
+                index.append(f"| {label} | {fmt_num(count)} |")
+            index.append("")
+
     by_source = eff.get("by_source", {})
     if by_source:
         index.append("## Source Effectiveness\n")
@@ -654,23 +789,25 @@ def _export_advisory(explore_dir: Path, advice_limit: int) -> int:
         for src, stats in sorted(by_source.items(), key=lambda x: -x[1].get("total", 0)):
             t = stats.get("total", 0)
             h = stats.get("helpful", 0)
-            rate = f"{h/max(t,1)*100:.1f}%" if t > 0 else "—"
+            rate = f"{h/max(t,1)*100:.1f}%" if t > 0 else "-"
             index.append(f"| **{src}** | {fmt_num(t)} | {fmt_num(h)} | {rate} |")
         index.append("")
 
     # Recent advice entries
     advice_entries = [r for r in recent if "advice_texts" in r]
-    if advice_entries:
-        index.append(f"## Recent Advice ({len(advice_entries)} entries)\n")
-        for i, entry in enumerate(reversed(advice_entries[-50:]), 1):
+    collapsed_entries, collapsed_dupes = _collapse_recent_advice(advice_entries, max_items=50)
+    if collapsed_entries:
+        header = f"## Recent Advice ({len(collapsed_entries)} entries)"
+        if collapsed_dupes > 0:
+            header += f" - {collapsed_dupes} duplicates collapsed"
+        index.append(header + "\n")
+        for i, entry in enumerate(collapsed_entries, 1):
             tool = entry.get("tool", "?")
-            ts = entry.get("timestamp", "?")[:19]
-            texts = entry.get("advice_texts", [])
-            sources = entry.get("sources", [])
-            index.append(f"### {i}. {tool} ({ts})\n")
-            for j, txt in enumerate(texts[:5]):
-                src = sources[j] if j < len(sources) else "?"
-                index.append(f"- **[{src}]** {txt[:200]}")
+            ts = str(entry.get("ts_text", "?"))[:19]
+            repeat_note = f", repeated {int(entry.get('count', 1))}x" if int(entry.get("count", 1)) > 1 else ""
+            index.append(f"### {i}. {tool} ({ts}{repeat_note})\n")
+            for src, txt in (entry.get("pairs") or []):
+                index.append(f"- **[{src}]** {txt}")
             index.append("")
 
     (out / "_index.md").write_text("\n".join(index), encoding="utf-8")
@@ -1069,6 +1206,265 @@ def _export_decisions(explore_dir: Path, limit: int) -> int:
 #  IMPLICIT FEEDBACK LOOP
 # ═══════════════════════════════════════════════════════════════════════
 
+def _event_ts(event: dict[str, Any]) -> float:
+    """Best-effort event timestamp for sorting/trends."""
+    try:
+        ts = float(event.get("request_ts") or 0.0)
+        if ts > 0:
+            return ts
+    except Exception:
+        pass
+    try:
+        ts = float(event.get("resolved_at") or 0.0)
+        if ts > 0:
+            return ts
+    except Exception:
+        pass
+    return 0.0
+
+
+def _latest_reviews_by_event(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        event_id = str(row.get("event_id") or "").strip()
+        if not event_id:
+            continue
+        prior = latest.get(event_id)
+        try:
+            ts = float(row.get("reviewed_at") or 0.0)
+        except Exception:
+            ts = 0.0
+        if prior is None:
+            latest[event_id] = row
+            continue
+        try:
+            prior_ts = float(prior.get("reviewed_at") or 0.0)
+        except Exception:
+            prior_ts = 0.0
+        if ts >= prior_ts:
+            latest[event_id] = row
+    return latest
+
+
+def _export_helpfulness(explore_dir: Path, limit: int) -> int:
+    """Export a human-readable helpfulness calibration progress page."""
+    out = explore_dir / "helpfulness"
+    out.mkdir(parents=True, exist_ok=True)
+
+    summary = _load_json(_SD / "advisor" / "helpfulness_summary.json") or {}
+    events = _tail_jsonl(_SD / "advisor" / "helpfulness_events.jsonl", limit)
+    queue = _tail_jsonl(_SD / "advisor" / "helpfulness_llm_queue.jsonl", limit)
+    reviews = _tail_jsonl(_SD / "advisor" / "helpfulness_llm_reviews.jsonl", max(limit * 4, limit))
+
+    # Derived fallback metrics when summary is missing or partial.
+    labels: dict[str, int] = {}
+    judge_sources: dict[str, int] = {}
+    conflicts = 0
+    llm_applied = 0
+    for row in events:
+        label = str(row.get("helpful_label") or "unknown").strip().lower()
+        labels[label] = labels.get(label, 0) + 1
+        judge = str(row.get("judge_source") or "unknown").strip() or "unknown"
+        judge_sources[judge] = judge_sources.get(judge, 0) + 1
+        if bool(row.get("conflict")):
+            conflicts += 1
+        if bool(row.get("llm_review_applied")):
+            llm_applied += 1
+
+    total_events = int(summary.get("total_events", len(events)) or len(events))
+    known_helpfulness = int(
+        summary.get(
+            "known_helpfulness_total",
+            labels.get("helpful", 0) + labels.get("unhelpful", 0) + labels.get("harmful", 0),
+        ) or 0
+    )
+    helpful_rate = float(
+        summary.get(
+            "helpful_rate_pct",
+            round((100.0 * labels.get("helpful", 0) / max(known_helpfulness, 1)), 2) if known_helpfulness > 0 else 0.0,
+        ) or 0.0
+    )
+    unknown_rate = float(
+        summary.get(
+            "unknown_rate_pct",
+            round((100.0 * labels.get("unknown", 0) / max(total_events, 1)), 2) if total_events > 0 else 0.0,
+        ) or 0.0
+    )
+    conflict_count = int(summary.get("conflict_count", conflicts) or conflicts)
+    conflict_rate = float(
+        summary.get(
+            "conflict_rate_pct",
+            round((100.0 * conflict_count / max(total_events, 1)), 2) if total_events > 0 else 0.0,
+        ) or 0.0
+    )
+    queue_count = int(summary.get("llm_review_queue_count", len(queue)) or len(queue))
+    llm_applied_count = int(summary.get("llm_review_applied_count", llm_applied) or llm_applied)
+    follow_rate = float(summary.get("follow_rate_pct", 0.0) or 0.0)
+
+    if isinstance(summary.get("labels"), dict):
+        labels = dict(summary.get("labels", {}))
+    if isinstance(summary.get("judge_source"), dict):
+        judge_sources = dict(summary.get("judge_source", {}))
+
+    # LLM review queue status.
+    reviews_by_event = _latest_reviews_by_event(reviews)
+    queue_ids = {str(r.get("event_id") or "").strip() for r in queue}
+    queue_ids.discard("")
+    review_status_counts: dict[str, int] = {}
+    unresolved_queue = 0
+    for event_id in queue_ids:
+        status = str((reviews_by_event.get(event_id) or {}).get("status") or "").strip().lower()
+        if status:
+            review_status_counts[status] = review_status_counts.get(status, 0) + 1
+        if status not in {"ok", "abstain"}:
+            unresolved_queue += 1
+
+    # Trend: last 7 calendar days in local timezone.
+    daily: dict[str, dict[str, int]] = defaultdict(
+        lambda: {
+            "total": 0,
+            "known": 0,
+            "helpful": 0,
+            "unknown": 0,
+            "conflicts": 0,
+            "queued": 0,
+            "llm_applied": 0,
+        }
+    )
+    for row in events:
+        ts = _event_ts(row)
+        if ts <= 0:
+            continue
+        day = time.strftime("%Y-%m-%d", time.localtime(ts))
+        slot = daily[day]
+        slot["total"] += 1
+        label = str(row.get("helpful_label") or "unknown").strip().lower()
+        if label in {"helpful", "unhelpful", "harmful"}:
+            slot["known"] += 1
+        if label == "helpful":
+            slot["helpful"] += 1
+        if label == "unknown":
+            slot["unknown"] += 1
+        if bool(row.get("conflict")):
+            slot["conflicts"] += 1
+        if bool(row.get("llm_review_required")):
+            slot["queued"] += 1
+        if bool(row.get("llm_review_applied")):
+            slot["llm_applied"] += 1
+
+    conflict_events = [r for r in events if bool(r.get("conflict"))]
+    conflict_events.sort(key=_event_ts)
+    recent_conflicts = conflict_events[-20:]
+
+    latest_reviews = sorted(reviews, key=lambda r: float(r.get("reviewed_at") or 0.0))
+    recent_reviews = latest_reviews[-40:]
+
+    index = [_frontmatter({
+        "type": "spark-helpfulness-index",
+        "events": len(events),
+        "queue": queue_count,
+        "reviews": len(reviews),
+        "helpful_rate_pct": round(helpful_rate, 2),
+        "unknown_rate_pct": round(unknown_rate, 2),
+        "conflict_rate_pct": round(conflict_rate, 2),
+    })]
+    index.append("# Helpfulness Calibration\n")
+    index.append(f"> {flow_link()} | [[../stages/08-advisory|Stage 8: Advisory]] | [[../advisory/_index|Advisory Effectiveness]]\n")
+    index.append(f"**Event window:** latest {len(events)} events (limit: {limit})\n")
+    index.append("")
+
+    index.append("## Current Scoreboard\n")
+    index.append("| Metric | Value |")
+    index.append("|--------|-------|")
+    index.append(f"| Total events | {fmt_num(total_events)} |")
+    index.append(f"| Known helpfulness events | {fmt_num(known_helpfulness)} |")
+    index.append(f"| Helpful rate | {helpful_rate:.2f}% |")
+    index.append(f"| Unknown rate | {unknown_rate:.2f}% |")
+    index.append(f"| Conflict count | {fmt_num(conflict_count)} ({conflict_rate:.2f}%) |")
+    index.append(f"| LLM review queue | {fmt_num(queue_count)} |")
+    index.append(f"| LLM review applied | {fmt_num(llm_applied_count)} |")
+    index.append(f"| Follow rate (explicit/implicit where known) | {follow_rate:.2f}% |")
+    index.append("")
+
+    index.append("## LLM Queue Health\n")
+    index.append("| Metric | Value |")
+    index.append("|--------|-------|")
+    index.append(f"| Queue items in current window | {fmt_num(len(queue_ids))} |")
+    index.append(f"| Unresolved queue items | {fmt_num(unresolved_queue)} |")
+    index.append(f"| Total review records in window | {fmt_num(len(reviews))} |")
+    index.append("")
+    if review_status_counts:
+        index.append("| Review status | Count |")
+        index.append("|--------------|-------|")
+        for status, count in sorted(review_status_counts.items(), key=lambda x: (-x[1], x[0])):
+            index.append(f"| {status} | {fmt_num(count)} |")
+        index.append("")
+
+    day_keys = sorted(daily.keys())[-7:]
+    if day_keys:
+        index.append("## 7-Day Trend\n")
+        index.append("| Day | Events | Known | Helpful | Helpful Rate | Unknown | Conflicts | Queued | LLM Applied |")
+        index.append("|-----|--------|-------|---------|--------------|---------|-----------|--------|-------------|")
+        for day in day_keys:
+            row = daily[day]
+            helpful_pct = round((100.0 * row["helpful"] / max(row["known"], 1)), 1) if row["known"] > 0 else 0.0
+            index.append(
+                f"| {day} | {row['total']} | {row['known']} | {row['helpful']} | {helpful_pct}% | "
+                f"{row['unknown']} | {row['conflicts']} | {row['queued']} | {row['llm_applied']} |"
+            )
+        index.append("")
+
+    if labels:
+        index.append("## Label Distribution\n")
+        index.append("| Label | Count |")
+        index.append("|-------|-------|")
+        for label, count in sorted(labels.items(), key=lambda x: (-x[1], x[0])):
+            index.append(f"| {label} | {fmt_num(count)} |")
+        index.append("")
+
+    if judge_sources:
+        index.append("## Judge Sources\n")
+        index.append("| Judge source | Count |")
+        index.append("|--------------|-------|")
+        for source, count in sorted(judge_sources.items(), key=lambda x: (-x[1], x[0])):
+            index.append(f"| {source} | {fmt_num(count)} |")
+        index.append("")
+
+    if recent_conflicts:
+        index.append("## Recent Conflict Events\n")
+        index.append("| Time | Tool | Label | Confidence | Needs Review | Judge Source |")
+        index.append("|------|------|-------|------------|--------------|--------------|")
+        for row in reversed(recent_conflicts):
+            ts = _event_ts(row)
+            tool = str(row.get("tool") or "?")
+            label = str(row.get("helpful_label") or "unknown")
+            confidence = float(row.get("confidence") or 0.0)
+            need_review = "yes" if bool(row.get("llm_review_required")) else "no"
+            judge = str(row.get("judge_source") or "?")
+            index.append(f"| {fmt_ts(ts) if ts > 0 else '?'} | {tool} | {label} | {confidence:.3f} | {need_review} | {judge} |")
+        index.append("")
+
+    if recent_reviews:
+        index.append("## Recent LLM Reviews\n")
+        index.append("| Reviewed | Event ID | Provider | Status | Label | Confidence |")
+        index.append("|----------|----------|----------|--------|-------|------------|")
+        for row in reversed(recent_reviews):
+            reviewed_ts = float(row.get("reviewed_at") or 0.0)
+            event_id = str(row.get("event_id") or "")[:14]
+            provider = str(row.get("provider") or "?")
+            status = str(row.get("status") or "?")
+            label = str(row.get("label") or "-")
+            confidence = float(row.get("confidence") or 0.0)
+            index.append(
+                f"| {fmt_ts(reviewed_ts) if reviewed_ts > 0 else '?'} | `{event_id}` | "
+                f"{provider} | {status} | {label} | {confidence:.3f} |"
+            )
+        index.append("")
+
+    (out / "_index.md").write_text("\n".join(index), encoding="utf-8")
+    return 1
+
+
 def _export_feedback(explore_dir: Path, limit: int) -> int:
     """Export implicit feedback showing whether advice was followed/ignored."""
     out = explore_dir / "feedback"
@@ -1218,6 +1614,7 @@ def generate_explorer(cfg: ObservatoryConfig) -> dict[str, int]:
     counts["routing"] = _export_routing(explore_dir, cfg.explore_routing_max)
     counts["tuning"] = _export_tuning(explore_dir, cfg.explore_tuning_max)
     counts["decisions"] = _export_decisions(explore_dir, cfg.explore_decisions_max)
+    counts["helpfulness"] = _export_helpfulness(explore_dir, cfg.explore_feedback_max)
     counts["feedback"] = _export_feedback(explore_dir, cfg.explore_feedback_max)
 
     # Generate master explore index
@@ -1228,7 +1625,7 @@ def generate_explorer(cfg: ObservatoryConfig) -> dict[str, int]:
 def _generate_explore_index(explore_dir: Path, counts: dict[str, int], cfg: ObservatoryConfig) -> None:
     """Generate the master explore/_index.md that links to all sections."""
     index = [_frontmatter({"type": "spark-explorer-index"})]
-    index.append(f"# Explore Spark Intelligence\n")
+    index.append("# Explore Spark Intelligence\n")
     index.append(f"> {flow_link()} | Browse individual items from every stage\n")
     index.append("## Data Stores\n")
     index.append("| Store | Items Exported | Max | Browse |")
@@ -1243,6 +1640,7 @@ def _generate_explore_index(explore_dir: Path, counts: dict[str, int], cfg: Obse
         ("routing", "Retrieval Routing", cfg.explore_routing_max, "explore_routing_max"),
         ("tuning", "Tuneable Evolution", cfg.explore_tuning_max, "explore_tuning_max"),
         ("decisions", "Advisory Decisions", cfg.explore_decisions_max, "explore_decisions_max"),
+        ("helpfulness", "Helpfulness Calibration", cfg.explore_feedback_max, "explore_feedback_max"),
         ("feedback", "Implicit Feedback", cfg.explore_feedback_max, "explore_feedback_max"),
     ]
     for key, label, max_val, tuneable in sections:

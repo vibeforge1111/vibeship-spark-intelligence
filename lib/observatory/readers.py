@@ -7,9 +7,7 @@ No imports from pipeline modules — pure file I/O, zero side effects.
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
-import time
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +80,7 @@ def _count_jsonl(path: Path) -> int:
                 sample_lines.append(line)
         if not sample_lines:
             return 0
-        avg_line = sum(len(l) for l in sample_lines) / len(sample_lines)
+        avg_line = sum(len(line) for line in sample_lines) / len(sample_lines)
         if avg_line <= 0:
             return 0
         return int(size / avg_line)
@@ -106,13 +104,11 @@ def _file_size(path: Path) -> int:
         return 0
 
 
-def _safe_non_negative_int(value: Any, default: int = 0) -> int:
-    """Best-effort parse for counters loaded from JSON."""
+def _as_int(value: Any, default: int = 0) -> int:
     try:
-        parsed = int(value)
+        return int(value)
     except Exception:
-        return max(default, 0)
-    return max(parsed, 0)
+        return int(default)
 
 
 # ── Stage 1: Event Capture ──────────────────────────────────────────
@@ -217,13 +213,10 @@ def read_meta_ralph(max_recent: int = 15) -> dict[str, Any]:
     # Roast history — recent verdicts
     rh = _load_json(_SD / "meta_ralph" / "roast_history.json") or {}
     history = rh.get("history", []) if isinstance(rh, dict) else []
-    history_count = len(history)
-    total_roasted = _safe_non_negative_int(
-        rh.get("total_roasted", history_count) if isinstance(rh, dict) else history_count,
-        history_count,
-    )
-    total_roasted = max(total_roasted, history_count)
-    d["total_roasted"] = total_roasted
+    total_roasted = 0
+    if isinstance(rh, dict):
+        total_roasted = _as_int(rh.get("total_roasted"), 0)
+    d["total_roasted"] = max(total_roasted, len(history))
     recent = history[-max_recent:] if history else []
     d["recent_verdicts"] = []
     verdicts: dict[str, int] = {}
@@ -248,19 +241,16 @@ def read_meta_ralph(max_recent: int = 15) -> dict[str, Any]:
             if isinstance(total, (int, float)):
                 total_score_sum += total
                 total_score_count += 1
+    quality_passed = verdicts.get("quality", 0)
+    if isinstance(rh, dict):
+        quality_passed = _as_int(rh.get("quality_passed"), quality_passed)
+    d["quality_passed"] = quality_passed
     d["verdict_distribution"] = verdicts
     d["dimension_averages"] = {
         dim: round(dim_sums[dim] / max(dim_counts[dim], 1), 2) for dim in dims
     }
     d["avg_total_score"] = round(total_score_sum / max(total_score_count, 1), 2)
-    quality_default = verdicts.get("quality", 0)
-    quality_passed = _safe_non_negative_int(
-        rh.get("quality_passed", quality_default) if isinstance(rh, dict) else quality_default,
-        quality_default,
-    )
-    quality_passed = max(quality_passed, quality_default)
-    d["quality_passed"] = quality_passed
-    d["pass_rate"] = round(quality_passed / max(total_roasted, 1) * 100, 1)
+    d["pass_rate"] = round(d["quality_passed"] / max(d["total_roasted"], 1) * 100, 1)
     # Weak dimensions (below 1.0 avg or lowest 2)
     sorted_dims = sorted(d["dimension_averages"].items(), key=lambda x: x[1])
     d["weak_dimensions"] = [dim for dim, avg in sorted_dims[:2] if avg < 1.5]
@@ -464,6 +454,30 @@ def read_eidos() -> dict[str, Any]:
     d["active_episodes"] = len(ae) if isinstance(ae, dict) else 0
     ast = _load_json(_SD / "eidos_active_steps.json") or {}
     d["active_steps"] = len(ast) if isinstance(ast, dict) else 0
+
+    # Distillation curriculum snapshot metrics.
+    curriculum_latest = _load_json(_SD / "eidos_curriculum_latest.json")
+    curriculum_stats = {}
+    if isinstance(curriculum_latest, dict):
+        stats = curriculum_latest.get("stats")
+        if isinstance(stats, dict):
+            curriculum_stats = stats
+
+    severity = curriculum_stats.get("severity", {}) if isinstance(curriculum_stats.get("severity"), dict) else {}
+    d["curriculum_rows_scanned"] = _as_int(curriculum_stats.get("rows_scanned"), 0)
+    d["curriculum_cards_generated"] = _as_int(curriculum_stats.get("cards_generated"), 0)
+    d["curriculum_high"] = _as_int(severity.get("high"), 0)
+    d["curriculum_medium"] = _as_int(severity.get("medium"), 0)
+    d["curriculum_low"] = _as_int(severity.get("low"), 0)
+    d["curriculum_gaps"] = curriculum_stats.get("gaps", {}) if isinstance(curriculum_stats.get("gaps"), dict) else {}
+
+    history_rows = _tail_jsonl(_SD / "eidos_curriculum_history.jsonl", 60)
+    d["curriculum_history_points"] = len(history_rows)
+    if history_rows:
+        first_high = _as_int(history_rows[0].get("high"), d["curriculum_high"])
+        d["curriculum_high_delta"] = d["curriculum_high"] - first_high
+    else:
+        d["curriculum_high_delta"] = 0
     return d
 
 
@@ -503,26 +517,50 @@ def read_advisory(max_recent: int = 15) -> dict[str, Any]:
     # Implicit feedback summary
     feedback_path = _SD / "advisor" / "implicit_feedback.jsonl"
     fb_entries = _tail_jsonl(feedback_path, 200)
-    fb_followed = sum(1 for e in fb_entries if e.get("signal") == "followed")
+    fb_followed = sum(1 for e in fb_entries if e.get("signal") in {"followed", "helpful"})
     fb_ignored = sum(1 for e in fb_entries if e.get("signal") == "ignored")
+    fb_unhelpful = sum(1 for e in fb_entries if e.get("signal") == "unhelpful")
+    fb_not_followed = sum(1 for e in fb_entries if e.get("signal") == "not_followed")
+    fb_eval_total = fb_followed + fb_ignored + fb_unhelpful + fb_not_followed
     d["feedback_total"] = len(fb_entries)
     d["feedback_followed"] = fb_followed
     d["feedback_ignored"] = fb_ignored
+    d["feedback_unhelpful"] = fb_unhelpful
+    d["feedback_not_followed"] = fb_not_followed
+    d["feedback_eval_total"] = fb_eval_total
     d["feedback_follow_rate"] = round(
-        fb_followed / max(fb_followed + fb_ignored, 1) * 100, 1
+        fb_followed / max(fb_eval_total, 1) * 100, 1
     )
     # Per-tool follow rates
     tool_fb: dict[str, dict[str, int]] = {}
     for e in fb_entries:
         tool = e.get("tool", "?")
         if tool not in tool_fb:
-            tool_fb[tool] = {"followed": 0, "ignored": 0, "total": 0}
+            tool_fb[tool] = {
+                "followed": 0,
+                "ignored": 0,
+                "unhelpful": 0,
+                "not_followed": 0,
+                "total": 0,
+            }
         tool_fb[tool]["total"] += 1
-        if e.get("signal") == "followed":
+        signal = e.get("signal")
+        if signal in {"followed", "helpful"}:
             tool_fb[tool]["followed"] += 1
-        elif e.get("signal") == "ignored":
+        elif signal == "ignored":
             tool_fb[tool]["ignored"] += 1
+        elif signal == "unhelpful":
+            tool_fb[tool]["unhelpful"] += 1
+        elif signal == "not_followed":
+            tool_fb[tool]["not_followed"] += 1
     d["feedback_by_tool"] = tool_fb
+
+    # Calibrated helpfulness stream from deterministic watcher.
+    helpfulness_summary = _load_json(_SD / "advisor" / "helpfulness_summary.json") or {}
+    d["helpfulness_summary"] = helpfulness_summary if isinstance(helpfulness_summary, dict) else {}
+    d["recent_helpfulness_events"] = _tail_jsonl(
+        _SD / "advisor" / "helpfulness_events.jsonl", max_recent
+    )
     return d
 
 
@@ -640,136 +678,10 @@ def read_tuneables() -> dict[str, Any]:
     return d
 
 
-# ── Elevation Transforms ───────────────────────────────────────────
-
-def read_elevation() -> dict[str, Any]:
-    """Read elevation transform telemetry from validate_and_store_telemetry."""
-    d: dict[str, Any] = {"name": "Elevation Transforms"}
-    vas = _load_json(_SD / "validate_and_store_telemetry.json") or {}
-    d["elevation_attempted"] = vas.get("elevation_attempted", 0)
-    d["elevation_improved"] = vas.get("elevation_improved", 0)
-    d["total_attempted"] = vas.get("total_attempted", 0)
-    d["stored"] = vas.get("stored", 0)
-    # Roast history may track NEEDS_WORK verdicts that feed into elevation
-    rh = _load_json(_SD / "meta_ralph" / "roast_history.json") or {}
-    history = rh.get("history", []) if isinstance(rh, dict) else []
-    needs_work = sum(
-        1 for e in history
-        if e.get("result", {}).get("verdict") == "needs_work"
-    )
-    d["needs_work_verdicts"] = needs_work
-    d["total_verdicts"] = len(history)
-    return d
-
-
-# ── Onboarding State ──────────────────────────────────────────────
-
-def read_onboarding() -> dict[str, Any]:
-    """Read onboarding wizard state."""
-    d: dict[str, Any] = {"name": "Onboarding"}
-    state = _load_json(_SD / "onboarding_state.json") or {}
-    d["steps"] = state.get("steps", {})
-    d["agent"] = state.get("agent", "unknown")
-    d["started_at"] = state.get("started_at")
-    d["completed_at"] = state.get("completed_at")
-    d["completed"] = bool(state.get("completed_at"))
-    step_vals = d["steps"].values() if isinstance(d["steps"], dict) else []
-    total = len(list(step_vals))
-    passed = sum(1 for v in step_vals if v == "pass")
-    d["progress_pct"] = round(passed / max(total, 1) * 100, 1) if total else 0
-    return d
-
-
-# ── Learning-Systems Bridge ───────────────────────────────────────
-
-def read_learning_systems_bridge(max_recent: int = 15) -> dict[str, Any]:
-    """Read learning-systems bridge audit trail and proposals."""
-    d: dict[str, Any] = {"name": "Learning-Systems Bridge"}
-    ls_dir = _SD / "learning_systems"
-    # Insight ingest audit
-    audit_path = ls_dir / "insight_ingest_audit.jsonl"
-    d["audit_exists"] = audit_path.exists()
-    d["audit_count"] = _count_jsonl(audit_path)
-    d["audit_size"] = _file_size(audit_path)
-    recent_audit = _tail_jsonl(audit_path, max_recent)
-    d["recent_ingests"] = recent_audit
-    stored_count = sum(1 for e in recent_audit if e.get("stored"))
-    d["recent_store_rate"] = round(stored_count / max(len(recent_audit), 1) * 100, 1)
-    # Source distribution
-    sources: dict[str, int] = {}
-    for e in recent_audit:
-        src = e.get("source", "unknown")
-        sources[src] = sources.get(src, 0) + 1
-    d["source_distribution"] = sources
-    # Tuneable proposals
-    proposals_path = ls_dir / "tuneable_proposals.jsonl"
-    d["proposals_exists"] = proposals_path.exists()
-    d["proposals_count"] = _count_jsonl(proposals_path)
-    d["proposals_size"] = _file_size(proposals_path)
-    recent_proposals = _tail_jsonl(proposals_path, max_recent)
-    d["recent_proposals"] = recent_proposals
-    # Status distribution
-    statuses: dict[str, int] = {}
-    for p in recent_proposals:
-        st = p.get("status", "unknown")
-        statuses[st] = statuses.get(st, 0) + 1
-    d["proposal_status_distribution"] = statuses
-    return d
-
-
-# ── Config Authority ──────────────────────────────────────────────
-
-def read_config_authority() -> dict[str, Any]:
-    """Read config authority resolution metadata."""
-    d: dict[str, Any] = {"name": "Config Authority"}
-    # Check which config files exist
-    runtime_path = _SD / "tuneables.json"
-    baseline_path = Path(__file__).resolve().parent.parent.parent / "config" / "tuneables.json"
-    schema_path = Path(__file__).resolve().parent.parent / "tuneables_schema.py"
-    d["runtime_exists"] = runtime_path.exists()
-    d["runtime_size"] = _file_size(runtime_path)
-    d["runtime_mtime"] = _file_mtime(runtime_path)
-    d["baseline_exists"] = baseline_path.exists()
-    d["baseline_size"] = _file_size(baseline_path)
-    d["baseline_mtime"] = _file_mtime(baseline_path)
-    d["schema_exists"] = schema_path.exists()
-    # Compare section counts between runtime and baseline
-    runtime_data = _load_json(runtime_path) or {}
-    baseline_data = _load_json(baseline_path) or {}
-    d["runtime_sections"] = sorted(runtime_data.keys()) if isinstance(runtime_data, dict) else []
-    d["baseline_sections"] = sorted(baseline_data.keys()) if isinstance(baseline_data, dict) else []
-    # Detect drift: keys in runtime but not baseline, or vice versa
-    rt_set = set(d["runtime_sections"])
-    bl_set = set(d["baseline_sections"])
-    d["runtime_only_sections"] = sorted(rt_set - bl_set)
-    d["baseline_only_sections"] = sorted(bl_set - rt_set)
-    d["shared_sections"] = sorted(rt_set & bl_set)
-    # Per-section key drift
-    drift: list[dict] = []
-    for section in d["shared_sections"]:
-        rt_keys = set(runtime_data.get(section, {}).keys()) if isinstance(runtime_data.get(section), dict) else set()
-        bl_keys = set(baseline_data.get(section, {}).keys()) if isinstance(baseline_data.get(section), dict) else set()
-        rt_only = sorted(rt_keys - bl_keys)
-        bl_only = sorted(bl_keys - rt_keys)
-        if rt_only or bl_only:
-            drift.append({
-                "section": section,
-                "runtime_only_keys": rt_only[:5],
-                "baseline_only_keys": bl_only[:5],
-            })
-    d["key_drift"] = drift
-    d["total_drift_sections"] = len(drift)
-    return d
-
-
 # ── Aggregate reader ─────────────────────────────────────────────────
 
-def read_all_stages(max_recent: int = 20) -> dict[int | str, dict[str, Any]]:
-    """Read all 12 stages plus supplementary system data.
-
-    Returns a dict keyed by stage number (1-12) plus string keys
-    for supplementary data ('elevation', 'onboarding', 'bridge', 'config_authority').
-    """
+def read_all_stages(max_recent: int = 20) -> dict[int, dict[str, Any]]:
+    """Read all 12 stages and return a dict keyed by stage number."""
     return {
         1: read_event_capture(),
         2: read_queue(),
@@ -783,9 +695,4 @@ def read_all_stages(max_recent: int = 20) -> dict[int | str, dict[str, Any]]:
         10: read_chips(max_recent=min(max_recent, 5)),
         11: read_predictions(max_recent=max_recent),
         12: read_tuneables(),
-        # Supplementary system readers
-        "elevation": read_elevation(),
-        "onboarding": read_onboarding(),
-        "bridge": read_learning_systems_bridge(max_recent=max_recent),
-        "config_authority": read_config_authority(),
     }
