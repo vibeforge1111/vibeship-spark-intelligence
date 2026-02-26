@@ -970,14 +970,14 @@ def main():
             min_interval_s=CHECKIN_MIN_S,
         )
         if recorded and _OUTCOME_CHECKIN_PROMPT:
-            sys.stderr.write("[SPARK] Outcome check-in: run `spark outcome`\\n")
+            sys.stderr.write("[SPARK] Outcome check-in: run `spark outcome`\n")
 
     # Optional: prompt for advice feedback at session end.
     if hook_event in ("Stop", "SessionEnd") and ADVICE_FEEDBACK_PROMPT:
         try:
             from lib.advice_feedback import has_recent_requests
             if has_recent_requests():
-                sys.stderr.write("[SPARK] Advice feedback pending: run `spark advice-feedback --pending`\\n")
+                sys.stderr.write("[SPARK] Advice feedback pending: run `spark advice-feedback --pending`\n")
         except Exception:
             pass
 
