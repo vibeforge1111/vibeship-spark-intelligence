@@ -145,24 +145,37 @@ _rejection_flush_interval = 50
 _rejection_flush_counter = 0
 
 
+def _flush_rejection_telemetry() -> None:
+    """Merge in-memory rejection counters to disk and clear the buffer."""
+    existing: Dict[str, int] = {}
+    if REJECTION_TELEMETRY_FILE.exists():
+        loaded = json.loads(REJECTION_TELEMETRY_FILE.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            existing = loaded
+    for k, v in _rejection_counts.items():
+        existing[k] = existing.get(k, 0) + v
+    existing["_last_flush"] = time.time()
+    REJECTION_TELEMETRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    REJECTION_TELEMETRY_FILE.write_text(
+        json.dumps(existing, indent=2), encoding="utf-8"
+    )
+    _rejection_counts.clear()
+
+
 def _record_rejection(reason: str) -> None:
     """Increment a rejection reason counter. Flushes to disk periodically."""
     global _rejection_flush_counter
     _rejection_counts[reason] = _rejection_counts.get(reason, 0) + 1
     _rejection_flush_counter += 1
-    if _rejection_flush_counter >= _rejection_flush_interval:
+    should_flush = (
+        _rejection_flush_counter >= _rejection_flush_interval
+        or reason == "global_dedupe_suppressed"
+        or not REJECTION_TELEMETRY_FILE.exists()
+    )
+    if should_flush:
         _rejection_flush_counter = 0
         try:
-            existing: Dict[str, int] = {}
-            if REJECTION_TELEMETRY_FILE.exists():
-                existing = json.loads(REJECTION_TELEMETRY_FILE.read_text(encoding="utf-8"))
-            for k, v in _rejection_counts.items():
-                existing[k] = existing.get(k, 0) + v
-            existing["_last_flush"] = time.time()
-            REJECTION_TELEMETRY_FILE.write_text(
-                json.dumps(existing, indent=2), encoding="utf-8"
-            )
-            _rejection_counts.clear()
+            _flush_rejection_telemetry()
         except Exception as exc:
             log_debug("advisory_engine", f"rejection telemetry flush failed: {exc}", None)
 
@@ -3251,6 +3264,49 @@ def on_user_prompt(
         )
 
 
+def _llm_area_implicit_feedback_interpret(
+    tool_name: str,
+    success: bool,
+    advice_texts: list,
+    trace_id: Optional[str],
+) -> None:
+    """LLM area: extract deeper semantic feedback signals from session outcomes.
+
+    When disabled (default), does nothing (no-op).
+    """
+    try:
+        from .llm_dispatch import llm_area_call
+        from .llm_area_prompts import format_prompt
+
+        advice_summary = "; ".join(str(t)[:100] for t in advice_texts[:3])
+        prompt = format_prompt(
+            "implicit_feedback_interpret",
+            tool_name=tool_name,
+            success=str(success),
+            advice_texts=advice_summary[:500],
+        )
+        result = llm_area_call("implicit_feedback_interpret", prompt, fallback="")
+        if result.used_llm and result.text:
+            # Store interpretation as a cognitive insight if meaningful
+            import json as _json
+            try:
+                data = _json.loads(result.text)
+                if isinstance(data, dict) and data.get("insight"):
+                    from .cognitive_learner import get_cognitive_learner, CognitiveCategory
+                    learner = get_cognitive_learner()
+                    learner.add_insight(
+                        CognitiveCategory.META_LEARNING,
+                        str(data["insight"]),
+                        context=f"implicit_feedback:{tool_name}",
+                        confidence=0.6,
+                        source="implicit_feedback_interpret",
+                    )
+            except (ValueError, TypeError):
+                pass
+    except Exception:
+        pass
+
+
 def _record_implicit_feedback(
     state,
     tool_name: str,
@@ -3303,6 +3359,14 @@ def _record_implicit_feedback(
                 success=success,
                 trace_id=trace_id,
             )
+
+        # LLM area: implicit_feedback_interpret — extract deeper feedback signals
+        _llm_area_implicit_feedback_interpret(
+            tool_name=tool_name,
+            success=success,
+            advice_texts=recent.get("advice_texts") or [],
+            trace_id=trace_id,
+        )
 
         log_debug(
             "advisory_engine",
