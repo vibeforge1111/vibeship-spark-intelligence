@@ -161,3 +161,56 @@ def test_map_user_message_and_stop():
     )
     assert len(stop_events) == 1
     assert stop_events[0]["hook_event_name"] == "Stop"
+
+
+def test_pending_call_pairing_is_session_scoped():
+    runtime = bridge.BridgeRuntime()
+    session_a = "2026:02:26:session-a"
+    session_b = "2026:02:26:session-b"
+
+    for session_id, cmd in ((session_a, "echo a"), (session_b, "echo b")):
+        bridge.map_codex_row(
+            {
+                "timestamp": "2026-02-26T12:40:00.000Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "call_shared",
+                    "arguments": json.dumps({"cmd": cmd}),
+                },
+            },
+            session_id=session_id,
+            runtime=runtime,
+        )
+
+    post_a = bridge.map_codex_row(
+        {
+            "timestamp": "2026-02-26T12:40:01.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": "call_shared",
+                "output": "Process exited with code 0\nok",
+            },
+        },
+        session_id=session_a,
+        runtime=runtime,
+    )[0]
+    post_b = bridge.map_codex_row(
+        {
+            "timestamp": "2026-02-26T12:40:02.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": "call_shared",
+                "output": "Process exited with code 0\nok",
+            },
+        },
+        session_id=session_b,
+        runtime=runtime,
+    )[0]
+
+    assert post_a["tool_input"]["cmd"] == "echo a"
+    assert post_b["tool_input"]["cmd"] == "echo b"
+    assert runtime.metrics.post_unmatched_call_id == 0

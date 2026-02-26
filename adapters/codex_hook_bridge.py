@@ -40,8 +40,8 @@ def _now() -> float:
     return time.time()
 
 
-def _sha1_short(s: str) -> str:
-    return hashlib.sha1(s.encode("utf-8", errors="replace")).hexdigest()[:16]
+def _short_hash(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8", errors="replace")).hexdigest()[:16]
 
 
 def _parse_ts(raw: Any) -> float:
@@ -89,7 +89,7 @@ def _truncate_text(value: str, limit: int) -> Dict[str, Any]:
         "text": text[:limit],
         "truncated": True,
         "len": len(text),
-        "hash": hashlib.sha1(text.encode("utf-8", errors="replace")).hexdigest(),
+        "hash": hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest(),
     }
 
 
@@ -329,6 +329,10 @@ def _session_key(root: Path, session_file: Path) -> str:
     return str(rel).replace("\\", ":").replace("/", ":")
 
 
+def _pending_call_key(session_id: str, call_id: str) -> str:
+    return f"{session_id}:{call_id}"
+
+
 def discover_session_files(root: Path) -> List[Path]:
     if not root.exists():
         return []
@@ -365,7 +369,7 @@ def map_codex_row(
         if payload_type == "user_message":
             message = str(payload.get("message") or "").strip()
             if message:
-                trace_id = _sha1_short(f"user:{session_id}:{ts}:{message[:120]}")
+                trace_id = _short_hash(f"user:{session_id}:{ts}:{message[:120]}")
                 event = {
                     "hook_event_name": "UserPromptSubmit",
                     "session_id": session_id,
@@ -377,7 +381,7 @@ def map_codex_row(
                     event["cwd"] = ctx.cwd
                 events.append(event)
         elif payload_type == "task_complete":
-            trace_id = _sha1_short(f"stop:{session_id}:{ts}")
+            trace_id = _short_hash(f"stop:{session_id}:{ts}")
             event = {
                 "hook_event_name": "Stop",
                 "session_id": session_id,
@@ -402,10 +406,10 @@ def map_codex_row(
             else:
                 tool_input_raw = payload.get("input")
             tool_input = _normalize_tool_input(tool_input_raw)
-            trace_id = _sha1_short(f"pre:{session_id}:{call_id}:{tool_name}:{ts}")
+            trace_id = _short_hash(f"pre:{session_id}:{call_id}:{tool_name}:{ts}")
 
             if call_id:
-                runtime.pending_calls[call_id] = PendingCall(
+                runtime.pending_calls[_pending_call_key(session_id, call_id)] = PendingCall(
                     session_id=session_id,
                     tool_name=tool_name,
                     tool_input=tool_input,
@@ -427,7 +431,8 @@ def map_codex_row(
 
         elif payload_type in ("function_call_output", "custom_tool_call_output"):
             call_id = str(payload.get("call_id") or "")
-            pending = runtime.pending_calls.pop(call_id, None) if call_id else None
+            pending_key = _pending_call_key(session_id, call_id) if call_id else ""
+            pending = runtime.pending_calls.pop(pending_key, None) if pending_key else None
             if pending:
                 tool_name = pending.tool_name
                 tool_input = pending.tool_input
@@ -436,7 +441,7 @@ def map_codex_row(
                 runtime.metrics.post_unmatched_call_id += 1
                 tool_name = "unknown_tool"
                 tool_input = {}
-                trace_id = _sha1_short(f"post:{session_id}:{call_id}:{ts}")
+                trace_id = _short_hash(f"post:{session_id}:{call_id}:{ts}")
 
             if payload_type == "function_call_output":
                 output_text = str(payload.get("output") or "")
