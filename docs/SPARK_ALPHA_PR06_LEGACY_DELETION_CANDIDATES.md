@@ -17,7 +17,7 @@ Purpose: explicit legacy advisory-path candidates for PR-10 deletion sweep, tied
 1. [Done] `hooks/observe.py` legacy fallback block to direct `advisor.advise` when orchestrator/engine throws.
 2. [Done] `lib/advisory_engine.py` quick fallback branch (`LIVE_QUICK_FALLBACK_ENABLED`).
 3. [Done] `lib/advisory_engine.py` packet fallback emit branch (`PACKET_FALLBACK_EMIT_ENABLED`).
-4. [Done] `lib/advisory_orchestrator.py` default route now cut over to `alpha` (engine retained only as fallback lane).
+4. [Done] `lib/advisory_orchestrator.py` default route cut over to `alpha`; engine retained only as explicit route (no auto-fallback).
 5. [Pending] `lib/advisory_engine.py` duplicate post-gate dedupe pass if alpha gate+state dedupe proves equivalent or better.
 6. [Pending] `lib/advisory_engine.py` legacy route-only diagnostic fields superseded by alpha comparison report.
 7. [Done] `lib/advisor.py` keyword fallback path for cognitive retrieval removed.

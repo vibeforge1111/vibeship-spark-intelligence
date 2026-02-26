@@ -49,6 +49,7 @@ Completed commits:
 29. `e9a9335` PR-08 follow-up: benchmark metric source support (`path` or `command` + stdout JSON)
 30. `0976ae4` PR-09 follow-up: stale fallback-budget config/docs/observatory surface removed
 31. `a061ca7` PR-10/PR-05 follow-up: deleted keyword cognitive fallback + legacy parser fallback paths
+32. `ca0b106` PR-10 follow-up: removed orchestrator auto-fallback and set startup route default to alpha
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -107,8 +108,8 @@ Current measured state:
 1. Emission reliability and trace binding improved.
 2. Added compact `advisory_engine_alpha` pre-tool path (retrieve -> gate -> synthesize -> emit).
 3. Added route orchestrator for pre/post/prompt flows with canary routing and fallback.
-4. Route default is now `alpha` (with engine fallback retained for rollback safety).
-5. Startup runtime default is now `canary` at 80% alpha for controlled burn-in.
+4. Route default is now `alpha`; automatic alpha->engine fallback in orchestrator is removed.
+5. Startup runtime default is now `alpha` (canary/engine remain explicit opt-in routes).
 6. Expanded alpha ownership for post-tool and user-prompt (legacy delegation removed in alpha handlers).
 7. Remaining: broad legacy advisory file deletion once replay arena + live canary pass.
 
@@ -148,12 +149,13 @@ Current measured state:
 2. Removed legacy `live_quick` fallback route from advisory engine.
 3. Removed packet no-emit fallback emission path; gate suppression now stays explicit no-emit.
 4. Removed dead fallback control surface (unused fallback env/tuneable plumbing + dead helper functions).
-5. Remaining: larger advisory-stack file deletion set after live canary pass.
-6. Pending broader sweep once PR-03/04/05/06 are proven:
+5. Removed orchestrator automatic alpha->engine fallback path (engine now explicit-route only).
+6. Remaining: larger advisory-stack file deletion set after live canary pass.
+7. Pending broader sweep once PR-03/04/05/06 are proven:
    - Legacy advisory stack (targeting 17-file collapse from V2)
    - Redundant noise filters no longer used
    - Legacy storage write paths replaced by SQLite spine
-7. Output required: explicit deleted file list + LOC removed + rollback tag.
+8. Output required: explicit deleted file list + LOC removed + rollback tag.
 
 ## Methods Decision (RL Governor vs VibeForge Loop)
 Default path for alpha:

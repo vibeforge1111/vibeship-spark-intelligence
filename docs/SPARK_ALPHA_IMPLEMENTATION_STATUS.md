@@ -136,7 +136,7 @@ Branch: feat/spark-alpha
 
 18. `1bdedfb` - `feat(alpha-route): default advisory orchestrator to alpha`
 - Changed advisory route default from `engine` to `alpha` in `lib/advisory_orchestrator.py`.
-- Kept alpha->engine fallback behavior intact for safe rollback on runtime errors.
+- At this stage alpha->engine fallback was retained for rollback safety (later removed in `ca0b106`).
 - Updated route-default unit test accordingly (`tests/test_advisory_orchestrator.py`).
 
 19. `0f3740d` - `chore(runtime): default startup advisory route to canary 80`
@@ -220,6 +220,12 @@ Branch: feat/spark-alpha
 - Deleted legacy advisory markdown/engine preview parser fallback paths (`lib/advisory_parser.py`).
 - Kept parser API compatibility while making fallback-only parameters inert.
 
+32. `ca0b106` - `refactor(alpha-route): remove orchestrator auto-fallback and default startup route to alpha`
+- Removed automatic alpha->engine fallback behavior from `lib/advisory_orchestrator.py` for pre-tool, post-tool, and user-prompt flows.
+- Engine path remains available only through explicit route selection (`SPARK_ADVISORY_ROUTE=engine` or canary routing).
+- Updated startup defaults in `start_spark.bat` to `SPARK_ADVISORY_ROUTE=alpha`.
+- Updated orchestrator tests for no-auto-fallback behavior.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -254,6 +260,7 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisory_engine_alpha.py -q` -> `2 passed`
 - `pytest tests/test_vibeforge_helpers.py -q` -> `8 passed`
 - `pytest tests/test_vibeforge_helpers.py tests/test_tuneables_alignment.py -q` -> `9 passed`
+- `pytest tests/test_advisory_orchestrator.py tests/test_advisory_dual_path_router.py tests/test_advisory_engine_alpha.py -q` -> `16 passed`
 - Replay artifacts:
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.json`
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`
