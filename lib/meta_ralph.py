@@ -29,6 +29,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from .noise_classifier import classify as classify_noise
+from .noise_classifier import enforce_enabled as noise_enforce_enabled
+from .noise_classifier import record_shadow as record_noise_shadow
+
 # Tuneables — defaults overridden by ~/.spark/tuneables.json → "meta_ralph" section.
 QUALITY_THRESHOLD = 4
 NEEDS_WORK_THRESHOLD = 2
@@ -862,10 +866,22 @@ class MetaRalph:
 
     def _is_primitive(self, learning: str) -> bool:
         """Check if learning matches primitive patterns."""
+        legacy = False
         for pattern in self.PRIMITIVE_PATTERNS:
             if re.search(pattern, learning or "", flags=re.IGNORECASE):
-                return True
-        return False
+                legacy = True
+                break
+        unified = classify_noise(learning, context="meta_ralph")
+        record_noise_shadow(
+            module="meta_ralph._is_primitive",
+            text=learning,
+            legacy_is_noise=legacy,
+            unified=unified,
+            extra={"legacy_pattern_count": len(self.PRIMITIVE_PATTERNS)},
+        )
+        if noise_enforce_enabled():
+            return bool(unified.is_noise)
+        return legacy
 
     def _hash_learning(self, learning: str) -> str:
         """Create semantic hash for deduplication."""

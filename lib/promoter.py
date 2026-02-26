@@ -29,6 +29,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from .chip_merger import merge_chip_insights
 from .cognitive_learner import CognitiveCategory, CognitiveInsight, get_cognitive_learner
 from .config_authority import resolve_section
+from .noise_classifier import classify as classify_noise
+from .noise_classifier import enforce_enabled as noise_enforce_enabled
+from .noise_classifier import record_shadow as record_noise_shadow
 from .project_profile import load_profile
 
 log = logging.getLogger(__name__)
@@ -181,7 +184,7 @@ def _merge_budgets(defaults: Dict[str, Dict[str, int]], overrides: Dict[str, Any
     return merged
 
 
-def is_operational_insight(insight_text: str) -> bool:
+def _is_operational_insight_legacy(insight_text: str) -> bool:
     """
     Determine if an insight is operational (telemetry) vs cognitive (human-useful).
 
@@ -222,6 +225,21 @@ def is_operational_insight(insight_text: str) -> bool:
         return True
 
     return False
+
+
+def is_operational_insight(insight_text: str) -> bool:
+    """Classify operational telemetry with shadowed unified-noise checks."""
+    legacy = _is_operational_insight_legacy(insight_text)
+    unified = classify_noise(insight_text, context="promoter")
+    record_noise_shadow(
+        module="promoter.is_operational_insight",
+        text=insight_text,
+        legacy_is_noise=legacy,
+        unified=unified,
+    )
+    if noise_enforce_enabled():
+        return bool(unified.is_noise)
+    return legacy
 
 
 def is_unsafe_insight(insight_text: str) -> bool:

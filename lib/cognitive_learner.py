@@ -28,6 +28,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .noise_classifier import classify as classify_noise
+from .noise_classifier import enforce_enabled as noise_enforce_enabled
+from .noise_classifier import record_shadow as record_noise_shadow
+
 INSIGHT_CONTEXT_CHARS = 320
 INSIGHT_EVIDENCE_CHARS = 280
 _EVIDENCE_DROP_LINE_RE = re.compile(
@@ -1486,7 +1490,17 @@ class CognitiveLearner:
 
     def is_noise_insight(self, text: str) -> bool:
         """Public helper for filtering noise insights."""
-        return self._is_noise_insight(text)
+        legacy = self._is_noise_insight(text)
+        unified = classify_noise(text, context="cognitive_learner")
+        record_noise_shadow(
+            module="cognitive_learner._is_noise_insight",
+            text=text,
+            legacy_is_noise=legacy,
+            unified=unified,
+        )
+        if noise_enforce_enabled():
+            return bool(unified.is_noise)
+        return legacy
 
     # =========================================================================
     # RETRIEVAL AND QUERY
@@ -1532,7 +1546,7 @@ class CognitiveLearner:
             ii_text = insight.insight or ""
             if ii_text.startswith("Cycle summary:"):
                 continue
-            if self._is_noise_insight(ii_text):
+            if self.is_noise_insight(ii_text):
                 continue
             # LLM area: generic_demotion — skip generic platitudes during retrieval
             if self._llm_area_generic_demotion(ii_text, context_lower):
@@ -1683,7 +1697,7 @@ class CognitiveLearner:
         Returns None if insight is filtered as noise.
         """
         # FINAL GATE: Block noise patterns that somehow bypassed earlier filters
-        if self._is_noise_insight(insight):
+        if self.is_noise_insight(insight):
             return None
 
         # Block cycle summaries - operational telemetry, not learning
@@ -1804,7 +1818,7 @@ class CognitiveLearner:
         previews: List[str] = []
 
         for key, insight in self.insights.items():
-            if not self._is_noise_insight(insight.insight):
+            if not self.is_noise_insight(insight.insight):
                 continue
             to_remove.append(key)
             cat = insight.category.value
