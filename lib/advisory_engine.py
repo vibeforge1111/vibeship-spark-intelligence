@@ -1150,6 +1150,10 @@ def _apply_emission_quality_filters(
                     )
                     continue
         kept.append(decision)
+
+    # LLM area: suppression_triage — classify suppressed items as fixable vs valid
+    suppressed = _llm_area_suppression_triage(suppressed)
+
     return kept, suppressed
 
 
@@ -1274,7 +1278,8 @@ def _dedupe_scope_key(
             parts.append(intent)
         return ":".join(parts)
 
-    return "global"
+    # LLM area: dedupe_optimize — refine dedupe key with semantic intent
+    return _llm_area_dedupe_optimize("global", session_id, intent_family, task_phase)
 
 
 def _diagnostics_envelope(
@@ -3262,6 +3267,68 @@ def on_user_prompt(
                 **build_error_fields(str(e), "AE_ON_USER_PROMPT_FAILED"),
             },
         )
+
+
+def _llm_area_suppression_triage(suppressed: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """LLM area: classify suppressed items as fixable vs valid suppression.
+
+    When disabled (default), returns suppressed list unchanged.
+    """
+    if not suppressed:
+        return suppressed
+    try:
+        from .llm_dispatch import llm_area_call
+        from .llm_area_prompts import format_prompt
+
+        reasons = [s.get("reason", "") for s in suppressed[:5]]
+        prompt = format_prompt(
+            "suppression_triage",
+            suppression_reasons=str(reasons),
+            count=str(len(suppressed)),
+        )
+        result = llm_area_call("suppression_triage", prompt, fallback="")
+        if result.used_llm and result.text:
+            import json as _json
+            try:
+                data = _json.loads(result.text)
+                if isinstance(data, dict) and data.get("classifications"):
+                    for i, cls in enumerate(data["classifications"][:len(suppressed)]):
+                        if isinstance(cls, dict):
+                            suppressed[i]["triage"] = str(cls.get("classification", "unknown"))
+                            suppressed[i]["fix_hint"] = str(cls.get("fix_hint", ""))
+            except (ValueError, TypeError):
+                pass
+        return suppressed
+    except Exception:
+        return suppressed
+
+
+def _llm_area_dedupe_optimize(
+    base_key: str,
+    session_id: str,
+    intent_family: str,
+    task_phase: str,
+) -> str:
+    """LLM area: refine dedupe key with semantic intent analysis.
+
+    When disabled (default), returns base_key unchanged.
+    """
+    try:
+        from .llm_dispatch import llm_area_call
+        from .llm_area_prompts import format_prompt
+
+        prompt = format_prompt(
+            "dedupe_optimize",
+            base_key=base_key,
+            intent_family=intent_family or "unknown",
+            task_phase=task_phase or "unknown",
+        )
+        result = llm_area_call("dedupe_optimize", prompt, fallback=base_key)
+        if result.used_llm and result.text:
+            return result.text.strip()[:200]
+        return base_key
+    except Exception:
+        return base_key
 
 
 def _llm_area_implicit_feedback_interpret(
