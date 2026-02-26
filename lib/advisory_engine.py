@@ -173,37 +173,6 @@ except Exception:
     INLINE_PREFETCH_MAX_JOBS = 1
 
 
-def _emit_advisory_compat(
-    emit_fn,
-    gate_result,
-    synthesized_text: str,
-    advice_items: List[Any],
-    *,
-    trace_id: Optional[str],
-    tool_name: str,
-    route: str,
-    task_plane: str,
-) -> bool:
-    try:
-        return bool(
-            emit_fn(
-                gate_result,
-                synthesized_text,
-                advice_items,
-                trace_id=trace_id,
-                tool_name=tool_name,
-                route=route,
-                task_plane=task_plane,
-            )
-        )
-    except TypeError as exc:
-        msg = str(exc)
-        if "unexpected keyword argument" not in msg and "positional arguments but" not in msg:
-            raise
-        # Backward-compatible call shape used by older tests/helpers.
-        return bool(emit_fn(gate_result, synthesized_text, advice_items))
-
-
 def _global_recently_emitted(
     *,
     tool_name: str,
@@ -2299,8 +2268,8 @@ def on_pre_tool(
             log_debug("advisory_engine", "SAFETY_CHECK_EXCEPTION_fail_open", safety_err)
 
         t_emit = time.time() * 1000.0
-        emitted = _emit_advisory_compat(
-            emit_advisory,
+        emitted = bool(
+            emit_advisory(
             gate_result,
             synth_text,
             advice_items,
@@ -2308,6 +2277,7 @@ def on_pre_tool(
             tool_name=tool_name,
             route=route,
             task_plane=task_plane,
+            )
         )
         _mark("emit", t_emit)
         effective_text = str(synth_text or "").strip()

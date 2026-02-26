@@ -198,7 +198,7 @@ def test_on_pre_tool_global_dedupe_filters_emitted(monkeypatch, tmp_path):
 
     captured = {}
 
-    def fake_emit_advisory(gate_result, synth_text, advice_items, authority=None):
+    def fake_emit_advisory(gate_result, synth_text, advice_items, **_kwargs):
         captured["ids"] = [d.advice_id for d in (gate_result.emitted or [])]
         return True
 
@@ -307,7 +307,7 @@ def test_on_pre_tool_global_dedupe_filters_by_text_sig(monkeypatch, tmp_path):
 
     captured = {}
 
-    def fake_emit_advisory(gate_result, synth_text, advice_items, authority=None):
+    def fake_emit_advisory(gate_result, synth_text, advice_items, **_kwargs):
         captured["ids"] = [d.advice_id for d in (gate_result.emitted or [])]
         return True
 

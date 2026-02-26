@@ -127,7 +127,10 @@ def test_pre_tool_uses_packet_path_when_available(monkeypatch, tmp_path):
     )
     monkeypatch.setattr("lib.advisor.advise_on_tool", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("live should not be called")))
     monkeypatch.setattr("lib.advisory_synthesizer.synthesize", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("synth should not be called")))
-    monkeypatch.setattr("lib.advisory_emitter.emit_advisory", lambda gate_result, synthesized_text, advice_items=None: True)
+    monkeypatch.setattr(
+        "lib.advisory_emitter.emit_advisory",
+        lambda gate_result, synthesized_text, advice_items=None, **_k: True,
+    )
 
     text = engine.on_pre_tool("s1", "Edit", {"file_path": "x.py"})
     assert text.startswith("Use packet guidance.")
@@ -166,7 +169,10 @@ def test_pre_tool_falls_back_to_live_and_persists_packet(monkeypatch, tmp_path):
         ],
     )
     monkeypatch.setattr("lib.advisory_synthesizer.synthesize", lambda *a, **k: "Live synthesized guidance.")
-    monkeypatch.setattr("lib.advisory_emitter.emit_advisory", lambda gate_result, synthesized_text, advice_items=None: True)
+    monkeypatch.setattr(
+        "lib.advisory_emitter.emit_advisory",
+        lambda gate_result, synthesized_text, advice_items=None, **_k: True,
+    )
 
     text = engine.on_pre_tool("s2", "Read", {"file_path": "y.py"})
     assert text.startswith("Live synthesized guidance.")
@@ -206,7 +212,10 @@ def test_pre_tool_live_path_propagates_include_mind_policy(monkeypatch, tmp_path
 
     monkeypatch.setattr("lib.advisor.advise_on_tool", _live_advice)
     monkeypatch.setattr("lib.advisory_synthesizer.synthesize", lambda *a, **k: "Live synthesized guidance.")
-    monkeypatch.setattr("lib.advisory_emitter.emit_advisory", lambda gate_result, synthesized_text, advice_items=None: True)
+    monkeypatch.setattr(
+        "lib.advisory_emitter.emit_advisory",
+        lambda gate_result, synthesized_text, advice_items=None, **_k: True,
+    )
 
     text = engine.on_pre_tool("s2b", "Read", {"file_path": "y.py"})
     assert text.startswith("Live synthesized guidance.")
@@ -242,7 +251,7 @@ def test_pre_tool_live_path_uses_fallback_when_synth_empty(monkeypatch, tmp_path
 
     capture = {"synth_text": None}
 
-    def _fake_emit(gate_result, synthesized_text, advice_items=None):
+    def _fake_emit(gate_result, synthesized_text, advice_items=None, **_k):
         capture["synth_text"] = synthesized_text
         return bool(str(synthesized_text or "").strip())
 
@@ -288,7 +297,10 @@ def test_pre_tool_resolves_missing_trace_id_for_engine_and_feedback(monkeypatch,
         ],
     )
     monkeypatch.setattr("lib.advisory_synthesizer.synthesize", lambda *a, **k: "Trace linked synthesis.")
-    monkeypatch.setattr("lib.advisory_emitter.emit_advisory", lambda gate_result, synthesized_text, advice_items=None: True)
+    monkeypatch.setattr(
+        "lib.advisory_emitter.emit_advisory",
+        lambda gate_result, synthesized_text, advice_items=None, **_k: True,
+    )
 
     text = engine.on_pre_tool("s2c", "Read", {"file_path": "z.py"})
     assert text.startswith("Trace linked synthesis.")
