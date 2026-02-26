@@ -75,7 +75,7 @@ def _check_single_instance() -> bool:
     # Check if another watchdog is already running
     if PID_FILE.exists():
         try:
-            old_pid = int(PID_FILE.read_text().strip())
+            old_pid = int(PID_FILE.read_text(encoding="utf-8").strip())
             if old_pid == os.getpid():
                 return True
             # Check if that process is still alive
@@ -98,7 +98,7 @@ def _check_single_instance() -> bool:
             pass  # Couldn't read/parse PID, proceed anyway
 
     # Write our PID
-    PID_FILE.write_text(str(os.getpid()))
+    PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
     return True
 
 
@@ -114,7 +114,7 @@ def _rewrite_pid_file() -> None:
     """Best-effort PID refresh so operators don't get stuck with stale PIDs after a crash/duplicate exit."""
     try:
         PID_FILE.parent.mkdir(parents=True, exist_ok=True)
-        PID_FILE.write_text(str(os.getpid()))
+        PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
     except Exception:
         pass
 
