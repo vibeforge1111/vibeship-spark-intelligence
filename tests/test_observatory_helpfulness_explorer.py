@@ -123,3 +123,59 @@ def test_generate_helpfulness_explorer_section(monkeypatch, tmp_path: Path) -> N
 
     master_index = (vault_dir / "_observatory" / "explore" / "_index.md").read_text(encoding="utf-8")
     assert "[[helpfulness/_index]]" in master_index
+
+
+def test_export_advisory_collapses_duplicates_and_repairs_text(monkeypatch, tmp_path: Path) -> None:
+    spark_dir = tmp_path / ".spark"
+    monkeypatch.setattr(explorer, "_SD", spark_dir)
+
+    _write_json(
+        spark_dir / "advisor" / "effectiveness.json",
+        {
+            "total_advice_given": 6,
+            "total_followed": 2,
+            "total_helpful": 1,
+            "by_source": {"cognitive": {"total": 6, "helpful": 1}},
+        },
+    )
+    _write_json(spark_dir / "advisor" / "metrics.json", {})
+    _write_json(spark_dir / "advisor" / "helpfulness_summary.json", {})
+
+    mojibake = (
+        "Reasoning: query parsing takes 200ms+ and hits are 80%+ "
+        "\u00e2\u20ac\u201d reduces p95 latency by 60%"
+    )
+    _write_jsonl(
+        spark_dir / "advisor" / "advice_log.jsonl",
+        [
+            {
+                "timestamp": "2026-02-26T11:15:05",
+                "tool": "task",
+                "advice_texts": [mojibake, "Update delta quality signal"],
+                "sources": ["cognitive", "bank"],
+            },
+            {
+                "timestamp": "2026-02-26T11:14:39",
+                "tool": "task",
+                "advice_texts": [mojibake, "Update delta quality signal"],
+                "sources": ["cognitive", "bank"],
+            },
+            {
+                "timestamp": "2026-02-26T11:14:04",
+                "tool": "task",
+                "advice_texts": ["Verify functionality with bash check"],
+                "sources": ["eidos"],
+            },
+        ],
+    )
+
+    explore_dir = tmp_path / "vault" / "_observatory" / "explore"
+    count = explorer._export_advisory(explore_dir, advice_limit=50)
+    assert count == 1
+
+    content = (explore_dir / "advisory" / "_index.md").read_text(encoding="utf-8")
+    assert "duplicates collapsed" in content
+    assert content.count("### ") == 2
+    assert "repeated 2x" in content
+    assert "\u00e2\u20ac\u201d" not in content
+    assert " - reduces p95 latency by 60%" in content

@@ -10,8 +10,9 @@ import os
 import re
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .advisory_quarantine import record_quarantine_item
 from .diagnostics import log_debug
@@ -78,6 +79,36 @@ _AUTHORITY_RANK = {
     "warning": 3,
     "block": 4,
 }
+
+_MOJIBAKE_REPLACEMENTS = {
+    "\u00e2\u20ac\u201d": "-",
+    "\u00e2\u20ac\u201c": "-",
+    "\u00e2\u20ac\u02dc": "'",
+    "\u00e2\u20ac\u2122": "'",
+    "\u00e2\u20ac\u0153": '"',
+    "\u00e2\u20ac\u009d": '"',
+    "\u00e2\u20ac\u00a6": "...",
+    "\u00c2 ": " ",
+    "\u00c2": "",
+}
+
+_PLACEHOLDER_SNIPPETS = (
+    "[reason]",
+    "<task-",
+    "<output-file>",
+    "<status>",
+    "<summary>",
+)
+_UNSAFE_PRINCIPLE_RE = re.compile(r"\b(skip|disable|ignore)\s+(?:all\s+)?error handling\b", re.I)
+_FAILURE_TELEMETRY_RE = re.compile(r"^\s*(read|bash)\s+failed\b", re.I)
+_FAILURE_TELEMETRY_TOKENS = (
+    "success rate",
+    "most common",
+    "exit code",
+    "exceeds maximum",
+    "exceeds maximum allowed tokens",
+    "tokens",
+)
 
 # Self-evolution speed lever: stable exact-keying for packets. When enabled, the session key includes
 # the recent tool sequence (higher specificity, lower cache hit rate). Default: OFF.
@@ -335,7 +366,7 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
         # Fall through to resolver so schema defaults still apply.
         pass
     from .config_authority import resolve_section
-    from .config_authority import env_bool, env_float, env_int
+    from .config_authority import env_bool, env_float, env_int, env_str
     cfg = resolve_section(
         "advisory_engine",
         runtime_path=tuneables,
@@ -356,6 +387,7 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
             "delivery_stale_s": env_float("SPARK_ADVISORY_STALE_S"),
             "advisory_text_repeat_cooldown_s": env_float("SPARK_ADVISORY_TEXT_REPEAT_COOLDOWN_S"),
             "global_dedupe_cooldown_s": env_float("SPARK_ADVISORY_GLOBAL_DEDUPE_COOLDOWN_S"),
+            "global_dedupe_scope": env_str("SPARK_ADVISORY_GLOBAL_DEDUPE_SCOPE", lower=True),
         },
     ).data
     return cfg if isinstance(cfg, dict) else {}
@@ -392,6 +424,7 @@ def apply_engine_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     global DELIVERY_STALE_SECONDS
     global ADVISORY_TEXT_REPEAT_COOLDOWN_S
     global GLOBAL_DEDUPE_COOLDOWN_S
+    global GLOBAL_DEDUPE_SCOPE
     global FORCE_PROGRAMMATIC_SYNTH
     global SELECTIVE_AI_SYNTH_ENABLED
     global SELECTIVE_AI_MIN_REMAINING_MS
@@ -576,6 +609,14 @@ def apply_engine_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
             applied.append("global_dedupe_cooldown_s")
         except Exception:
             warnings.append("invalid_global_dedupe_cooldown_s")
+
+    if "global_dedupe_scope" in cfg:
+        scope = str(cfg.get("global_dedupe_scope") or "").strip().lower()
+        if scope in {"global", "tree", "contextual"}:
+            GLOBAL_DEDUPE_SCOPE = scope
+            applied.append("global_dedupe_scope")
+        else:
+            warnings.append("invalid_global_dedupe_scope")
     return {"applied": applied, "warnings": warnings}
 
 
@@ -602,6 +643,7 @@ def get_engine_config() -> Dict[str, Any]:
         "delivery_stale_s": float(DELIVERY_STALE_SECONDS),
         "advisory_text_repeat_cooldown_s": float(ADVISORY_TEXT_REPEAT_COOLDOWN_S),
         "global_dedupe_cooldown_s": float(GLOBAL_DEDUPE_COOLDOWN_S),
+        "global_dedupe_scope": str(GLOBAL_DEDUPE_SCOPE),
     }
 
 
@@ -849,6 +891,255 @@ def _text_fingerprint(text: str) -> str:
     return hashlib.sha1(cleaned.encode("utf-8", errors="ignore")).hexdigest()[:16]
 
 
+def _parse_timestamp(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return 0.0
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return float(text)
+    except Exception:
+        pass
+    try:
+        return datetime.fromisoformat(text).timestamp()
+    except Exception:
+        return 0.0
+
+
+def _normalize_advice_text(text: str) -> str:
+    cleaned = str(text or "").replace("\n", " ").replace("\r", " ").strip()
+    if not cleaned:
+        return ""
+    if any(tok in cleaned for tok in ("\u00c3", "\u00c2", "\u00e2")):
+        try:
+            decoded = cleaned.encode("latin-1").decode("utf-8")
+            if decoded:
+                cleaned = decoded
+        except Exception:
+            pass
+    for bad, good in _MOJIBAKE_REPLACEMENTS.items():
+        cleaned = cleaned.replace(bad, good)
+    cleaned = (
+        cleaned.replace("\u2014", "-")
+        .replace("\u2013", "-")
+        .replace("\u2018", "'")
+        .replace("\u2019", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\u2026", "...")
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _classify_emission_quality_issue(text: str) -> Optional[str]:
+    content = _normalize_advice_text(text).lower()
+    if not content:
+        return "empty_text"
+    if any(snippet in content for snippet in _PLACEHOLDER_SNIPPETS):
+        return "template_placeholder"
+    if "failed with approach: unknow" in content or "resolved by: unknow" in content:
+        return "template_placeholder"
+    if _UNSAFE_PRINCIPLE_RE.search(content):
+        return "unsafe_principle"
+    if _FAILURE_TELEMETRY_RE.search(content) and any(tok in content for tok in _FAILURE_TELEMETRY_TOKENS):
+        return "operational_noise"
+    return None
+
+
+def _repeat_identity_from_fields(*, insight_key: str, text: str, advice_id: str) -> str:
+    ik = str(insight_key or "").strip().lower()
+    if ik:
+        return f"insight:{ik}"
+    text_sig = _text_fingerprint(_normalize_advice_text(text))
+    if text_sig:
+        return f"text:{text_sig}"
+    aid = str(advice_id or "").strip().lower()
+    if aid:
+        return f"advice:{aid}"
+    return ""
+
+
+def _repeat_identity_for_item(item: Any, *, advice_id: str) -> str:
+    return _repeat_identity_from_fields(
+        insight_key=str(getattr(item, "insight_key", "") or ""),
+        text=str(getattr(item, "text", "") or ""),
+        advice_id=advice_id,
+    )
+
+
+def _load_recent_delivery_identity_ts(*, max_rows: int = 500) -> Dict[str, float]:
+    try:
+        from .advisor import RECENT_ADVICE_LOG
+    except Exception:
+        return {}
+    latest: Dict[str, float] = {}
+    for row in _tail_jsonl(RECENT_ADVICE_LOG, max_rows):
+        ts = _parse_timestamp(row.get("ts") if row.get("ts") is not None else row.get("timestamp"))
+        if ts <= 0:
+            continue
+        advice_ids = row.get("advice_ids") or []
+        insight_keys = row.get("insight_keys") or []
+        advice_texts = row.get("advice_texts") or []
+        if not isinstance(advice_ids, list):
+            advice_ids = []
+        if not isinstance(insight_keys, list):
+            insight_keys = []
+        if not isinstance(advice_texts, list):
+            advice_texts = []
+        max_items = max(len(advice_ids), len(insight_keys), len(advice_texts))
+        for idx in range(max_items):
+            identity = _repeat_identity_from_fields(
+                insight_key=str(insight_keys[idx] if idx < len(insight_keys) else ""),
+                text=str(advice_texts[idx] if idx < len(advice_texts) else ""),
+                advice_id=str(advice_ids[idx] if idx < len(advice_ids) else ""),
+            )
+            if not identity:
+                continue
+            prev = float(latest.get(identity, 0.0) or 0.0)
+            if ts > prev:
+                latest[identity] = ts
+    return latest
+
+
+def _load_recent_outcome_update_ts(*, max_records: int = 800) -> Tuple[Dict[str, float], Dict[str, float]]:
+    path = Path.home() / ".spark" / "meta_ralph" / "outcome_tracking.json"
+    if not path.exists():
+        return {}, {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}, {}
+    rows = data.get("records") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return {}, {}
+    by_insight: Dict[str, float] = {}
+    by_advice_id: Dict[str, float] = {}
+    for rec in rows[-max(1, int(max_records)):]:
+        if not isinstance(rec, dict):
+            continue
+        if not bool(rec.get("acted_on")):
+            continue
+        outcome = str(rec.get("outcome") or "").strip().lower()
+        if outcome not in {"good", "bad", "neutral"}:
+            continue
+        ts = _parse_timestamp(rec.get("outcome_at") if rec.get("outcome_at") is not None else rec.get("retrieved_at"))
+        if ts <= 0:
+            continue
+        ik = str(rec.get("insight_key") or "").strip().lower()
+        if ik:
+            prev_ik = float(by_insight.get(ik, 0.0) or 0.0)
+            if ts > prev_ik:
+                by_insight[ik] = ts
+        aid = str(rec.get("learning_id") or "").strip().lower()
+        if aid:
+            prev_aid = float(by_advice_id.get(aid, 0.0) or 0.0)
+            if ts > prev_aid:
+                by_advice_id[aid] = ts
+    return by_insight, by_advice_id
+
+
+def _has_outcome_update_since_emit(
+    *,
+    item: Any,
+    advice_id: str,
+    last_emit_ts: float,
+    outcome_ts_by_insight: Dict[str, float],
+    outcome_ts_by_advice_id: Dict[str, float],
+) -> bool:
+    ik = str(getattr(item, "insight_key", "") or "").strip().lower()
+    aid = str(advice_id or "").strip().lower()
+    latest = 0.0
+    if ik:
+        latest = max(latest, float(outcome_ts_by_insight.get(ik, 0.0) or 0.0))
+    if aid:
+        latest = max(latest, float(outcome_ts_by_advice_id.get(aid, 0.0) or 0.0))
+    return latest > float(last_emit_ts)
+
+
+def _apply_emission_quality_filters(
+    emitted_decisions: List[Any],
+    advice_by_id: Dict[str, Any],
+    *,
+    now_ts: Optional[float] = None,
+    cooldown_s: Optional[float] = None,
+    recent_identity_ts: Optional[Dict[str, float]] = None,
+    outcome_ts_by_insight: Optional[Dict[str, float]] = None,
+    outcome_ts_by_advice_id: Optional[Dict[str, float]] = None,
+) -> Tuple[List[Any], List[Dict[str, Any]]]:
+    kept: List[Any] = []
+    suppressed: List[Dict[str, Any]] = []
+    now_value = float(now_ts if now_ts is not None else time.time())
+    cooldown_value = float(cooldown_s if cooldown_s is not None else ADVISORY_TEXT_REPEAT_COOLDOWN_S)
+    recent_map = recent_identity_ts if isinstance(recent_identity_ts, dict) else {}
+    outcome_insight = outcome_ts_by_insight if isinstance(outcome_ts_by_insight, dict) else {}
+    outcome_advice = outcome_ts_by_advice_id if isinstance(outcome_ts_by_advice_id, dict) else {}
+
+    for decision in list(emitted_decisions or []):
+        advice_id = str(getattr(decision, "advice_id", "") or "").strip()
+        item = advice_by_id.get(advice_id)
+        if item is None:
+            try:
+                decision.emit = False
+                decision.reason = "emission_quality_filter: missing advice item"
+            except Exception:
+                pass
+            suppressed.append({"advice_id": advice_id, "reason": "missing_item"})
+            continue
+
+        raw_text = str(getattr(item, "text", "") or "")
+        normalized_text = _normalize_advice_text(raw_text)
+        if normalized_text and normalized_text != raw_text:
+            try:
+                item.text = normalized_text
+            except Exception:
+                pass
+        issue = _classify_emission_quality_issue(normalized_text)
+        if issue:
+            try:
+                decision.emit = False
+                decision.reason = f"emission_quality_filter: {issue}"
+            except Exception:
+                pass
+            suppressed.append({"advice_id": advice_id, "reason": issue})
+            continue
+
+        identity = _repeat_identity_for_item(item, advice_id=advice_id)
+        last_emit_ts = float(recent_map.get(identity, 0.0) or 0.0) if identity else 0.0
+        if identity and cooldown_value > 0 and last_emit_ts > 0:
+            repeat_age_s = now_value - last_emit_ts
+            if 0 <= repeat_age_s < cooldown_value:
+                if not _has_outcome_update_since_emit(
+                    item=item,
+                    advice_id=advice_id,
+                    last_emit_ts=last_emit_ts,
+                    outcome_ts_by_insight=outcome_insight,
+                    outcome_ts_by_advice_id=outcome_advice,
+                ):
+                    try:
+                        decision.emit = False
+                        decision.reason = "emission_quality_filter: repeat_without_outcome_change"
+                    except Exception:
+                        pass
+                    suppressed.append(
+                        {
+                            "advice_id": advice_id,
+                            "reason": "insight_repeat_cooldown",
+                            "repeat_age_s": round(float(repeat_age_s), 2),
+                            "repeat_cooldown_s": round(float(cooldown_value), 2),
+                            "identity": identity,
+                        }
+                    )
+                    continue
+        kept.append(decision)
+    return kept, suppressed
+
+
 def _duplicate_repeat_state(state, advisory_text: str) -> Dict[str, Any]:
     now = time.time()
     fingerprint = _text_fingerprint(advisory_text)
@@ -937,12 +1228,39 @@ def _session_lineage(session_id: str) -> Dict[str, Any]:
     }
 
 
-def _dedupe_scope_key(session_id: str) -> str:
+def _dedupe_scope_key(
+    session_id: str,
+    *,
+    intent_family: str = "",
+    task_phase: str = "",
+) -> str:
+    """Build a scope key for cross-session dedupe filtering.
+
+    Modes:
+      - "global"     — one shared scope for all sessions.
+      - "tree"       — scoped to agent tree (main + subagents).
+      - "contextual" — scoped to agent tree *plus* intent_family and task_phase,
+                        so the same advice can resurface when context changes.
+    """
     scope = str(GLOBAL_DEDUPE_SCOPE or "global").strip().lower()
+
     if scope == "tree":
         lineage = _session_lineage(session_id)
         key = str(lineage.get("session_tree_key") or "").strip()
         return key or str(session_id or "")
+
+    if scope == "contextual":
+        lineage = _session_lineage(session_id)
+        tree_key = str(lineage.get("session_tree_key") or "").strip() or str(session_id or "")
+        parts = [tree_key]
+        phase = str(task_phase or "").strip().lower()
+        intent = str(intent_family or "").strip().lower()
+        if phase:
+            parts.append(phase)
+        if intent:
+            parts.append(intent)
+        return ":".join(parts)
+
     return "global"
 
 
@@ -1705,7 +2023,7 @@ def on_pre_tool(
             try:
                 _dedupe_now = time.time()
                 _dedupe_cooldown = float(GLOBAL_DEDUPE_COOLDOWN_S)
-                _dedupe_scope = _dedupe_scope_key(session_id)
+                _dedupe_scope = _dedupe_scope_key(session_id, intent_family=intent_family, task_phase=str(getattr(state, "task_phase", "") or ""))
                 for row in reversed(_tail_jsonl(GLOBAL_DEDUPE_LOG, 400)):
                     try:
                         aid = str(row.get("advice_id") or "").strip()
@@ -2057,7 +2375,7 @@ def on_pre_tool(
             ):
                 now_ts = time.time()
                 cooldown = float(GLOBAL_DEDUPE_COOLDOWN_S)
-                dedupe_scope = _dedupe_scope_key(session_id)
+                dedupe_scope = _dedupe_scope_key(session_id, intent_family=intent_family, task_phase=str(getattr(state, "task_phase", "") or ""))
                 kept = []
                 suppressed: List[Dict[str, Any]] = []
                 for decision in list(gate_result.emitted or []):
@@ -2164,6 +2482,97 @@ def on_pre_tool(
                     emitted_advice_source_counts = _advice_source_counts(emitted_advice)
         except Exception as exc:
             log_debug("advisory_engine", f"emission filtering failed: {exc}", None)
+
+        # Post-gate quality filter: block placeholders/noise/unsafe text and
+        # enforce per-insight repeat cooldown unless outcome changed.
+        try:
+            if gate_result.emitted:
+                now_ts = time.time()
+                recent_identity_ts = _load_recent_delivery_identity_ts(max_rows=600)
+                outcome_ts_by_insight, outcome_ts_by_advice_id = _load_recent_outcome_update_ts(
+                    max_records=900
+                )
+                kept, suppressed = _apply_emission_quality_filters(
+                    list(gate_result.emitted or []),
+                    advice_by_id,
+                    now_ts=now_ts,
+                    cooldown_s=float(ADVISORY_TEXT_REPEAT_COOLDOWN_S),
+                    recent_identity_ts=recent_identity_ts,
+                    outcome_ts_by_insight=outcome_ts_by_insight,
+                    outcome_ts_by_advice_id=outcome_ts_by_advice_id,
+                )
+                if suppressed:
+                    _record_advisory_gate_drop(
+                        stage="emission_quality_filtered",
+                        reason="AE_EMIT_QUALITY_FILTERED",
+                        tool_name=tool_name,
+                        intent_family=intent_family,
+                        task_plane=task_plane,
+                        route=route,
+                        packet_id=packet_id,
+                        advice_items=advice_items,
+                        extras={
+                            "suppressed_count": len(suppressed),
+                            "suppressed": suppressed[:8],
+                            "cooldown_s": round(float(ADVISORY_TEXT_REPEAT_COOLDOWN_S), 2),
+                        },
+                    )
+                    if not kept:
+                        _record_advisory_decision_ledger(
+                            stage="emission_quality_filtered",
+                            outcome="blocked",
+                            tool_name=tool_name,
+                            intent_family=intent_family,
+                            task_plane=task_plane,
+                            route=route,
+                            packet_id=packet_id,
+                            advice_items=advice_items,
+                            gate_result=gate_result,
+                            session_id=session_id,
+                            trace_id=resolved_trace_id,
+                            extras={
+                                "error_kind": "quality",
+                                "error_code": "AE_EMIT_QUALITY_FILTERED",
+                                "suppressed": suppressed[:8],
+                                "cooldown_s": round(float(ADVISORY_TEXT_REPEAT_COOLDOWN_S), 2),
+                            },
+                        )
+                        save_state(state)
+                        _log_engine_event(
+                            "quality_filtered_suppressed",
+                            tool_name,
+                            len(advice_items),
+                            0,
+                            start_ms,
+                            extra={
+                                **_diag(route),
+                                "route": route,
+                                "intent_family": intent_family,
+                                "task_plane": task_plane,
+                                "packet_id": packet_id,
+                                "stage_ms": stage_ms,
+                                "delivery_mode": "none",
+                                "advice_source_counts": advice_source_counts,
+                                "error_kind": "quality",
+                                "error_code": "AE_EMIT_QUALITY_FILTERED",
+                                "suppressed_count": len(suppressed),
+                                "suppressed": suppressed[:8],
+                            },
+                        )
+                        _record_rejection("emission_quality_filtered")
+                        return None
+
+                    gate_result.emitted = kept
+                    emitted_advice = []
+                    for decision in gate_result.emitted:
+                        item = advice_by_id.get(decision.advice_id)
+                        if item is None:
+                            continue
+                        item._authority = decision.authority
+                        emitted_advice.append(item)
+                    emitted_advice_source_counts = _advice_source_counts(emitted_advice)
+        except Exception as exc:
+            log_debug("advisory_engine", f"emission quality filter failed: {exc}", None)
 
         elapsed_ms = (time.time() * 1000.0) - start_ms
         remaining_ms = MAX_ENGINE_MS - elapsed_ms
@@ -2366,7 +2775,7 @@ def on_pre_tool(
         # Initialize before conditional paths to avoid stale runtime crashes
         # when no advisories are emitted in this pass.
         shown_ids: List[str] = []
-        dedupe_scope = _dedupe_scope_key(session_id)
+        dedupe_scope = _dedupe_scope_key(session_id, intent_family=intent_family, task_phase=str(getattr(state, "task_phase", "") or ""))
         session_lineage = _session_lineage(session_id)
         if emitted:
             shown_ids = [d.advice_id for d in gate_result.emitted]

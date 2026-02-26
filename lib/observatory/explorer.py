@@ -18,6 +18,7 @@ import re
 import sqlite3
 import time
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -27,6 +28,126 @@ from .readers import _load_json, _tail_jsonl, _count_jsonl, _file_size
 
 
 _SD = spark_dir()
+
+
+_MOJIBAKE_REPLACEMENTS = {
+    "\u00e2\u20ac\u201d": "-",
+    "\u00e2\u20ac\u201c": "-",
+    "\u00e2\u20ac\u02dc": "'",
+    "\u00e2\u20ac\u2122": "'",
+    "\u00e2\u20ac\u0153": '"',
+    "\u00e2\u20ac\u009d": '"',
+    "\u00e2\u20ac\u00a6": "...",
+    "\u00c2 ": " ",
+    "\u00c2": "",
+}
+
+_UNICODE_PUNCT_TRANSLATE = str.maketrans({
+    "\u2014": "-",
+    "\u2013": "-",
+    "\u2018": "'",
+    "\u2019": "'",
+    "\u201c": '"',
+    "\u201d": '"',
+    "\u2026": "...",
+})
+
+
+def _parse_ts(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return 0.0
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return float(text)
+    except Exception:
+        pass
+    try:
+        return datetime.fromisoformat(text).timestamp()
+    except Exception:
+        return 0.0
+
+
+def _clean_text_preview(value: Any, max_len: int = 200) -> str:
+    text = str(value or "").replace("\n", " ").replace("\r", " ").strip()
+    if not text:
+        return ""
+    # Attempt to repair classic UTF-8/latin-1 mojibake first.
+    if any(tok in text for tok in ("\u00c3", "\u00c2", "\u00e2")):
+        try:
+            repaired = text.encode("latin-1").decode("utf-8")
+            if repaired:
+                text = repaired
+        except Exception:
+            pass
+    for bad, good in _MOJIBAKE_REPLACEMENTS.items():
+        text = text.replace(bad, good)
+    text = text.translate(_UNICODE_PUNCT_TRANSLATE)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:max_len]
+
+
+def _collapse_recent_advice(entries: list[dict[str, Any]], max_items: int = 50) -> tuple[list[dict[str, Any]], int]:
+    collapsed: dict[str, dict[str, Any]] = {}
+    considered = 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        texts = entry.get("advice_texts") or []
+        if not isinstance(texts, list) or not texts:
+            continue
+        sources = entry.get("sources") or []
+        if not isinstance(sources, list):
+            sources = []
+        pairs: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for idx, raw_text in enumerate(texts[:5]):
+            txt = _clean_text_preview(raw_text, max_len=200)
+            if not txt:
+                continue
+            src = _clean_text_preview(sources[idx] if idx < len(sources) else "?", max_len=40) or "?"
+            pair = (src, txt)
+            if pair in seen:
+                continue
+            seen.add(pair)
+            pairs.append(pair)
+        if not pairs:
+            continue
+        tool = _clean_text_preview(entry.get("tool", "?"), max_len=40) or "?"
+        ts_raw = entry.get("timestamp")
+        ts = _parse_ts(ts_raw if ts_raw is not None else entry.get("ts"))
+        ts_text = str(ts_raw if ts_raw is not None else entry.get("ts") or "?")[:19]
+        signature = json.dumps({"tool": tool.lower(), "pairs": pairs}, ensure_ascii=True, sort_keys=True)
+        considered += 1
+        agg = collapsed.get(signature)
+        if agg is None:
+            collapsed[signature] = {
+                "tool": tool,
+                "pairs": pairs,
+                "ts": ts,
+                "ts_text": ts_text,
+                "count": 1,
+            }
+            continue
+        agg["count"] = int(agg.get("count", 0)) + 1
+        if ts >= float(agg.get("ts", 0.0)):
+            agg["ts"] = ts
+            agg["ts_text"] = ts_text
+            agg["tool"] = tool
+            agg["pairs"] = pairs
+
+    rows = sorted(
+        collapsed.values(),
+        key=lambda r: (float(r.get("ts", 0.0)), int(r.get("count", 0))),
+        reverse=True,
+    )[:max_items]
+    duplicates_collapsed = max(0, considered - len(rows))
+    return rows, duplicates_collapsed
 
 
 def _slug(text: str, max_len: int = 60) -> str:
@@ -664,23 +785,25 @@ def _export_advisory(explore_dir: Path, advice_limit: int) -> int:
         for src, stats in sorted(by_source.items(), key=lambda x: -x[1].get("total", 0)):
             t = stats.get("total", 0)
             h = stats.get("helpful", 0)
-            rate = f"{h/max(t,1)*100:.1f}%" if t > 0 else "—"
+            rate = f"{h/max(t,1)*100:.1f}%" if t > 0 else "-"
             index.append(f"| **{src}** | {fmt_num(t)} | {fmt_num(h)} | {rate} |")
         index.append("")
 
     # Recent advice entries
     advice_entries = [r for r in recent if "advice_texts" in r]
-    if advice_entries:
-        index.append(f"## Recent Advice ({len(advice_entries)} entries)\n")
-        for i, entry in enumerate(reversed(advice_entries[-50:]), 1):
+    collapsed_entries, collapsed_dupes = _collapse_recent_advice(advice_entries, max_items=50)
+    if collapsed_entries:
+        header = f"## Recent Advice ({len(collapsed_entries)} entries)"
+        if collapsed_dupes > 0:
+            header += f" - {collapsed_dupes} duplicates collapsed"
+        index.append(header + "\n")
+        for i, entry in enumerate(collapsed_entries, 1):
             tool = entry.get("tool", "?")
-            ts = entry.get("timestamp", "?")[:19]
-            texts = entry.get("advice_texts", [])
-            sources = entry.get("sources", [])
-            index.append(f"### {i}. {tool} ({ts})\n")
-            for j, txt in enumerate(texts[:5]):
-                src = sources[j] if j < len(sources) else "?"
-                index.append(f"- **[{src}]** {txt[:200]}")
+            ts = str(entry.get("ts_text", "?"))[:19]
+            repeat_note = f", repeated {int(entry.get('count', 1))}x" if int(entry.get("count", 1)) > 1 else ""
+            index.append(f"### {i}. {tool} ({ts}{repeat_note})\n")
+            for src, txt in (entry.get("pairs") or []):
+                index.append(f"- **[{src}]** {txt}")
             index.append("")
 
     (out / "_index.md").write_text("\n".join(index), encoding="utf-8")
