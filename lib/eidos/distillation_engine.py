@@ -34,6 +34,33 @@ from ..distillation_refiner import refine_distillation
 from ..noise_patterns import is_session_boilerplate
 
 
+def _llm_area_outcome_link_reconstruct(
+    statement: str,
+    source_steps: list,
+    rationale: str,
+) -> str:
+    """LLM area: enrich distillation by linking orphaned outcomes.
+
+    When disabled (default), returns statement unchanged.
+    """
+    try:
+        from ..llm_dispatch import llm_area_call
+        from ..llm_area_prompts import format_prompt
+
+        prompt = format_prompt(
+            "outcome_link_reconstruct",
+            statement=statement[:500],
+            source_steps=str(source_steps[:5]),
+            rationale=(rationale or "")[:300],
+        )
+        result = llm_area_call("outcome_link_reconstruct", prompt, fallback=statement)
+        if result.used_llm and result.text and result.text != statement:
+            return result.text
+        return statement
+    except Exception:
+        return statement
+
+
 @dataclass
 class ReflectionResult:
     """Results of post-episode reflection."""
@@ -578,6 +605,14 @@ class DistillationEngine:
             context=refine_context,
             min_unified_score=0.60,
         )
+
+        # LLM area: outcome_link_reconstruct — link orphaned outcomes
+        refined_statement = _llm_area_outcome_link_reconstruct(
+            refined_statement or candidate.statement,
+            candidate.source_steps,
+            candidate.rationale,
+        )
+
         return Distillation(
             distillation_id="",  # Will be auto-generated
             type=candidate.type,
