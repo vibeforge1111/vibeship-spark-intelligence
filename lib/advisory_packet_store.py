@@ -10,12 +10,11 @@ Phase 1 scope:
 
 from __future__ import annotations
 
-from collections import Counter
 import hashlib
 import json
 import os
-import re
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -648,18 +647,19 @@ def _meta_count(row: Dict[str, Any], key: str, *, fallback_key: Optional[str] = 
 
 
 # ── LLM reranker (extracted to advisory_packet_llm_reranker.py) ──────
-from .advisory_packet_llm_reranker import (  # noqa: F401 — re-export for compat
-    _sanitize_lookup_provider,
+# LLM config globals now live in advisory_packet_llm_reranker module.
+# apply_packet_store_config() updates them there via module reference.
+import lib.advisory_packet_llm_reranker as _llm_reranker  # noqa: E402
+
+from .advisory_packet_llm_reranker import (  # noqa: F401,E402 — re-export for compat
     _build_lookup_payload,
+    _call_lookup_llm,
     _extract_json_like_array,
     _lookup_llm_api_key,
     _lookup_llm_url,
-    _call_lookup_llm,
     _rerank_candidates_with_lookup_llm,
+    _sanitize_lookup_provider,
 )
-# LLM config globals now live in advisory_packet_llm_reranker module.
-# apply_packet_store_config() updates them there via module reference.
-import lib.advisory_packet_llm_reranker as _llm_reranker
 
 
 def _coerce_bool(value: Any, default: bool = False) -> bool:
@@ -734,7 +734,6 @@ def _atomic_write_json(path: Path, payload: Dict[str, Any]) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     # os.replace is atomic even on Windows (no unlink+rename race)
-    import os
     os.replace(str(tmp), str(path))
 
 
@@ -1701,7 +1700,7 @@ def _render_obsidian_watchtower(lines: List[str], catalog: List[Dict[str, Any]])
             "- Open this page first when you want to understand *what changed and why*.",
             "",
             "- updated: " + now_text,
-            f"- packet notes: [[packets/index|Packet Catalog]]",
+            "- packet notes: [[packets/index|Packet Catalog]]",
             f"- total packets: {len(catalog)}",
             f"- ready now: {len(ready)}",
             f"- stale: {len(stale)}",
@@ -2582,6 +2581,43 @@ def lookup_relaxed(
     return get_packet(packet_id)
 
 
+def _llm_area_packet_rerank(candidates: List[Dict[str, Any]], context_text: str) -> List[Dict[str, Any]]:
+    """LLM area: rerank packet candidates before emit.
+
+    When disabled (default), returns candidates unchanged.
+    """
+    try:
+        from .llm_area_prompts import format_prompt
+        from .llm_dispatch import llm_area_call
+
+        previews = [c.get("advisory_text_preview", "")[:100] for c in candidates[:5]]
+        prompt = format_prompt(
+            "packet_rerank",
+            candidates=str(previews),
+            context=context_text[:300],
+            count=str(len(candidates)),
+        )
+        result = llm_area_call("packet_rerank", prompt, fallback="")
+        if result.used_llm and result.text:
+            import json as _json
+            try:
+                data = _json.loads(result.text)
+                if isinstance(data, dict) and data.get("order"):
+                    order = data["order"]
+                    if isinstance(order, list) and all(isinstance(i, int) for i in order):
+                        reordered = []
+                        for idx in order:
+                            if 0 <= idx < len(candidates):
+                                reordered.append(candidates[idx])
+                        remaining = [c for i, c in enumerate(candidates) if i not in order]
+                        return reordered + remaining
+            except (ValueError, TypeError):
+                pass
+        return candidates
+    except Exception:
+        return candidates
+
+
 def lookup_relaxed_candidates(
     *,
     project_key: str,
@@ -2653,6 +2689,11 @@ def lookup_relaxed_candidates(
 
     if context_text and len(out) > 1:
         out = _rerank_candidates_with_lookup_llm(out, context_text=context_text)
+
+    # LLM area: packet_rerank — additional LLM-based reranking of candidates
+    if len(out) > 1:
+        out = _llm_area_packet_rerank(out, context_text)
+
     return out
 
 
@@ -2891,11 +2932,11 @@ def record_packet_usage(
 
 
 # ── Feedback/outcome recording (extracted to advisory_packet_feedback.py) ──
-from .advisory_packet_feedback import (  # noqa: F401 — re-export for compat
+from .advisory_packet_feedback import (  # noqa: F401,E402 — re-export for compat
     record_packet_feedback,
+    record_packet_feedback_for_advice,
     record_packet_outcome,
     record_packet_outcome_for_advice,
-    record_packet_feedback_for_advice,
 )
 
 

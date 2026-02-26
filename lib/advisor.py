@@ -17,30 +17,32 @@ The Solution:
 KISS Principle: Single file, simple API, maximum impact.
 """
 
+import hashlib
 import json
 import logging
+import math
+import os
+import re
+import sys
 import threading
 import time
-import hashlib
-import os
-import sys
-import re
-import math
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, List, Any, Tuple
-from dataclasses import dataclass, field, asdict
+from typing import Any, Dict, List, Optional, Tuple
+
+from .advisory_quarantine import record_quarantine_item
 
 # Import existing Spark components
-from .cognitive_learner import get_cognitive_learner, CognitiveCategory
-from .mind_bridge import get_mind_bridge, HAS_REQUESTS
-from .memory_banks import retrieve as bank_retrieve, infer_project_key
-from .advisory_quarantine import record_quarantine_item
+from .cognitive_learner import get_cognitive_learner
 from .distillation_transformer import transform_for_advisory as _transform_distillation
+from .memory_banks import infer_project_key
+from .memory_banks import retrieve as bank_retrieve
+from .mind_bridge import HAS_REQUESTS, get_mind_bridge
 
 # EIDOS integration for distillation retrieval
 try:
-    from .eidos import get_retriever, StructuralRetriever
+    from .eidos import StructuralRetriever, get_retriever
     HAS_EIDOS = True
 except ImportError:
     HAS_EIDOS = False
@@ -672,7 +674,7 @@ def _load_advisor_config() -> None:
                     return
             except Exception:
                 return
-        from .config_authority import resolve_section, env_bool, env_int, env_float, env_str
+        from .config_authority import env_bool, env_float, env_int, resolve_section
         tuneables = Path.home() / ".spark" / "tuneables.json"
         if not tuneables.exists():
             return
@@ -1416,8 +1418,8 @@ class SparkAdvisor:
         2. Merge with in-memory deltas
         3. Write atomically via temp file
         """
-        import tempfile
         import os
+        import tempfile
 
         try:
             # Read current disk state to merge (handles multiple processes)
@@ -1801,7 +1803,7 @@ class SparkAdvisor:
         # Resolve retrieval section via config-authority (handles env overrides).
         retrieval_cfg: Dict[str, Any] = {}
         try:
-            from .config_authority import resolve_section, env_bool, env_int, env_float, env_str
+            from .config_authority import env_bool, env_float, env_int, env_str, resolve_section
             retrieval_cfg = resolve_section(
                 "retrieval",
                 env_overrides={
@@ -2020,7 +2022,7 @@ class SparkAdvisor:
 
         cfg = dict(MEMORY_EMOTION_DEFAULTS)
         try:
-            from .config_authority import resolve_section, env_bool, env_float
+            from .config_authority import env_bool, env_float, resolve_section
             section = resolve_section(
                 "memory_emotion",
                 env_overrides={
@@ -2750,6 +2752,59 @@ class SparkAdvisor:
             merged.append(a)
         return merged
 
+    # -- LLM area hooks (opt-in via llm_areas tuneable section) --
+
+    @staticmethod
+    def _llm_area_retrieval_rewrite(query: str, tool_name: str) -> str:
+        """LLM area: rewrite retrieval query for better recall.
+
+        When disabled (default), returns query unchanged.
+        """
+        try:
+            from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
+
+            prompt = format_prompt(
+                "retrieval_rewrite",
+                query=query[:300],
+                tool_name=tool_name or "unknown",
+            )
+            result = llm_area_call("retrieval_rewrite", prompt, fallback=query)
+            if result.used_llm and result.text and result.text != query:
+                return result.text
+            return query
+        except Exception:
+            return query
+
+    @staticmethod
+    def _llm_area_retrieval_explain(
+        base_reason: str,
+        insight_text: str,
+        query: str,
+        context_match: float,
+    ) -> str:
+        """LLM area: annotate retrieval result with relevance explanation.
+
+        When disabled (default), returns base_reason unchanged.
+        """
+        try:
+            from .llm_area_prompts import format_prompt
+            from .llm_dispatch import llm_area_call
+
+            prompt = format_prompt(
+                "retrieval_explain",
+                insight=insight_text[:300],
+                query=query[:200],
+                match_score=f"{context_match:.2f}",
+                base_reason=base_reason[:200],
+            )
+            result = llm_area_call("retrieval_explain", prompt, fallback=base_reason)
+            if result.used_llm and result.text:
+                return result.text
+            return base_reason
+        except Exception:
+            return base_reason
+
     def _get_semantic_cognitive_advice(
         self,
         tool_name: str,
@@ -2830,6 +2885,10 @@ class SparkAdvisor:
         should_escalate = False
         escalate_reasons: List[str] = []
         primary_results: List[Any] = []
+
+        # LLM area: retrieval_rewrite — enhance query before retrieval
+        context = self._llm_area_retrieval_rewrite(context, tool_name)
+
         primary_start = time.perf_counter()
         try:
             primary_results = list(retriever.retrieve(context, active_insights, limit=semantic_limit))
@@ -3074,6 +3133,11 @@ class SparkAdvisor:
                 reason = base_reason or f"Hybrid-agentic route: {route_reason}"
             else:
                 reason = base_reason or "Semantic route (embeddings primary)"
+
+            # LLM area: retrieval_explain — annotate result with relevance explanation
+            reason = self._llm_area_retrieval_explain(
+                reason, r.insight_text, context, context_match,
+            )
 
             # Propagate advisory_quality from cognitive insight if available
             _adv_q = {}
@@ -4142,7 +4206,7 @@ class SparkAdvisor:
             from lib.convo_analyzer import get_convo_analyzer
 
             analyzer = get_convo_analyzer()
-            stats = analyzer.get_stats()
+            analyzer.get_stats()
 
             # Surface top DNA patterns as advice
             for dna_key, dna in list(analyzer.dna_patterns.items())[:3]:

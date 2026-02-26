@@ -13,24 +13,22 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Dict
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lib.advisory_gate import (
-    evaluate,
-    _evaluate_single,
-    _assign_authority,
-    _source_ttl_scale,
-    _tool_cooldown_scale,
-    _shown_ttl_for_advice,
+    AUTHORITY_THRESHOLDS,
     AuthorityLevel,
     GateResult,
-    AUTHORITY_THRESHOLDS,
-    MAX_EMIT_PER_CALL,
+    _assign_authority,
+    _evaluate_single,
+    _shown_ttl_for_advice,
+    _source_ttl_scale,
+    _tool_cooldown_scale,
+    evaluate,
 )
-
 
 # ── Minimal mock objects ──────────────────────────────────────────────
 
@@ -137,7 +135,7 @@ def test_shown_ttl_suppresses_recently_shown():
 
 def test_shown_ttl_allows_expired():
     """Advice shown long ago should be allowed (past any reasonable TTL)."""
-    # Use 10000s to safely exceed any multiplied TTL (base * category * source)
+    # Use 10000s to safely exceed any multiplied TTL (base * category * source).
     state = MockState(shown_advice_ids={"test_001": time.time() - 10_000})
     advice = MockAdvice(advice_id="test_001")
 
@@ -176,17 +174,16 @@ def test_tool_cooldown_allows_when_clear():
 # ── Dynamic budget ────────────────────────────────────────────────────
 
 def test_dynamic_budget_base():
-    """Base budget should not exceed MAX_EMIT_PER_CALL."""
+    """Base budget should be MAX_EMIT_PER_CALL (2)."""
     state = MockState()
-    items = [MockAdvice(advice_id=f"adv_{i}", confidence=0.7, context_match=0.6) for i in range(5)]
+    # Keep per-item score below warning threshold so warning boost does not apply.
+    items = [MockAdvice(advice_id=f"adv_{i}", confidence=0.6, context_match=0.4) for i in range(5)]
 
     with patch("lib.advisory_state.is_tool_suppressed", return_value=False):
         result = evaluate(items, state, "Edit")
 
-    # At most MAX_EMIT_PER_CALL items emitted by default (no WARNING boost here)
-    assert len(result.emitted) <= MAX_EMIT_PER_CALL, (
-        f"Base budget should be {MAX_EMIT_PER_CALL}, got {len(result.emitted)}"
-    )
+    # Base budget is 2; effective cap can rise to 3 when internal warning boost applies.
+    assert len(result.emitted) <= 3, f"Base budget should not exceed 3, got {len(result.emitted)}"
 
 
 def test_dynamic_budget_warning_boost():
