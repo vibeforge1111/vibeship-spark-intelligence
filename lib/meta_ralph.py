@@ -32,6 +32,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from .noise_classifier import classify as classify_noise
 from .noise_classifier import enforce_enabled as noise_enforce_enabled
 from .noise_classifier import record_shadow as record_noise_shadow
+from .meta_alpha_scorer import enforce_enabled as dual_score_enforce_enabled
+from .meta_alpha_scorer import record_shadow as record_meta_score_shadow
+from .meta_alpha_scorer import score as score_alpha_learning
+from .meta_alpha_scorer import shadow_enabled as dual_score_shadow_enabled
 
 # Tuneables — defaults overridden by ~/.spark/tuneables.json → "meta_ralph" section.
 QUALITY_THRESHOLD = 4
@@ -277,9 +281,10 @@ class RoastResult:
     issues_found: List[str]
     refinement_suggestions: List[str]
     refined_version: Optional[str] = None
+    scoring: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict:
-        return {
+        data = {
             "original": self.original,
             "score": self.score.to_dict(),
             "verdict": self.verdict.value,
@@ -288,6 +293,9 @@ class RoastResult:
             "refinement_suggestions": self.refinement_suggestions,
             "refined_version": self.refined_version
         }
+        if isinstance(self.scoring, dict):
+            data["scoring"] = self.scoring
+        return data
 
 
 @dataclass
@@ -795,8 +803,13 @@ class MetaRalph:
             self._record_roast(result, source, context)
             return result
 
-        # Step 3: Score on each dimension
-        score = self._score_learning(learning, context)
+        # Step 3: Score on each dimension (legacy + optional challenger shadow)
+        score, legacy_score, challenger_score, selected_scorer = self._score_with_dual(learning, context)
+        scoring_meta = self._build_scoring_metadata(
+            primary=selected_scorer,
+            legacy_score=legacy_score,
+            challenger_score=challenger_score,
+        )
 
         # Step 4: Ask roast questions based on low scores
         roast_questions, issues_found = self._generate_roast_questions(learning, score)
@@ -807,23 +820,33 @@ class MetaRalph:
         # Step 6: Attempt auto-refinement if score is close
         refined_version = None
         final_score = score
+        final_scoring_meta = scoring_meta
         final_learning = learning
 
         if score.verdict == RoastVerdict.NEEDS_WORK:
             refined_version = self._attempt_refinement(learning, issues_found, context)
             if refined_version:
                 # Re-score the refined version
-                refined_score = self._score_learning(refined_version, context)
+                refined_score, refined_legacy_score, refined_challenger_score, refined_selected_scorer = self._score_with_dual(
+                    refined_version, context
+                )
+                refined_scoring_meta = self._build_scoring_metadata(
+                    primary=refined_selected_scorer,
+                    legacy_score=refined_legacy_score,
+                    challenger_score=refined_challenger_score,
+                )
                 if refined_score.verdict == RoastVerdict.QUALITY:
                     # Refinement successful - use the refined version
                     self.refinements_made += 1
                     final_score = refined_score
+                    final_scoring_meta = refined_scoring_meta
                     final_learning = refined_version
                     # Clear the issues since refinement fixed them
                     issues_found = [f"Refined from: {learning[:50]}..."]
                 elif refined_score.total > score.total:
                     # Partial improvement - note it but keep needs_work
                     self.refinements_made += 1
+                    final_scoring_meta = refined_scoring_meta
 
             # LLM area: unsuppression_score — score suppressed items for rescue
             if final_score.verdict != RoastVerdict.QUALITY:
@@ -831,10 +854,18 @@ class MetaRalph:
                     final_learning, final_score, source,
                 )
                 if rescued is not None:
-                    rescued_score = self._score_learning(rescued, context)
+                    rescued_score, rescued_legacy_score, rescued_challenger_score, rescued_selected_scorer = self._score_with_dual(
+                        rescued, context
+                    )
+                    rescued_scoring_meta = self._build_scoring_metadata(
+                        primary=rescued_selected_scorer,
+                        legacy_score=rescued_legacy_score,
+                        challenger_score=rescued_challenger_score,
+                    )
                     if rescued_score.total > final_score.total:
                         final_learning = rescued
                         final_score = rescued_score
+                        final_scoring_meta = rescued_scoring_meta
                         if rescued_score.verdict == RoastVerdict.QUALITY:
                             self.refinements_made += 1
                             issues_found = [f"LLM-rescued from: {learning[:50]}..."]
@@ -858,7 +889,8 @@ class MetaRalph:
             roast_questions=roast_questions,
             issues_found=issues_found,
             refinement_suggestions=refinement_suggestions,
-            refined_version=refined_version if refined_version != learning else None
+            refined_version=refined_version if refined_version != learning else None,
+            scoring=final_scoring_meta,
         )
 
         self._record_roast(result, source, context)
@@ -888,6 +920,80 @@ class MetaRalph:
         normalized = re.sub(r'\d+', 'N', learning.lower())
         normalized = ' '.join(normalized.split())
         return hashlib.md5(normalized.encode()).hexdigest()[:16]
+
+    def _quality_score_from_dims(self, dims: Dict[str, Any]) -> QualityScore:
+        """Convert challenger score dimensions into QualityScore."""
+        def _dim(name: str) -> int:
+            raw = (dims or {}).get(name, 0)
+            try:
+                value = int(raw)
+            except Exception:
+                value = 0
+            return max(0, min(2, value))
+
+        return QualityScore(
+            actionability=_dim("actionability"),
+            novelty=_dim("novelty"),
+            reasoning=_dim("reasoning"),
+            specificity=_dim("specificity"),
+            outcome_linked=_dim("outcome_linked"),
+            ethics=_dim("ethics"),
+        )
+
+    def _score_with_dual(
+        self, learning: str, context: Dict[str, Any]
+    ) -> Tuple[QualityScore, QualityScore, Optional[QualityScore], str]:
+        """Score with legacy path plus optional challenger shadow path."""
+        legacy_score = self._score_learning(learning, context)
+        challenger_score: Optional[QualityScore] = None
+        selected = "legacy"
+
+        use_shadow = bool(dual_score_shadow_enabled() or dual_score_enforce_enabled())
+        if use_shadow:
+            try:
+                challenger_dims = score_alpha_learning(learning, context)
+                challenger_score = self._quality_score_from_dims(challenger_dims)
+                if dual_score_enforce_enabled():
+                    selected = "challenger"
+                record_meta_score_shadow(
+                    learning=learning,
+                    legacy_total=legacy_score.total,
+                    legacy_verdict=legacy_score.verdict.value,
+                    challenger_total=challenger_score.total,
+                    challenger_verdict=challenger_score.verdict.value,
+                    selected=selected,
+                )
+            except Exception:
+                challenger_score = None
+                selected = "legacy"
+
+        primary = challenger_score if (selected == "challenger" and challenger_score is not None) else legacy_score
+        return primary, legacy_score, challenger_score, selected
+
+    def _build_scoring_metadata(
+        self,
+        *,
+        primary: str,
+        legacy_score: QualityScore,
+        challenger_score: Optional[QualityScore],
+    ) -> Dict[str, Any]:
+        data: Dict[str, Any] = {
+            "primary": primary,
+            "legacy": legacy_score.to_dict(),
+            "flags": {
+                "shadow": bool(dual_score_shadow_enabled()),
+                "enforce": bool(dual_score_enforce_enabled()),
+            },
+        }
+        if challenger_score is not None:
+            data["challenger"] = challenger_score.to_dict()
+            data["disagree"] = (
+                legacy_score.verdict != challenger_score.verdict
+                or abs(int(legacy_score.total) - int(challenger_score.total)) >= 2
+            )
+        else:
+            data["disagree"] = False
+        return data
 
     def _score_learning(self, learning: str, context: Dict) -> QualityScore:
         """Score a learning on each quality dimension.
@@ -2256,6 +2362,21 @@ class MetaRalph:
 
         quality_rate_window = effective_quality / max(effective_total, 1)
         quality_rate_all_time = self.quality_passed / max(self.total_roasted, 1)
+        dual_scoring_runs = 0
+        dual_scoring_disagreements = 0
+        dual_scoring_challenger_selected = 0
+        for r in window:
+            res = r.get("result") or {}
+            scoring = res.get("scoring") or {}
+            if not isinstance(scoring, dict):
+                continue
+            if not isinstance(scoring.get("challenger"), dict):
+                continue
+            dual_scoring_runs += 1
+            if bool(scoring.get("disagree")):
+                dual_scoring_disagreements += 1
+            if str(scoring.get("primary") or "") == "challenger":
+                dual_scoring_challenger_selected += 1
 
         return {
             "total_roasted": self.total_roasted,
@@ -2273,6 +2394,9 @@ class MetaRalph:
             "quality_rate_window_filtered_trace_prefix": filtered_trace_prefix,
             "quality_rate_window_filtered_trace_churn": filtered_trace_churn,
             "quality_rate_window_filtered_text_artifacts": filtered_text_artifacts,
+            "dual_scoring_runs": dual_scoring_runs,
+            "dual_scoring_disagreements": dual_scoring_disagreements,
+            "dual_scoring_challenger_selected": dual_scoring_challenger_selected,
             "quality_rate_all_time": quality_rate_all_time,
             "reject_rate": self.primitive_rejected / max(self.total_roasted, 1),
             "outcome_stats": self.get_outcome_stats(),

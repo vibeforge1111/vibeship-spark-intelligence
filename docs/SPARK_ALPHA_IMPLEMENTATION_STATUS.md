@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-26 (local branch snapshot)
+Last updated: 2026-02-26 (local branch snapshot, post PR-03 dual-scoring integration)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -34,6 +34,16 @@ Branch: feat/spark-alpha
 - Added advisory packet freshness repair utility (`scripts/refresh_packet_freshness.py`).
 - Added production gate guard so Meta-Ralph quality band remains telemetry-only unless explicitly env-enabled.
 
+7. `(working tree)` - `feat(alpha-meta): add dual scoring challenger path (shadow + enforce gate)`
+- Added compact challenger scorer module (`lib/meta_alpha_scorer.py`).
+- Integrated dual-score execution in `lib/meta_ralph.py`:
+  - Legacy scorer + challenger scorer run side-by-side when shadow is enabled.
+  - Default primary remains legacy.
+  - Enforce toggle (`SPARK_META_DUAL_SCORE_ENFORCE=1`) switches primary to challenger.
+  - Disagreement telemetry now logs to `~/.spark/meta_dual_score_shadow.jsonl`.
+- Added scorer metadata in roast records (`result.scoring`) and dual-score counters in `get_stats()`.
+- Added tests for shadow/enforce paths in `tests/test_meta_ralph.py`.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -44,6 +54,9 @@ Branch: feat/spark-alpha
 
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
 - `python scripts/memory_quality_observatory.py` -> retrieval guardrails `passing=true`
+- `pytest tests/test_meta_ralph.py -q` -> `18 passed`
+- `pytest tests/test_metaralph_integration.py -q` -> `7 passed, 1 skipped`
+- `pytest tests/test_10_improvements.py -q` -> `9 passed, 1 skipped`
 
 Notable metrics now:
 - `context.p50`: 230
@@ -63,7 +76,8 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
 7. Broad file/function deletion pass to reach Carmack-size target is not done.
 8. Final migration playbook for old paths/deprecated modules is not done.
+9. PR-03 deletion commitment is still pending (legacy scorer path removal after replay wins).
 
 ## In progress right now
 
-- No active in-progress code patch at the moment; current state is checkpointed with the commits listed above.
+- PR-03 implementation is in local working tree and ready to commit.

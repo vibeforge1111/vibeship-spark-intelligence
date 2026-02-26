@@ -24,6 +24,7 @@ Completed commits:
 4. `11c1808` contextual memory envelope + backfill tooling
 5. `4b3e4df` advisory no-emit loop fix (bounded repeat escape)
 6. `734bddf` strict trace binding repairs + packet freshness repair + quality-band telemetry guard
+7. `(working tree)` PR-03 dual scoring challenger integration (shadow + enforce gated)
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -52,10 +53,11 @@ Current measured state:
 1. Unified classifier introduced.
 2. Legacy-vs-unified disagreement logging.
 
-### PR-03 Dual Scoring (Meta)  (Pending)
+### PR-03 Dual Scoring (Meta)  (Partial: Implemented, Replay Promotion Pending)
 1. Run legacy + alpha scorer side-by-side.
-2. Promote decisions from challenger only after replay win criteria.
-3. Deletion commitment: remove legacy scorer path after 3 consecutive replay wins.
+2. Challenger scoring is now shadowed by default with an explicit enforce flag.
+3. Promote decisions from challenger only after replay win criteria.
+4. Deletion commitment: remove legacy scorer path after 3 consecutive replay wins.
 
 ### PR-04 Memory Spine + Contextual Write  (Partial)
 1. Contextual write path is done.
