@@ -573,7 +573,9 @@
     "skip_read_only_tool_calls": true,
     "max_tool_result_chars": 4000,
     "keep_large_tool_results_on_error_only": true,
-    "min_tool_result_chars_for_capture": 0
+    "min_tool_result_chars_for_capture": 0,
+    "workflow_summary_enabled": true,
+    "workflow_summary_min_interval_s": 120
   },
   "request_tracker": {
     "max_pending": 50,

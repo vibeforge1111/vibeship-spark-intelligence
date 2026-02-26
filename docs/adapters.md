@@ -116,7 +116,7 @@ python3 adapters/codex_hook_bridge.py --mode shadow --poll 2 --max-per-tick 200
 Telemetry is written to:
 - `~/.spark/logs/codex_hook_bridge_telemetry.jsonl`
 
-### 5) OpenClaw tailer capture policy tuneables
+### 5) OpenClaw tailer capture policy + workflow summary lane
 
 File: `adapters/openclaw_tailer.py`
 
@@ -127,6 +127,15 @@ Capture/skip behavior is configurable via the `openclaw_tailer` tuneables sectio
 - `max_tool_result_chars` (default: `4000`)
 - `keep_large_tool_results_on_error_only` (default: `true`)
 - `min_tool_result_chars_for_capture` (default: `0`)
+- `workflow_summary_enabled` (default: `true`)
+- `workflow_summary_min_interval_s` (default: `120`)
+
+Additional behavior:
+- Oversized tool results now keep a compact inline payload plus a stable local reference:
+  - `~/.spark/workflow_refs/openclaw_tool_results/<sha256>.txt`
+- Workflow summaries are emitted as report artifacts under:
+  - `<report_dir>/workflow/workflow_<ts>_<session-hash>.json`
+- Report ingestion scans subdirectories recursively and archives processed reports into sibling `.processed/` folders.
 
 Runtime override example (`~/.spark/tuneables.json`):
 
@@ -134,7 +143,9 @@ Runtime override example (`~/.spark/tuneables.json`):
 {
   "openclaw_tailer": {
     "skip_successful_tool_results": true,
-    "max_tool_result_chars": 6000
+    "max_tool_result_chars": 6000,
+    "workflow_summary_enabled": true,
+    "workflow_summary_min_interval_s": 120
   }
 }
 ```

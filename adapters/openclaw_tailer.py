@@ -38,12 +38,16 @@ from adapters._common import (
 
 STATE_DIR = Path.home() / ".spark" / "adapters"
 TUNEABLES_FILE = Path.home() / ".spark" / "tuneables.json"
+TOOL_RESULT_REF_DIR = Path.home() / ".spark" / "workflow_refs" / "openclaw_tool_results"
+WORKFLOW_REPORT_SUBDIR = "workflow"
 
 MAX_TOOL_RESULT_CHARS = 4000
 SKIP_SUCCESSFUL_TOOL_RESULTS = True
 SKIP_READ_ONLY_TOOL_CALLS = True
 KEEP_LARGE_TOOL_RESULTS_ON_ERROR_ONLY = True
 MIN_TOOL_RESULT_CHARS_FOR_CAPTURE = 0
+WORKFLOW_SUMMARY_ENABLED = True
+WORKFLOW_SUMMARY_MIN_INTERVAL_S = 120
 
 DEFAULT_REPORT_DIR = Path.home() / ".openclaw" / "workspace" / "spark_reports"
 DEFAULT_HOOK_EVENTS_FILE = Path(
@@ -83,6 +87,8 @@ def _load_openclaw_tailer_config() -> dict:
             "max_tool_result_chars": env_int("SPARK_OPENCLAW_MAX_TOOL_RESULT_CHARS", lo=200, hi=50000),
             "keep_large_tool_results_on_error_only": env_bool("SPARK_OPENCLAW_KEEP_LARGE_ON_ERROR_ONLY"),
             "min_tool_result_chars_for_capture": env_int("SPARK_OPENCLAW_MIN_TOOL_RESULT_CHARS", lo=0, hi=20000),
+            "workflow_summary_enabled": env_bool("SPARK_OPENCLAW_WORKFLOW_SUMMARY_ENABLED"),
+            "workflow_summary_min_interval_s": env_int("SPARK_OPENCLAW_WORKFLOW_SUMMARY_MIN_INTERVAL_S", lo=10, hi=86400),
         },
     )
     return dict(resolved.data or {})
@@ -94,6 +100,8 @@ def _apply_openclaw_tailer_config(cfg: dict) -> dict:
     global SKIP_READ_ONLY_TOOL_CALLS
     global KEEP_LARGE_TOOL_RESULTS_ON_ERROR_ONLY
     global MIN_TOOL_RESULT_CHARS_FOR_CAPTURE
+    global WORKFLOW_SUMMARY_ENABLED
+    global WORKFLOW_SUMMARY_MIN_INTERVAL_S
 
     applied = []
     warnings = []
@@ -121,6 +129,15 @@ def _apply_openclaw_tailer_config(cfg: dict) -> dict:
             applied.append("min_tool_result_chars_for_capture")
         except Exception:
             warnings.append("invalid_min_tool_result_chars_for_capture")
+    if "workflow_summary_enabled" in cfg:
+        WORKFLOW_SUMMARY_ENABLED = _as_bool(cfg.get("workflow_summary_enabled"), True)
+        applied.append("workflow_summary_enabled")
+    if "workflow_summary_min_interval_s" in cfg:
+        try:
+            WORKFLOW_SUMMARY_MIN_INTERVAL_S = max(10, min(86400, int(cfg.get("workflow_summary_min_interval_s") or 120)))
+            applied.append("workflow_summary_min_interval_s")
+        except Exception:
+            warnings.append("invalid_workflow_summary_min_interval_s")
 
     if MIN_TOOL_RESULT_CHARS_FOR_CAPTURE > MAX_TOOL_RESULT_CHARS:
         MIN_TOOL_RESULT_CHARS_FOR_CAPTURE = MAX_TOOL_RESULT_CHARS
@@ -136,6 +153,8 @@ def get_openclaw_tailer_config() -> dict:
         "max_tool_result_chars": int(MAX_TOOL_RESULT_CHARS),
         "keep_large_tool_results_on_error_only": bool(KEEP_LARGE_TOOL_RESULTS_ON_ERROR_ONLY),
         "min_tool_result_chars_for_capture": int(MIN_TOOL_RESULT_CHARS_FOR_CAPTURE),
+        "workflow_summary_enabled": bool(WORKFLOW_SUMMARY_ENABLED),
+        "workflow_summary_min_interval_s": int(WORKFLOW_SUMMARY_MIN_INTERVAL_S),
     }
 
 
@@ -209,6 +228,184 @@ def _truncate_content(content) -> str:
     if len(text) > MAX_TOOL_RESULT_CHARS:
         return text[:MAX_TOOL_RESULT_CHARS] + f"\n... [truncated {len(text) - MAX_TOOL_RESULT_CHARS} chars]"
     return text
+
+
+def _persist_tool_result_reference(text: str) -> dict | None:
+    raw = str(text or "")
+    if not raw:
+        return None
+    try:
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        TOOL_RESULT_REF_DIR.mkdir(parents=True, exist_ok=True)
+        path = TOOL_RESULT_REF_DIR / f"{digest}.txt"
+        if not path.exists():
+            path.write_text(raw, encoding="utf-8")
+        return {"tool_result_hash": digest, "tool_result_ref": str(path)}
+    except Exception:
+        return None
+
+
+def _build_tool_result_payload(msg: dict, content) -> dict:
+    raw_text = _extract_content_text(content)
+    result_text = raw_text
+    payload = {
+        "tool_name": msg.get("toolName"),
+        "tool_input": {},
+        "call_id": msg.get("toolCallId"),
+        "is_error": msg.get("isError", False),
+        "tool_result_chars": len(raw_text),
+        "tool_result_truncated": False,
+    }
+    if len(raw_text) > MAX_TOOL_RESULT_CHARS:
+        result_text = _truncate_content(raw_text)
+        payload["tool_result_truncated"] = True
+        ref = _persist_tool_result_reference(raw_text)
+        if ref:
+            payload.update(ref)
+    payload["tool_result"] = result_text
+    return payload
+
+
+def _extract_paths_from_tool_input(tool_input) -> list[str]:
+    if not isinstance(tool_input, dict):
+        return []
+    paths = []
+    direct_keys = ("file_path", "path", "cwd", "workdir", "directory", "target_path", "destination")
+    for key in direct_keys:
+        value = tool_input.get(key)
+        if isinstance(value, str) and value.strip():
+            paths.append(value.strip())
+    list_value = tool_input.get("paths")
+    if isinstance(list_value, list):
+        for row in list_value:
+            if isinstance(row, str) and row.strip():
+                paths.append(row.strip())
+    return paths
+
+
+def _new_workflow_summary(session_key: str, session_file: Path) -> dict:
+    return {
+        "session_key": str(session_key),
+        "session_file": str(session_file),
+        "rows_processed": 0,
+        "event_count": 0,
+        "tool_events": 0,
+        "tool_calls": 0,
+        "tool_results": 0,
+        "tool_successes": 0,
+        "tool_failures": 0,
+        "tools": {},
+        "files_touched": set(),
+        "tool_failure_tools": set(),
+        "tool_success_tools": set(),
+        "window_start_ts": None,
+        "window_end_ts": None,
+    }
+
+
+def _accumulate_workflow_summary(summary: dict, events: list) -> None:
+    if not isinstance(summary, dict) or not isinstance(events, list):
+        return
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        summary["event_count"] += 1
+        evt_ts = evt.get("ts")
+        if isinstance(evt_ts, (int, float)):
+            if summary["window_start_ts"] is None:
+                summary["window_start_ts"] = float(evt_ts)
+            summary["window_end_ts"] = float(evt_ts)
+
+        if evt.get("kind") != "tool":
+            continue
+
+        payload = evt.get("payload") if isinstance(evt.get("payload"), dict) else {}
+        tool_name = str(payload.get("tool_name") or "unknown_tool")
+        tools = summary["tools"]
+        tools[tool_name] = int(tools.get(tool_name, 0)) + 1
+        summary["tool_events"] += 1
+
+        for path in _extract_paths_from_tool_input(payload.get("tool_input")):
+            summary["files_touched"].add(path)
+
+        is_result = "tool_result" in payload or "is_error" in payload
+        if is_result:
+            summary["tool_results"] += 1
+            if payload.get("is_error"):
+                summary["tool_failures"] += 1
+                summary["tool_failure_tools"].add(tool_name)
+            else:
+                summary["tool_successes"] += 1
+                summary["tool_success_tools"].add(tool_name)
+        else:
+            summary["tool_calls"] += 1
+
+
+def _materialize_workflow_summary(summary: dict, *, ts: float) -> dict | None:
+    if not isinstance(summary, dict):
+        return None
+    tool_events = int(summary.get("tool_events") or 0)
+    if tool_events <= 0:
+        return None
+
+    tool_results = int(summary.get("tool_results") or 0)
+    tool_successes = int(summary.get("tool_successes") or 0)
+    confidence = 0.0
+    if tool_results > 0:
+        confidence = round(tool_successes / float(tool_results), 3)
+    elif int(summary.get("tool_calls") or 0) > 0:
+        confidence = 0.5
+
+    tools = summary.get("tools") if isinstance(summary.get("tools"), dict) else {}
+    top_tools = [
+        {"tool_name": name, "count": int(count)}
+        for name, count in sorted(tools.items(), key=lambda row: (-int(row[1]), row[0]))[:10]
+    ]
+    failures = summary.get("tool_failure_tools") if isinstance(summary.get("tool_failure_tools"), set) else set()
+    successes = summary.get("tool_success_tools") if isinstance(summary.get("tool_success_tools"), set) else set()
+    recovery_tools = sorted(failures.intersection(successes))
+    files_touched = summary.get("files_touched") if isinstance(summary.get("files_touched"), set) else set()
+
+    return {
+        "kind": "workflow_summary",
+        "ts": float(ts),
+        "provider": "openclaw",
+        "session_key": summary.get("session_key"),
+        "session_file": summary.get("session_file"),
+        "rows_processed": int(summary.get("rows_processed") or 0),
+        "event_count": int(summary.get("event_count") or 0),
+        "tool_events": tool_events,
+        "tool_calls": int(summary.get("tool_calls") or 0),
+        "tool_results": tool_results,
+        "tool_successes": tool_successes,
+        "tool_failures": int(summary.get("tool_failures") or 0),
+        "top_tools": top_tools,
+        "files_touched": sorted(files_touched)[:50],
+        "recovery_tools": recovery_tools,
+        "outcome_confidence": confidence,
+        "window_start_ts": summary.get("window_start_ts"),
+        "window_end_ts": summary.get("window_end_ts"),
+    }
+
+
+def _write_workflow_summary_report(report_dir: Path, summary: dict, *, verbose: bool = False) -> Path | None:
+    payload = _materialize_workflow_summary(summary, ts=time.time())
+    if not payload:
+        return None
+    try:
+        workflow_dir = report_dir / WORKFLOW_REPORT_SUBDIR
+        workflow_dir.mkdir(parents=True, exist_ok=True)
+        suffix = _hash(str(payload.get("session_key") or "session"))[:8]
+        filename = f"workflow_{int(time.time() * 1000)}_{suffix}.json"
+        path = workflow_dir / filename
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        if verbose:
+            print(f"[openclaw_tailer] wrote workflow summary {path}", flush=True)
+        return path
+    except Exception as exc:
+        if verbose:
+            print(f"[openclaw_tailer] workflow summary write failed: {exc}", flush=True)
+        return None
 
 
 def _should_skip_event(obj: dict) -> bool:
@@ -344,20 +541,13 @@ def parse_openclaw_line(obj: dict, session_key: str) -> list:
                 ))
 
         elif role == "toolResult":
-            result_text = _truncate_content(content)
             events.append(_event(
                 trace_id=_hash(obj.get("id", "")),
                 session_id=session_key,
                 source="openclaw",
                 kind="tool",
                 ts=ts,
-                payload={
-                    "tool_name": msg.get("toolName"),
-                    "tool_input": {},
-                    "tool_result": result_text,
-                    "call_id": msg.get("toolCallId"),
-                    "is_error": msg.get("isError", False),
-                },
+                payload=_build_tool_result_payload(msg, content),
             ))
 
     elif line_type in ("model_change", "thinking_level_change", "custom"):
@@ -461,10 +651,15 @@ def _scan_reports(report_dir: Path, sparkd_url: str, token: str = None, verbose:
     if not report_dir.exists():
         return 0
 
-    processed_dir = report_dir / ".processed"
     count = 0
 
-    for f in sorted(report_dir.glob("*.json")):
+    report_files = []
+    for f in report_dir.rglob("*.json"):
+        if ".processed" in f.parts:
+            continue
+        report_files.append(f)
+
+    for f in sorted(report_files):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
         except Exception as e:
@@ -474,9 +669,10 @@ def _scan_reports(report_dir: Path, sparkd_url: str, token: str = None, verbose:
 
         report_kind = data.pop("kind", "unknown")
         ts = data.pop("ts", time.time())
+        report_path = str(f.relative_to(report_dir))
 
         evt = _event(
-            trace_id=_hash(f.name),
+            trace_id=_hash(report_path),
             session_id="self_report",
             source="openclaw",
             kind="system",
@@ -484,6 +680,7 @@ def _scan_reports(report_dir: Path, sparkd_url: str, token: str = None, verbose:
             payload={
                 "type": "self_report",
                 "report_kind": report_kind,
+                "report_path": report_path,
                 **data,
             },
         )
@@ -497,6 +694,7 @@ def _scan_reports(report_dir: Path, sparkd_url: str, token: str = None, verbose:
 
         # Archive the processed file
         try:
+            processed_dir = f.parent / ".processed"
             processed_dir.mkdir(parents=True, exist_ok=True)
             f.rename(processed_dir / f.name)
         except Exception:
@@ -780,6 +978,7 @@ def main():
     total_lines_sent = 0
     last_send_ts = None
     last_session_file = None
+    last_workflow_summary_emit = {}
     next_hb_ts = time.time() if HEARTBEAT_ENABLED else None
     if HEARTBEAT_ENABLED:
         _append_jsonl(HEARTBEAT_PATH, {
@@ -854,6 +1053,7 @@ def main():
 
                 batch_size = max(1, int(args.max_per_tick))
                 batch = new_lines[:batch_size]
+                workflow_summary = _new_workflow_summary(session_key, session_file)
 
                 sent = 0
                 for line in batch:
@@ -904,6 +1104,7 @@ def main():
 
                     if not post_ok:
                         break
+                    _accumulate_workflow_summary(workflow_summary, events)
                     sent += 1
 
                 state.set_offset(file_key, off + sent)
@@ -916,6 +1117,23 @@ def main():
                 if args.verbose and sent:
                     remaining = max(0, len(new_lines) - sent)
                     print(f"[openclaw_tailer] [{session_key}] sent {sent}, remaining {remaining}", flush=True)
+
+                workflow_summary["rows_processed"] = int(sent)
+                if (
+                    WORKFLOW_SUMMARY_ENABLED
+                    and sent > 0
+                    and int(workflow_summary.get("tool_events") or 0) > 0
+                ):
+                    now_ts = time.time()
+                    last_emit_ts = float(last_workflow_summary_emit.get(session_key) or 0.0)
+                    if (now_ts - last_emit_ts) >= float(WORKFLOW_SUMMARY_MIN_INTERVAL_S):
+                        report_path = _write_workflow_summary_report(
+                            report_dir,
+                            workflow_summary,
+                            verbose=args.verbose,
+                        )
+                        if report_path is not None:
+                            last_workflow_summary_emit[session_key] = now_ts
 
             _scan_hook_events(
                 hook_events_file,

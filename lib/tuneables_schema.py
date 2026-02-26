@@ -515,6 +515,12 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "min_tool_result_chars_for_capture": TuneableSpec(
             "int", 0, 0, 20000, "Minimum successful tool result text length required for capture",
         ),
+        "workflow_summary_enabled": TuneableSpec(
+            "bool", True, None, None, "Emit compact workflow summary report artifacts for ingestion",
+        ),
+        "workflow_summary_min_interval_s": TuneableSpec(
+            "int", 120, 10, 86400, "Minimum seconds between workflow summary report emissions per session",
+        ),
     },
 
     # ---- request_tracker ----

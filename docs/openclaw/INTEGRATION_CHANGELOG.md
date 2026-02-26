@@ -2,6 +2,28 @@
 
 This log tracks Spark x OpenClaw integration changes that should be easy to audit later.
 
+## 2026-02-26
+
+### Added
+
+- Workflow summary lane in OpenClaw tailer:
+  - compact `workflow_summary` report artifacts emitted to `<report_dir>/workflow/`
+  - per-session cooldown via `workflow_summary_min_interval_s`
+  - enable/disable switch via `workflow_summary_enabled`
+- Large tool result reference persistence:
+  - oversized tool results keep truncated inline content plus:
+    - `tool_result_hash`
+    - `tool_result_ref` path in `~/.spark/workflow_refs/openclaw_tool_results/`
+- Recursive report ingestion:
+  - OpenClaw report scanner now ingests `*.json` recursively under `report_dir`
+  - processed reports are archived into sibling `.processed/` directories
+
+### Tuneables/schema updates
+
+- Added `openclaw_tailer.workflow_summary_enabled` (default `true`)
+- Added `openclaw_tailer.workflow_summary_min_interval_s` (default `120`)
+- Added tests for recursive workflow report ingest, large-output references, and summary materialization.
+
 ## 2026-02-18
 
 ### Documentation consolidation (canonicalization)

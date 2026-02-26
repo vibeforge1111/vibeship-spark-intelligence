@@ -76,6 +76,8 @@ def test_openclaw_tailer_load_config_reads_runtime(monkeypatch, tmp_path):
                     "max_tool_result_chars": 2222,
                     "keep_large_tool_results_on_error_only": False,
                     "min_tool_result_chars_for_capture": 12,
+                    "workflow_summary_enabled": False,
+                    "workflow_summary_min_interval_s": 45,
                 }
             }
         ),
@@ -90,3 +92,5 @@ def test_openclaw_tailer_load_config_reads_runtime(monkeypatch, tmp_path):
     assert cfg["max_tool_result_chars"] == 2222
     assert cfg["keep_large_tool_results_on_error_only"] is False
     assert cfg["min_tool_result_chars_for_capture"] == 12
+    assert cfg["workflow_summary_enabled"] is False
+    assert cfg["workflow_summary_min_interval_s"] == 45
