@@ -1070,6 +1070,93 @@ class EidosStore:
             "preview": preview,
         }
 
+    def backfill_advisory_quality(self, min_unified_score: float = 0.60) -> Dict[str, Any]:
+        """Backfill advisory_quality + refined_statement on distillations that lack them.
+
+        Runs the refinement loop on every active distillation missing advisory_quality,
+        then persists the best refined text and quality scores.
+
+        Returns summary dict with counts.
+        """
+        try:
+            from ..distillation_refiner import refine_distillation
+        except Exception:
+            return {"error": "Could not import refine_distillation"}
+
+        updated = 0
+        skipped = 0
+        already_has = 0
+        errors = 0
+        details: List[Dict[str, Any]] = []
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM distillations").fetchall()
+
+            for row in rows:
+                did = row["distillation_id"]
+                raw_aq = row["advisory_quality"] if "advisory_quality" in row.keys() else None
+
+                # Check if already has valid advisory_quality
+                has_quality = False
+                if isinstance(raw_aq, str) and raw_aq.strip():
+                    try:
+                        parsed = json.loads(raw_aq)
+                        if isinstance(parsed, dict) and "unified_score" in parsed:
+                            has_quality = True
+                    except Exception:
+                        pass
+
+                if has_quality:
+                    already_has += 1
+                    continue
+
+                statement = (row["statement"] or "").strip()
+                if not statement:
+                    skipped += 1
+                    continue
+
+                try:
+                    refined_text, quality = refine_distillation(
+                        statement,
+                        source="eidos",
+                        context={"type": row["type"], "confidence": row["confidence"]},
+                        min_unified_score=min_unified_score,
+                    )
+
+                    conn.execute(
+                        """UPDATE distillations
+                           SET refined_statement = ?, advisory_quality = ?
+                           WHERE distillation_id = ?""",
+                        (
+                            refined_text if refined_text != statement else "",
+                            json.dumps(quality),
+                            did,
+                        ),
+                    )
+                    updated += 1
+                    details.append({
+                        "id": did,
+                        "type": row["type"],
+                        "unified_score": quality.get("unified_score", 0),
+                        "suppressed": quality.get("suppressed", False),
+                        "refined": bool(refined_text and refined_text != statement),
+                    })
+                except Exception as exc:
+                    errors += 1
+                    details.append({"id": did, "error": str(exc)[:200]})
+
+            conn.commit()
+
+        return {
+            "total": len(rows),
+            "updated": updated,
+            "already_has": already_has,
+            "skipped": skipped,
+            "errors": errors,
+            "details": details,
+        }
+
     # ==================== Policy Operations ====================
 
     def save_policy(self, policy: Policy) -> str:

@@ -178,6 +178,15 @@ def _frontmatter(meta: dict) -> str:
     return "\n".join(lines)
 
 
+def _safe_non_negative_int(value: Any, default: int = 0) -> int:
+    """Best-effort parse for counters loaded from JSON."""
+    try:
+        parsed = int(value)
+    except Exception:
+        return max(default, 0)
+    return max(parsed, 0)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  COGNITIVE INSIGHTS
 # ═══════════════════════════════════════════════════════════════════════
@@ -548,8 +557,14 @@ def _export_verdicts(explore_dir: Path, limit: int) -> int:
 
     rh = _load_json(_SD / "meta_ralph" / "roast_history.json") or {}
     history = rh.get("history", []) if isinstance(rh, dict) else []
-    total = len(history)
+    history_count = len(history)
+    total = _safe_non_negative_int(
+        rh.get("total_roasted", history_count) if isinstance(rh, dict) else history_count,
+        history_count,
+    )
+    total = max(total, history_count)
     recent = history[-limit:] if history else []
+    start_idx = max(total - len(recent), 0)
 
     # Verdict distribution
     verdicts: dict[str, int] = {}
@@ -560,7 +575,7 @@ def _export_verdicts(explore_dir: Path, limit: int) -> int:
     # Generate per-verdict detail pages grouped by batch (same timestamp)
     pages_written = 0
     for i, entry in enumerate(recent):
-        idx = total - limit + i if total > limit else i
+        idx = start_idx + i
         slug = f"verdict_{idx:05d}"
         result = entry.get("result", {})
         score = result.get("score", {})
@@ -625,11 +640,11 @@ def _export_verdicts(explore_dir: Path, limit: int) -> int:
 
     # Distribution
     if verdicts:
-        index.append("## Verdict Distribution (all time)\n")
+        index.append("## Verdict Distribution (retained history window)\n")
         index.append("| Verdict | Count | % |")
         index.append("|---------|-------|---|")
         for v, count in sorted(verdicts.items(), key=lambda x: -x[1]):
-            pct = round(count / max(total, 1) * 100, 1)
+            pct = round(count / max(history_count, 1) * 100, 1)
             index.append(f"| {v} | {count} | {pct}% |")
         index.append("")
 
@@ -638,7 +653,7 @@ def _export_verdicts(explore_dir: Path, limit: int) -> int:
     index.append("| # | Time | Source | Verdict | Score | Link |")
     index.append("|---|------|--------|---------|-------|------|")
     for i, entry in enumerate(recent):
-        idx = total - limit + i if total > limit else i
+        idx = start_idx + i
         slug = f"verdict_{idx:05d}"
         result = entry.get("result", {})
         score = result.get("score", {})

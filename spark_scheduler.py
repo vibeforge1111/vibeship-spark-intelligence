@@ -131,6 +131,7 @@ DEFAULT_CONFIG = {
     "niche_scan_enabled": True,
     "advisory_review_enabled": True,
     "advisory_review_window_hours": 12,
+    "memory_quality_observatory_enabled": True,
 }
 
 
@@ -855,6 +856,49 @@ def task_advisory_review(state: Dict[str, Any]) -> Dict[str, Any]:
 
     line = (proc.stdout or "").strip().splitlines()
     msg = line[-1] if line else ""
+
+    # Keep retrieval quality guardrails fresh at least daily.
+    try:
+        import glob as _glob
+
+        observatory_enabled = _safe_bool(cfg.get("memory_quality_observatory_enabled", True), True)
+        if not observatory_enabled:
+            logger.info("memory_quality_observatory: disabled by scheduler config")
+            logger.info("advisory_review: %s", msg or "ok")
+            return {"status": "ok", "message": msg}
+
+        observatory_script = Path(__file__).resolve().parent / "scripts" / "memory_quality_observatory.py"
+        if observatory_script.exists():
+            recent_obs = sorted(_glob.glob(str(reports_dir / "*_memory_quality_observatory.md")))
+            run_observatory = True
+            if recent_obs:
+                newest_obs = Path(recent_obs[-1])
+                obs_age_hours = (time.time() - newest_obs.stat().st_mtime) / 3600
+                if obs_age_hours < 24:
+                    run_observatory = False
+                    logger.info(
+                        "memory_quality_observatory: skipped (recent report %.1fh old, min gap 24h)",
+                        obs_age_hours,
+                    )
+            if run_observatory:
+                obs_proc = subprocess.run(
+                    [sys.executable, str(observatory_script)],
+                    cwd=str(Path(__file__).resolve().parent),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if obs_proc.returncode != 0:
+                    logger.warning(
+                        "memory_quality_observatory failed: %s",
+                        (obs_proc.stderr or "").strip()[:300],
+                    )
+                else:
+                    logger.info("memory_quality_observatory: refreshed")
+    except Exception as exc:
+        logger.warning("memory_quality_observatory integration failed: %s", exc)
+
     logger.info("advisory_review: %s", msg or "ok")
     return {"status": "ok", "message": msg}
 

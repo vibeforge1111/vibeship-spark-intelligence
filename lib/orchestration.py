@@ -10,7 +10,7 @@ import os
 import time
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .skills_router import recommend_skills
 from .context_sync import build_compact_context

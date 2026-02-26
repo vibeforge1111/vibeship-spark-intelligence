@@ -50,6 +50,10 @@ telegram_token.txt
 .spark/
 .learnings/
 *.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
 
 # optcheck local data (keep config tracked)
 .optcheck/
@@ -77,6 +81,15 @@ htmlcov/
 logs/
 tmp/
 _tmp/
+spark-alive/
+_observatory/
+SPARK_CONTEXT_FOR_CODEX.md
+SPARK_ADVISORY_PAYLOAD.json
+SPARK_ADVISORY_PAYLOAD*.json
+bandit_report.json
+pip-audit-report*.json
+coverage.xml
+.mypy_cache/
 
 # vibeship-optimizer (project state is local; keep config/logbook/reports tracked)
 .vibeship-optimizer/
@@ -85,6 +98,8 @@ _tmp/
 # Run artifacts (keep canonical summaries tracked; stash per-run outputs)
 docs/reports/_runs/
 docs/reports/
+docs/reports/*_memory_quality_observatory.md
+docs/reports/*_retrieval_guardrails.json
 dashboard_out.txt
 dashboard_err.txt
 reports/tune_replay_*.md
@@ -126,6 +141,9 @@ sandbox/spark_sandbox_diff.json
 node_modules/
 _pw_smoke.js
 
+# Temporary: keep unfinished observability kanban project local
+projects/observability-kanban/
+
 # OSS launch hygiene (removed from public share)
 logs/
 dist/
@@ -152,6 +170,20 @@ CLAUDE.md
 AGENTS.md
 SOUL.md
 TOOLS.md
+SPARK_CONTEXT.md
+SPARK_ADVISORY.md
+SPARK_NOTIFICATIONS.md
+SPARK_LEARNINGS.md
+SPARK_MEMORY*.md
+
+# Local agent/tool homes that may be created under repo root by wrappers.
+.openclaw/
+.clawdbot/
+
+# Token and PID artifacts (machine-local secrets/state)
+*.token
+*.pid
+pids/
 
 # Any file with local Windows paths in name
 C?UsersUSER*

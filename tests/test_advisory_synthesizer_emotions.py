@@ -38,7 +38,7 @@ def test_programmatic_synthesis_applies_concise_strategy(monkeypatch):
     )
 
     assert "**Cautions:**" not in text
-    assert "If this doesn’t match your intent" in text
+    assert "If this doesn't match your intent" in text
     assert "verify rollback before deploy" in text
 
 

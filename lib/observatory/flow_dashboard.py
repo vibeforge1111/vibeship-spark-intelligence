@@ -101,6 +101,21 @@ def _health_status(data: dict[int, dict]) -> list[tuple[str, str, str]]:
     ch = data.get(10, {})
     rows.append(("Active chips", fmt_num(ch.get("total_chips", 0)), "healthy"))
 
+    # Learning-Systems Bridge
+    bridge = data.get("bridge", {})
+    if bridge.get("audit_exists"):
+        rows.append(("External ingests", fmt_num(bridge.get("audit_count", 0)),
+                     "healthy" if bridge.get("recent_store_rate", 0) > 50 else "warning"))
+    if bridge.get("proposals_exists"):
+        rows.append(("Tuneable proposals", fmt_num(bridge.get("proposals_count", 0)), "healthy"))
+
+    # Onboarding
+    onboard = data.get("onboarding", {})
+    if onboard.get("completed"):
+        rows.append(("Onboarding", "completed", "healthy"))
+    elif onboard.get("started_at"):
+        rows.append(("Onboarding", f"{onboard.get('progress_pct', 0)}% complete", "warning"))
+
     return rows
 
 
@@ -116,6 +131,9 @@ def _mermaid_diagram(data: dict[int, dict]) -> str:
     pr = data.get(9, {})
     ch = data.get(10, {})
     pk = data.get(11, {})
+
+    elev = data.get("elevation", {})
+    needs_work = elev.get("needs_work_verdicts", 0)
 
     lines = [
         "```mermaid",
@@ -146,6 +164,11 @@ def _mermaid_diagram(data: dict[int, dict]) -> str:
         f'    {fmt_num(cg.get("total_insights", 0))} insights',
         f'    _{len(cg.get("category_distribution", {}))} categories_`"]',
         "",
+        f'    E -->|needs_work| EL["`**Elevation**',
+        f'    _12 text transforms_',
+        f'    _{fmt_num(needs_work)} attempted_`"]',
+        f'    EL -->|re-score| E',
+        "",
         f'    E -->|reject| X["`**Rejected**',
         f'    _Below threshold_`"]',
         "",
@@ -157,11 +180,14 @@ def _mermaid_diagram(data: dict[int, dict]) -> str:
         f'    {fmt_num(ei.get("episodes", 0))} episodes',
         f'    _{fmt_num(ei.get("distillations", 0))} distillations_`"]',
         "",
+        f'    G --> GR["`**Distillation Refiner**',
+        f'    _5-stage candidate ranking_`"]',
+        "",
         f'    F --> H["`**Advisory**',
         f'    {fmt_num(ad.get("total_advice_given", 0))} given',
         f'    _{ad.get("followed_rate", 0)}% followed_`"]',
         "",
-        f'    G --> H',
+        f'    GR --> H',
         "",
         f'    H --> I["`**Promotion**',
         f'    {fmt_num(pr.get("total_entries", 0))} log entries',
@@ -179,14 +205,22 @@ def _mermaid_diagram(data: dict[int, dict]) -> str:
         "",
         f'    K --> G',
         "",
-        f'    L["`**Tuneables**',
+        f'    LS["`**Learning-Systems Bridge**',
+        f'    _External insight ingress_`"]',
+        f'    LS -->|validated| VS',
+        "",
+        f'    L["`**Config Authority**',
         f'    {len(data.get(12, {}).get("sections", {}))} sections',
-        f'    _Hot-reload_`"]',
+        f'    _4-layer precedence + hot-reload_`"]',
         f'    -.->|configures| E',
         f'    L -.->|configures| H',
+        f'    L -.->|configures| GR',
         "",
         '    style X fill:#4a2020,stroke:#ff6666,color:#ff9999',
         '    style E fill:#2a3a2a,stroke:#66cc66,color:#88ee88',
+        '    style EL fill:#2a2a3a,stroke:#6688cc,color:#99bbee',
+        '    style GR fill:#2a2a3a,stroke:#6688cc,color:#99bbee',
+        '    style LS fill:#3a2a2a,stroke:#cc8866,color:#eebb99',
         "```",
     ]
     return "\n".join(lines)
@@ -238,10 +272,13 @@ def generate_flow_dashboard(data: dict[int, dict[str, Any]]) -> str:
     sections.append("## How Data Flows\n")
     sections.append(f"- An **event** enters via {stage_link(1)} and lands in the {stage_link(2)}")
     sections.append(f"- The {stage_link(3)} processes batches, feeding {stage_link(4)}")
-    sections.append(f"- {stage_link(5)} gates every insight before it enters {stage_link(6)}")
+    sections.append(f"- {stage_link(5)} gates every insight — NEEDS_WORK verdicts go through **Elevation Transforms** (12 text rewrites) before re-scoring")
+    sections.append(f"- Passed insights enter {stage_link(6)}; {stage_link(7)} produces distillations refined through the **Distillation Refiner** (5-stage candidate ranking)")
     sections.append(f"- {stage_link(8)} retrieves from {stage_link(6)}, {stage_link(7)}, and {stage_link(10)}")
     sections.append(f"- High-confidence insights get {stage_link(9, 'promoted')} to CLAUDE.md")
     sections.append(f"- {stage_link(11)} close the loop: predict, observe, evaluate, learn")
+    sections.append(f"- External systems feed insights via the **Learning-Systems Bridge** (validated ingress with audit trail)")
+    sections.append(f"- All config resolves through **Config Authority** (4-layer precedence with hot-reload)")
     sections.append("")
 
     # Quick links to existing pages
@@ -269,13 +306,13 @@ def _stage_description(num: int) -> str:
         2: "Event buffering, overflow, compaction",
         3: "Batch processing, priority ordering, learning yield",
         4: "Importance scoring, domain detection, pending items",
-        5: "Quality gate, roast verdicts, noise filtering",
+        5: "Quality gate, roast verdicts, noise filtering, **elevation transforms**",
         6: "Insight store, categories, reliability tracking",
-        7: "Episodes, steps, distillations, predict-evaluate loop",
+        7: "Episodes, steps, distillations, **distillation refiner pipeline**",
         8: "Retrieval, ranking, emission, effectiveness feedback",
         9: "Target files, criteria, promotion log",
         10: "Domain modules, per-chip activity",
         11: "Outcomes, links, surprise tracking",
-        12: "Configuration, hot-reload, all sections",
+        12: "**Config authority** (4-layer precedence), hot-reload, all sections",
     }
     return descs.get(num, "")
