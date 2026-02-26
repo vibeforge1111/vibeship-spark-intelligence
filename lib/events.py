@@ -75,6 +75,8 @@ def validate_event_dict(d: Dict[str, Any], *, strict: bool = True) -> Tuple[bool
     source = d.get("source")
     if not isinstance(source, str) or not source.strip():
         return False, "invalid_source"
+    if len(source) > 256:
+        return False, "source_too_long"
     kind = str(d.get("kind") or "")
     allowed = {k.value for k in SparkEventKind}
     if kind not in allowed:
@@ -82,6 +84,8 @@ def validate_event_dict(d: Dict[str, Any], *, strict: bool = True) -> Tuple[bool
     session_id = d.get("session_id")
     if not isinstance(session_id, str) or not session_id.strip():
         return False, "invalid_session_id"
+    if len(session_id) > 256:
+        return False, "session_id_too_long"
     try:
         ts = float(d.get("ts") or 0)
         if ts <= 0:
@@ -93,4 +97,11 @@ def validate_event_dict(d: Dict[str, Any], *, strict: bool = True) -> Tuple[bool
         return False, "missing_payload"
     if payload is not None and not isinstance(payload, dict):
         return False, "invalid_payload"
+    if payload is not None:
+        try:
+            import json as _json
+            if len(_json.dumps(payload)) > 65536:
+                return False, "payload_too_large"
+        except (RecursionError, ValueError):
+            return False, "payload_too_deep"
     return True, ""
