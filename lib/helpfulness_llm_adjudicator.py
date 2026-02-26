@@ -322,6 +322,16 @@ def run_helpfulness_llm_adjudicator(
         status = _norm_text(judged.get("status")) or ("ok" if judged.get("ok") else "error")
         label = _norm_text(judged.get("label")).lower()
         confidence = max(0.0, min(1.0, _safe_float(judged.get("confidence"), 0.0)))
+        min_conf = max(0.0, min(1.0, float(cfg.min_review_confidence)))
+        rationale = _norm_text(judged.get("rationale"))
+        error = _norm_text(judged.get("error"))
+        if status == "ok" and confidence < min_conf:
+            status = "abstain"
+            label = "abstain"
+            gate = f"below_min_confidence:{min_conf:.2f}"
+            rationale = f"{rationale} | {gate}" if rationale else gate
+            if not error:
+                error = gate
 
         review_row = {
             "schema_version": REVIEW_SCHEMA_VERSION,
@@ -334,9 +344,9 @@ def run_helpfulness_llm_adjudicator(
             "status": status,
             "label": label if label in ALLOWED_LABELS else "",
             "confidence": round(confidence, 3),
-            "rationale": _norm_text(judged.get("rationale"))[:400],
+            "rationale": rationale[:400],
             "raw_excerpt": _norm_text(judged.get("raw_excerpt"))[:400],
-            "error": _norm_text(judged.get("error"))[:200],
+            "error": error[:200],
             "reviewed_at": reviewed_at,
         }
         reviews_by_event[event_id] = review_row

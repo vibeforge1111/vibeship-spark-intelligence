@@ -111,3 +111,43 @@ def test_llm_adjudicator_skips_existing_ok_when_not_forced(tmp_path: Path) -> No
     assert out["skipped_existing"] == 1
     assert called["n"] == 0
 
+
+def test_llm_adjudicator_enforces_min_review_confidence(tmp_path: Path) -> None:
+    spark_dir = tmp_path / ".spark"
+    _write_jsonl(
+        spark_dir / "advisor" / "helpfulness_llm_queue.jsonl",
+        [{"event_id": "e-low", "tool": "Edit", "trace_id": "t-low", "request_ts": 42.0}],
+    )
+
+    def low_conf_judge(_event: dict, _cfg: LLMAdjudicatorConfig) -> dict:
+        return {
+            "ok": True,
+            "status": "ok",
+            "label": "helpful",
+            "confidence": 0.41,
+            "rationale": "weak evidence",
+            "provider": "fake",
+            "model": "fake-model",
+            "raw_excerpt": '{"label":"helpful","confidence":0.41}',
+        }
+
+    out = run_helpfulness_llm_adjudicator(
+        LLMAdjudicatorConfig(
+            spark_dir=spark_dir,
+            min_review_confidence=0.8,
+            max_events=5,
+            write_files=True,
+        ),
+        judge_fn=low_conf_judge,
+    )
+    assert out["processed"] == 1
+    assert out["by_status"]["abstain"] == 1
+    assert out["by_label"]["abstain"] == 1
+
+    reviews = _read_jsonl(spark_dir / "advisor" / "helpfulness_llm_reviews.jsonl")
+    assert len(reviews) == 1
+    row = reviews[0]
+    assert row["status"] == "abstain"
+    assert row["label"] == "abstain"
+    assert "below_min_confidence:0.80" in row["error"]
+

@@ -123,9 +123,11 @@ def _event_id_for_request(req: Dict[str, Any], advice_id: str, idx: int) -> str:
     ts = _safe_float(req.get("created_at"), 0.0)
     base = "|".join(
         [
-            run_id or trace_id or group or f"no-key:{ts:.3f}:{idx}",
+            run_id or trace_id or group or "no-key",
             _norm_tool(req.get("tool")),
             _norm_text(advice_id),
+            f"{ts:.6f}",
+            str(idx),
         ]
     )
     return _hash_id(base)
@@ -194,17 +196,27 @@ def _pick_best_explicit(
     req_group = _norm_text(req.get("advisory_group_key"))
     req_tool = _norm_tool(req.get("tool"))
 
-    candidates: List[Dict[str, Any]] = []
-    candidates.extend(by_advice.get(_norm_text(advice_id), []))
+    candidates: List[Tuple[str, Dict[str, Any]]] = []
+    seen: set[int] = set()
+
+    def _add(rows: Iterable[Dict[str, Any]], source: str) -> None:
+        for row in rows:
+            rid = id(row)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            candidates.append((source, row))
+
+    _add(by_advice.get(_norm_text(advice_id), []), "advice_id")
     if req_group:
-        candidates.extend(by_group.get(req_group, []))
+        _add(by_group.get(req_group, []), "group")
     if req_trace:
-        candidates.extend(by_trace.get(req_trace, []))
+        _add(by_trace.get(req_trace, []), "trace")
     if not candidates:
         return None
 
     best: Optional[Tuple[float, float, Dict[str, Any]]] = None
-    for row in candidates:
+    for source, row in candidates:
         ts = _safe_float(row.get("created_at"), 0.0)
         if ts <= 0.0:
             continue
@@ -217,6 +229,9 @@ def _pick_best_explicit(
         group = _norm_text(row.get("advisory_group_key"))
         tool = _norm_tool(row.get("tool"))
         score = 0.0
+        if source == "advice_id":
+            # Direct advice-id match is meaningful even when trace/run metadata is absent.
+            score += 3.0
         if req_trace and trace and req_trace == trace:
             score += 8.0
         if req_group and group and req_group == group:
@@ -503,6 +518,11 @@ def _apply_review_override(
     status = row["llm_review_status"]
     label = row["llm_review_label"]
     confidence = _safe_float(row["llm_review_confidence"], 0.0)
+    if status == "abstain":
+        # Treat abstain as terminal for this queue item to avoid endless re-queue loops.
+        row["llm_review_applied"] = False
+        row["llm_review_required"] = False
+        return row
     if status != "ok":
         row["llm_review_applied"] = False
         return row

@@ -219,3 +219,154 @@ def test_watcher_applies_llm_review_override(tmp_path: Path) -> None:
     assert event["judge_source"] == "llm_review:minimax"
     assert event["llm_review_applied"] is True
     assert event["llm_review_required"] is False
+
+
+def test_watcher_uses_unique_event_ids_for_repeated_exposures(tmp_path: Path) -> None:
+    spark_dir = tmp_path / ".spark"
+    _write_jsonl(
+        spark_dir / "advice_feedback_requests.jsonl",
+        [
+            {
+                "session_id": "s5",
+                "tool": "Edit",
+                "advice_ids": ["same-advice"],
+                "trace_id": "t5",
+                "run_id": "r5",
+                "advisory_group_key": "g5",
+                "created_at": 500.0,
+            },
+            {
+                "session_id": "s5",
+                "tool": "Edit",
+                "advice_ids": ["same-advice"],
+                "trace_id": "t5",
+                "run_id": "r5",
+                "advisory_group_key": "g5",
+                "created_at": 560.0,
+            },
+        ],
+    )
+    _write_jsonl(spark_dir / "advisor" / "implicit_feedback.jsonl", [])
+
+    run_helpfulness_watcher(
+        WatcherConfig(
+            spark_dir=spark_dir,
+            write_files=True,
+        )
+    )
+
+    events = _read_jsonl(spark_dir / "advisor" / "helpfulness_events.jsonl")
+    assert len(events) == 2
+    ids = {e["event_id"] for e in events}
+    assert len(ids) == 2
+
+
+def test_watcher_accepts_explicit_match_by_advice_id_only(tmp_path: Path) -> None:
+    spark_dir = tmp_path / ".spark"
+    _write_jsonl(
+        spark_dir / "advice_feedback_requests.jsonl",
+        [
+            {
+                "session_id": "s6",
+                "tool": "Edit",
+                "advice_ids": ["a6"],
+                "trace_id": "trace-request",
+                "run_id": "run-request",
+                "advisory_group_key": "group-request",
+                "created_at": 600.0,
+            }
+        ],
+    )
+    # Deliberately omit matching trace/run/group/tool; only advice_id matches.
+    _write_jsonl(
+        spark_dir / "advice_feedback.jsonl",
+        [
+            {
+                "advice_ids": ["a6"],
+                "tool": "Bash",
+                "helpful": True,
+                "followed": True,
+                "trace_id": "trace-other",
+                "run_id": "run-other",
+                "advisory_group_key": "group-other",
+                "created_at": 605.0,
+            }
+        ],
+    )
+    _write_jsonl(spark_dir / "advisor" / "implicit_feedback.jsonl", [])
+
+    run_helpfulness_watcher(
+        WatcherConfig(
+            spark_dir=spark_dir,
+            write_files=True,
+        )
+    )
+
+    events = _read_jsonl(spark_dir / "advisor" / "helpfulness_events.jsonl")
+    assert len(events) == 1
+    event = events[0]
+    assert event["helpful_label"] == "helpful"
+    assert event["judge_source"] == "explicit_feedback"
+
+
+def test_watcher_treats_abstain_review_as_terminal_for_queue(tmp_path: Path) -> None:
+    spark_dir = tmp_path / ".spark"
+    _write_jsonl(
+        spark_dir / "advice_feedback_requests.jsonl",
+        [
+            {
+                "session_id": "s7",
+                "tool": "Edit",
+                "advice_ids": ["a7"],
+                "trace_id": "t7",
+                "run_id": "r7",
+                "advisory_group_key": "g7",
+                "created_at": 700.0,
+            }
+        ],
+    )
+    _write_jsonl(
+        spark_dir / "advisor" / "implicit_feedback.jsonl",
+        [{"tool": "Edit", "signal": "followed", "trace_id": "t7", "timestamp": 710.0}],
+    )
+
+    run_helpfulness_watcher(
+        WatcherConfig(
+            spark_dir=spark_dir,
+            llm_review_confidence_threshold=0.95,
+            write_files=True,
+        )
+    )
+    first_events = _read_jsonl(spark_dir / "advisor" / "helpfulness_events.jsonl")
+    assert len(first_events) == 1
+    event_id = first_events[0]["event_id"]
+    assert first_events[0]["llm_review_required"] is True
+
+    _write_jsonl(
+        spark_dir / "advisor" / "helpfulness_llm_reviews.jsonl",
+        [
+            {
+                "event_id": event_id,
+                "status": "abstain",
+                "label": "abstain",
+                "confidence": 0.91,
+                "provider": "minimax",
+                "reviewed_at": 800.0,
+            }
+        ],
+    )
+    run_helpfulness_watcher(
+        WatcherConfig(
+            spark_dir=spark_dir,
+            llm_review_confidence_threshold=0.95,
+            write_files=True,
+        )
+    )
+
+    events = _read_jsonl(spark_dir / "advisor" / "helpfulness_events.jsonl")
+    assert len(events) == 1
+    event = events[0]
+    assert event["llm_review_status"] == "abstain"
+    assert event["llm_review_applied"] is False
+    assert event["llm_review_required"] is False
+    assert _read_jsonl(spark_dir / "advisor" / "helpfulness_llm_queue.jsonl") == []
