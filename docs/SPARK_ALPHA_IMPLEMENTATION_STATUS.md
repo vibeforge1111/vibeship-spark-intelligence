@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, post PR-10 fallback-surface deletion sweep)
+Last updated: 2026-02-27 (local branch snapshot, PR-04 parity tooling + PR-06 alpha-default cutover)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -129,11 +129,23 @@ Branch: feat/spark-alpha
 - Added packet-store test coverage to assert stale packets become fresh again after usage.
 - Goal: reduce advisory store readiness/freshness decay for actively used packets.
 
+17. `0f559d9` - `feat(alpha-memory): add spine parity report gate tooling`
+- Added parity comparison helpers (`lib/memory_spine_parity.py`) for JSON vs SQLite spine snapshots.
+- Added parity CLI report (`scripts/memory_spine_parity_report.py`) with threshold gating (`--fail-under`, `--min-rows`, `--enforce`).
+- Added tests for parity comparison/gate behavior (`tests/test_memory_spine_parity.py`).
+
+18. `1bdedfb` - `feat(alpha-route): default advisory orchestrator to alpha`
+- Changed advisory route default from `engine` to `alpha` in `lib/advisory_orchestrator.py`.
+- Kept alpha->engine fallback behavior intact for safe rollback on runtime errors.
+- Updated route-default unit test accordingly (`tests/test_advisory_orchestrator.py`).
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
 - `scripts/rebind_outcome_traces.py --apply` (rebound 61 strict-window mismatches)
 - `scripts/refresh_packet_freshness.py --apply` (refreshed 5 packet freshness windows)
+- `scripts/rebind_outcome_traces.py --apply` (additional rebound 1 strict-window mismatch)
+- `scripts/refresh_packet_freshness.py --apply` (additional refresh 34 packet freshness windows)
 
 ### Current measured state (latest run)
 
@@ -144,13 +156,15 @@ Branch: feat/spark-alpha
 - `pytest tests/test_10_improvements.py -q` -> `9 passed, 1 skipped`
 - `pytest tests/test_cognitive_learner.py -q` -> `76 passed`
 - `pytest tests/test_memory_spine_sqlite.py -q` -> `2 passed`
+- `pytest tests/test_memory_spine_parity.py -q` -> `3 passed`
 - `pytest tests/test_advisor.py -q` -> `97 passed`
 - `pytest tests/test_memory_retrieval_ab.py -q` -> `11 passed`
 - `pytest tests/test_advisory_orchestrator.py -q` -> `5 passed`
 - `pytest tests/test_spark_alpha_replay_arena.py -q` -> `4 passed`
 - `pytest tests/test_advisory_dual_path_router.py -q` -> `10 passed`
 - `python scripts/spark_alpha_replay_arena.py --episodes 60 --seed 42` -> alpha winner, promotion gate pass, streak reached `5/3`
-- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `10/3`
+- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `11/3`
+- `python scripts/memory_spine_parity_report.py --list-limit 5` -> payload parity `1.0`, gate pass `true`
 - Replay artifacts:
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.json`
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`
@@ -161,9 +175,9 @@ Notable metrics now:
 - `context.p50`: 230
 - `advisory.emit_rate`: 0.194
 - `strict_trace_coverage`: 0.5276
-- `strict_acted_on_rate`: 0.1754
-- `advisory_store_readiness`: 0.027
-- `advisory_store_freshness`: 0.027
+- `strict_acted_on_rate`: 0.1771
+- `advisory_store_readiness`: 0.100
+- `advisory_store_freshness`: 0.100
 
 ## Not done yet
 
@@ -177,9 +191,9 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
 7. Broad file/function deletion pass to reach Carmack-size target is not done.
 8. Final migration playbook for old paths/deprecated modules is not done.
-9. PR-04 deletion commitment is still pending (JSONL/legacy path retirement after parity criteria).
+9. PR-04 deletion commitment is still pending (JSONL/legacy path retirement after 3 consecutive parity gate passes).
 10. PR-05 deletion commitment is still pending (retire superseded rank paths after replay/canary wins).
-11. PR-06 broad file deletion commitment is still pending (full legacy advisory file removals after live canary pass).
+11. PR-06 broad file deletion commitment is still pending (full legacy advisory file removals after alpha-default burn-in + live canary pass).
 12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup and dead fallback removal.
 
 ## In progress right now

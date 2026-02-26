@@ -1,6 +1,6 @@
 # Spark Alpha PR-06 Legacy Deletion Candidates
 
-Date: 2026-02-26  
+Date: 2026-02-27  
 Branch: `feat/spark-alpha`
 
 Purpose: explicit legacy advisory-path candidates for PR-10 deletion sweep, tied to the new alpha route.
@@ -17,11 +17,12 @@ Purpose: explicit legacy advisory-path candidates for PR-10 deletion sweep, tied
 1. [Done] `hooks/observe.py` legacy fallback block to direct `advisor.advise` when orchestrator/engine throws.
 2. [Done] `lib/advisory_engine.py` quick fallback branch (`LIVE_QUICK_FALLBACK_ENABLED`).
 3. [Done] `lib/advisory_engine.py` packet fallback emit branch (`PACKET_FALLBACK_EMIT_ENABLED`).
-4. [Pending] `lib/advisory_engine.py` duplicate post-gate dedupe pass if alpha gate+state dedupe proves equivalent or better.
-5. [Pending] `lib/advisory_engine.py` legacy route-only diagnostic fields superseded by alpha comparison report.
-6. [Pending] `lib/advisor.py` keyword fallback path for cognitive retrieval when semantic+RRF path consistently outperforms in replay.
-7. [Pending] `lib/advisor.py` superseded single-path rank weighting branches replaced by deterministic fusion stack.
-8. [Pending] `lib/advisory_parser.py` legacy read paths not consumed by alpha or replay observability.
+4. [Done] `lib/advisory_orchestrator.py` default route now cut over to `alpha` (engine retained only as fallback lane).
+5. [Pending] `lib/advisory_engine.py` duplicate post-gate dedupe pass if alpha gate+state dedupe proves equivalent or better.
+6. [Pending] `lib/advisory_engine.py` legacy route-only diagnostic fields superseded by alpha comparison report.
+7. [Pending] `lib/advisor.py` keyword fallback path for cognitive retrieval when semantic+RRF path consistently outperforms in replay.
+8. [Pending] `lib/advisor.py` superseded single-path rank weighting branches replaced by deterministic fusion stack.
+9. [Pending] `lib/advisory_parser.py` legacy read paths not consumed by alpha or replay observability.
 
 ## Files Added in PR-06 That Enable This Sweep
 

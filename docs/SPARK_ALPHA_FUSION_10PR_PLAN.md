@@ -34,15 +34,17 @@ Completed commits:
 14. `52d555f` PR-10 follow-up: dead fallback config surface deletion + schema prune
 15. `80d8df2` PR-03 promotion: single-score primary path, dual runtime retired
 16. `4244369` PR-05 follow-up: packet freshness extension on usage
+17. `0f559d9` PR-04 follow-up: memory spine parity report + gate tooling
+18. `1bdedfb` PR-06 follow-up: advisory route default cutover to alpha
 
 Current measured state:
 1. `production_loop_report.py`: `NOT READY (16/19 passed)`
 2. `memory_quality_observatory.py`: retrieval guardrails passing
-3. Key metrics: `context.p50=230`, `advisory.emit_rate=0.194`, `strict_trace_coverage=0.5985`
+3. Key metrics: `context.p50=230`, `advisory.emit_rate=0.194`, `strict_trace_coverage=0.5354`
 4. Replay arena latest (`scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42`):
    - winner: `alpha`
    - `promotion_gate_pass=true`
-   - `consecutive_pass_streak=10`
+   - `consecutive_pass_streak=11`
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial
@@ -74,8 +76,9 @@ Current measured state:
 ### PR-04 Memory Spine + Contextual Write  (Partial)
 1. Contextual write path is done.
 2. SQLite dual-write path for cognitive insights is now implemented (shadow lane).
-3. Remaining: extend spine coverage across advisory/memory surfaces and add parity checks.
-4. Deletion commitment: remove JSONL writes after parity >= 99.5% for 3 runs.
+3. Added parity tooling (`memory_spine_parity_report.py`) with threshold gate semantics.
+4. Remaining: extend spine coverage across advisory/memory surfaces and run 3 consecutive parity gate passes.
+5. Deletion commitment: remove JSONL writes after parity >= 99.5% for 3 runs.
 
 ### PR-05 Retrieval Fusion (RRF + Contextual Retrieval)  (Partial)
 1. Hybrid retrieval now includes deterministic RRF fusion (semantic + lexical + support ranks).
@@ -88,8 +91,9 @@ Current measured state:
 1. Emission reliability and trace binding improved.
 2. Added compact `advisory_engine_alpha` pre-tool path (retrieve -> gate -> synthesize -> emit).
 3. Added route orchestrator for pre/post/prompt flows with canary routing and fallback.
-4. Remaining: expand alpha ownership for post-tool and prompt paths (currently delegated) and validate via replay/canary.
-5. Deletion commitment: remove legacy advisory path files once replay arena + live canary pass.
+4. Route default is now `alpha` (with engine fallback retained for rollback safety).
+5. Remaining: expand alpha ownership for post-tool and prompt paths (currently delegated) and validate via replay/canary.
+6. Deletion commitment: remove legacy advisory path files once replay arena + live canary pass.
 
 ### PR-07 Replay Arena (Champion/Challenger)  (Implemented)
 1. Added `scripts/spark_alpha_replay_arena.py` for deterministic replay on identical episodes.
