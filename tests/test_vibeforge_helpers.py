@@ -40,3 +40,38 @@ def test_regret_rate_stays_low_when_reward_zero():
     assert cycle_regret >= 0.0
     assert cumulative >= 0.0
     assert rate <= 1.0
+
+
+def test_rank_candidates_prefers_winning_signature():
+    vibeforge = _load_vibeforge_module()
+    candidates = [
+        {"section": "advisor", "key": "min_rank_score", "op": "add", "delta": -0.02},
+        {"section": "advisor", "key": "max_advice_items", "op": "add", "delta": 1},
+    ]
+    ledger = [
+        {
+            "outcome": "promoted",
+            "delta": 0.03,
+            "proposal": {"type": "tuneable", "section": "advisor", "key": "max_advice_items", "from": 2, "to": 3},
+        },
+        {
+            "outcome": "rolled_back",
+            "delta": -0.01,
+            "proposal": {"type": "tuneable", "section": "advisor", "key": "min_rank_score", "from": 0.3, "to": 0.28},
+        },
+    ]
+    ranked = vibeforge._rank_candidates(candidates, ledger)
+    assert ranked[0]["key"] == "max_advice_items"
+
+
+def test_find_last_promoted_with_existing_backup(tmp_path):
+    vibeforge = _load_vibeforge_module()
+    backup = tmp_path / "backup.json"
+    backup.write_text("{}", encoding="utf-8")
+    ledger = [
+        {"cycle": 1, "outcome": "promoted", "proposal": {"type": "tuneable", "section": "a", "key": "x"}, "backup_path": str(backup)},
+        {"cycle": 2, "outcome": "rolled_back"},
+    ]
+    row = vibeforge._find_last_promoted_with_backup(ledger)
+    assert row is not None
+    assert int(row.get("cycle", 0)) == 1

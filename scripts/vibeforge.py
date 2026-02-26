@@ -420,6 +420,91 @@ def _candidate_pool(metric_name: str, optimize: str) -> List[Dict[str, Any]]:
     ]
 
 
+def _value_token(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _candidate_signature(candidate: Dict[str, Any]) -> str:
+    section = str(candidate.get("section", ""))
+    key = str(candidate.get("key", ""))
+    op = str(candidate.get("op", ""))
+    if op == "add":
+        delta = float(candidate.get("delta", 0.0) or 0.0)
+        direction = "inc" if delta > 0 else "dec"
+    else:
+        direction = f"set:{_value_token(candidate.get('value'))}"
+    return f"{section}.{key}|{direction}"
+
+
+def _proposal_signature(proposal: Dict[str, Any]) -> str:
+    section = str(proposal.get("section", ""))
+    key = str(proposal.get("key", ""))
+    from_value = proposal.get("from")
+    to_value = proposal.get("to")
+    direction = ""
+    if isinstance(from_value, (int, float)) and isinstance(to_value, (int, float)):
+        if float(to_value) > float(from_value):
+            direction = "inc"
+        elif float(to_value) < float(from_value):
+            direction = "dec"
+        else:
+            direction = "same"
+    else:
+        direction = f"set:{_value_token(to_value)}"
+    return f"{section}.{key}|{direction}"
+
+
+def _proposal_reward(outcome: str, delta: float) -> float:
+    if outcome == "promoted":
+        return float(delta)
+    if outcome == "rolled_back":
+        return -max(abs(float(delta)), 0.001)
+    return 0.0
+
+
+def _candidate_scores(ledger_rows: List[Dict[str, Any]]) -> Dict[str, float]:
+    stats: Dict[str, Dict[str, float]] = {}
+    total = 0
+    for row in ledger_rows:
+        if not isinstance(row, dict):
+            continue
+        proposal = row.get("proposal")
+        if not isinstance(proposal, dict) or str(proposal.get("type")) != "tuneable":
+            continue
+        outcome = str(row.get("outcome", ""))
+        if outcome not in {"promoted", "rolled_back"}:
+            continue
+        sig = _proposal_signature(proposal)
+        bucket = stats.setdefault(sig, {"attempts": 0.0, "reward_sum": 0.0})
+        bucket["attempts"] += 1.0
+        bucket["reward_sum"] += _proposal_reward(outcome, float(row.get("delta", 0.0) or 0.0))
+        total += 1
+
+    if total <= 0:
+        return {}
+
+    scores: Dict[str, float] = {}
+    for sig, bucket in stats.items():
+        attempts = max(bucket["attempts"], 1.0)
+        mean_reward = bucket["reward_sum"] / attempts
+        exploration = math.sqrt((2.0 * math.log(float(total) + 1.0)) / attempts)
+        scores[sig] = mean_reward + exploration
+    return scores
+
+
+def _rank_candidates(candidates: List[Dict[str, Any]], ledger_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if len(candidates) <= 1:
+        return list(candidates)
+    scores = _candidate_scores(ledger_rows[-200:])
+    ranked: List[Tuple[float, int, Dict[str, Any]]] = []
+    for idx, candidate in enumerate(candidates):
+        sig = _candidate_signature(candidate)
+        score = float(scores.get(sig, 0.0))
+        ranked.append((score, -idx, candidate))
+    ranked.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return [item[2] for item in ranked]
+
+
 def _attempted_proposals(ledger_rows: List[Dict[str, Any]]) -> set[Tuple[str, str, str]]:
     seen: set[Tuple[str, str, str]] = set()
     for row in ledger_rows:
@@ -447,7 +532,7 @@ def _propose_tuneable(goal: Dict[str, Any], ledger_rows: List[Dict[str, Any]], t
     metric_name = str((goal.get("metric") or {}).get("name", ""))
     optimize = _infer_optimize(goal)
     attempted = _attempted_proposals(ledger_rows[-40:])
-    candidates = _candidate_pool(metric_name, optimize)
+    candidates = _rank_candidates(_candidate_pool(metric_name, optimize), ledger_rows)
 
     for c in candidates:
         section = str(c.get("section", ""))
@@ -556,6 +641,13 @@ def _validate_goal(goal: Dict[str, Any]) -> None:
             raise ValueError(f"goal.metric.{key} missing")
 
 
+def _max_cycles_reached(goal: Dict[str, Any]) -> bool:
+    max_cycles = int(goal.get("max_cycles", 0) or 0)
+    if max_cycles <= 0:
+        return False
+    return int(goal.get("cycles_run", 0) or 0) >= max_cycles
+
+
 def _init_goal(preset: str, goal_path: Path, no_baseline: bool) -> Dict[str, Any]:
     if preset not in PRESETS:
         raise ValueError(f"unknown preset: {preset}")
@@ -638,6 +730,10 @@ def _status_payload(goal: Dict[str, Any], ledger_rows: List[Dict[str, Any]], inc
             except Exception:
                 progress = None
 
+    gap = None
+    if current_value is not None:
+        gap = _gap(current_value, float(goal.get("target", 0.0)), optimize)
+
     return {
         "goal": goal.get("goal"),
         "status": goal.get("status"),
@@ -645,10 +741,12 @@ def _status_payload(goal: Dict[str, Any], ledger_rows: List[Dict[str, Any]], inc
         "current": current_value,
         "target": float(goal.get("target", 0.0)),
         "baseline": goal.get("baseline"),
+        "gap": gap,
         "progress": progress,
         "cycles_run": int(goal.get("cycles_run", 0) or 0),
         "cycles_promoted": int(goal.get("cycles_promoted", 0) or 0),
         "cycles_rolled_back": int(goal.get("cycles_rolled_back", 0) or 0),
+        "max_cycles": int(goal.get("max_cycles", 0) or 0),
         "regret_cumulative": float(goal.get("regret_cumulative", 0.0) or 0.0),
         "regret_rate": float(goal.get("regret_rate", 0.0) or 0.0),
         "constraints": constraints,
@@ -673,11 +771,15 @@ def _print_status(payload: Dict[str, Any], as_json: bool) -> None:
     progress = payload.get("progress")
     if progress is not None:
         print(f"Progress: {float(progress) * 100:.1f}%")
+    if payload.get("gap") is not None:
+        print(f"Gap:      {float(payload.get('gap')):.4f}")
     print(
         f"Cycles:   {payload.get('cycles_run', 0)} run, "
         f"{payload.get('cycles_promoted', 0)} promoted, "
         f"{payload.get('cycles_rolled_back', 0)} rolled back"
     )
+    if int(payload.get("max_cycles", 0) or 0) > 0:
+        print(f"Budget:   {payload.get('cycles_run', 0)} / {payload.get('max_cycles')} cycles")
     print(
         f"Regret:   cumulative={float(payload.get('regret_cumulative', 0.0)):.4f}, "
         f"rate={float(payload.get('regret_rate', 0.0)):.4f}"
@@ -705,6 +807,26 @@ def _run_cycle(
 ) -> Tuple[str, Dict[str, Any]]:
     optimize = _infer_optimize(goal)
     cycle = int(goal.get("cycles_run", 0) or 0) + 1
+    max_cycles = int(goal.get("max_cycles", 0) or 0)
+    if max_cycles > 0 and cycle > max_cycles:
+        goal["status"] = "failed"
+        _save_goal(goal_path, goal)
+        row = {
+            "cycle": cycle,
+            "timestamp": _now_iso(),
+            "outcome": "max_cycles_reached",
+            "metric_before": None,
+            "metric_after": None,
+            "delta": 0.0,
+            "proposal": None,
+            "cycle_regret": 0.0,
+            "cumulative_regret": float(goal.get("regret_cumulative", 0.0) or 0.0),
+            "regret_rate": float(goal.get("regret_rate", 0.0) or 0.0),
+            "max_cycles": max_cycles,
+        }
+        _append_jsonl(ledger_path, row)
+        return "max_cycles_reached", row
+
     before = _measure_goal(goal)
     before_value = float(before["objective"])
     target = float(goal.get("target", 0.0))
@@ -760,16 +882,40 @@ def _run_cycle(
     if not isinstance(tuneables[proposal.section], dict):
         tuneables[proposal.section] = {}
     tuneables[proposal.section][proposal.key] = proposal.to_value
-    validation_meta = _write_tuneables(tuneables_path, tuneables)
+    try:
+        validation_meta = _write_tuneables(tuneables_path, tuneables)
+        after = _measure_goal(goal)
+    except Exception as exc:
+        _restore_tuneables(tuneables_path, backup)
+        row = {
+            "cycle": cycle,
+            "timestamp": _now_iso(),
+            "outcome": "error_rolled_back",
+            "metric_before": before_value,
+            "metric_after": before_value,
+            "delta": 0.0,
+            "proposal": proposal_dict,
+            "constraints_checked": before.get("constraints", []),
+            "backup_path": str(backup),
+            "error": str(exc),
+            "cycle_regret": 0.0,
+            "cumulative_regret": float(goal.get("regret_cumulative", 0.0) or 0.0),
+            "regret_rate": float(goal.get("regret_rate", 0.0) or 0.0),
+        }
+        _append_jsonl(ledger_path, row)
+        goal["cycles_run"] = cycle
+        goal["cycles_rolled_back"] = int(goal.get("cycles_rolled_back", 0) or 0) + 1
+        _save_goal(goal_path, goal)
+        return "error_rolled_back", row
 
-    after = _measure_goal(goal)
     after_value = float(after["objective"])
     delta = _reward(before_value, after_value, optimize)
     improved = delta > EPSILON
     constraints_ok = bool(after.get("all_constraints_ok"))
+    gates_ok = bool(after.get("gates_ready"))
 
     outcome = "promoted"
-    if not (improved and constraints_ok):
+    if not (improved and constraints_ok and gates_ok):
         _restore_tuneables(tuneables_path, backup)
         outcome = "rolled_back"
 
@@ -788,6 +934,7 @@ def _run_cycle(
         "delta": delta,
         "proposal": proposal_dict,
         "constraints_checked": after.get("constraints", []),
+        "gates_ready_after": bool(after.get("gates_ready")),
         "validation": validation_meta,
         "backup_path": str(backup),
         "cycle_regret": cycle_regret,
@@ -812,6 +959,23 @@ def _run_cycle(
 
     _save_goal(goal_path, goal)
     return outcome, row
+
+
+def _find_last_promoted_with_backup(ledger_rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    for row in reversed(ledger_rows):
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("outcome")) != "promoted":
+            continue
+        proposal = row.get("proposal")
+        if not isinstance(proposal, dict) or str(proposal.get("type")) != "tuneable":
+            continue
+        backup = Path(str(row.get("backup_path", "")).strip()) if row.get("backup_path") else None
+        if backup is None or not str(backup):
+            continue
+        if backup.exists():
+            return row
+    return None
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -873,6 +1037,107 @@ def cmd_history(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_rollback(args: argparse.Namespace) -> int:
+    goal_path = Path(args.goal).expanduser()
+    ledger_path = Path(args.ledger).expanduser()
+    tuneables_path = Path(args.tuneables).expanduser()
+    goal = _load_goal(goal_path)
+    ledger_rows = _read_jsonl(ledger_path)
+    row = _find_last_promoted_with_backup(ledger_rows)
+    if row is None:
+        print("No promoted tuneable change with backup found.")
+        return 4
+
+    backup = Path(str(row.get("backup_path")))
+    _restore_tuneables(tuneables_path, backup)
+    cycle = int(goal.get("cycles_run", 0) or 0) + 1
+    measure = None
+    try:
+        measure = _measure_goal(goal)
+    except Exception:
+        measure = None
+    metric_now = float(measure["objective"]) if isinstance(measure, dict) and "objective" in measure else None
+    rollback_row = {
+        "cycle": cycle,
+        "timestamp": _now_iso(),
+        "outcome": "manual_rollback",
+        "rolled_back_cycle": int(row.get("cycle", 0) or 0),
+        "metric_before": metric_now,
+        "metric_after": metric_now,
+        "delta": 0.0,
+        "proposal": row.get("proposal"),
+        "backup_path": str(backup),
+        "cycle_regret": 0.0,
+        "cumulative_regret": float(goal.get("regret_cumulative", 0.0) or 0.0),
+        "regret_rate": float(goal.get("regret_rate", 0.0) or 0.0),
+    }
+    _append_jsonl(ledger_path, rollback_row)
+    goal["cycles_run"] = cycle
+    goal["cycles_rolled_back"] = int(goal.get("cycles_rolled_back", 0) or 0) + 1
+    if str(goal.get("status", "active")) in {"reached", "failed"}:
+        goal["status"] = "active"
+    _save_goal(goal_path, goal)
+    p = row.get("proposal") if isinstance(row.get("proposal"), dict) else {}
+    print(
+        "Rolled back cycle "
+        f"{int(row.get('cycle', 0) or 0)} "
+        f"({p.get('section', '')}.{p.get('key', '')}) using {backup}"
+    )
+    return 0
+
+
+def cmd_reset(args: argparse.Namespace) -> int:
+    goal_path = Path(args.goal).expanduser()
+    ledger_path = Path(args.ledger).expanduser()
+    goal = _load_goal(goal_path)
+    goal["status"] = "active"
+    goal["cycles_run"] = 0
+    goal["cycles_promoted"] = 0
+    goal["cycles_rolled_back"] = 0
+    goal["regret_cumulative"] = 0.0
+    goal["regret_rate"] = 0.0
+    _save_goal(goal_path, goal)
+    if bool(args.clear_history) and ledger_path.exists():
+        archive = ledger_path.with_name(f"{ledger_path.stem}.archive.{time.strftime('%Y%m%d_%H%M%S')}{ledger_path.suffix}")
+        ledger_path.replace(archive)
+        print(f"Archived ledger: {archive}")
+    print("VibeForge counters reset.")
+    return 0
+
+
+def cmd_diff(args: argparse.Namespace) -> int:
+    rows = _read_jsonl(Path(args.ledger).expanduser())
+    reverted = {int(r.get("rolled_back_cycle", 0) or 0) for r in rows if str(r.get("outcome")) == "manual_rollback"}
+    promoted: List[Dict[str, Any]] = []
+    for row in rows:
+        if str(row.get("outcome")) != "promoted":
+            continue
+        cycle = int(row.get("cycle", 0) or 0)
+        proposal = row.get("proposal")
+        if cycle in reverted:
+            continue
+        if not isinstance(proposal, dict) or str(proposal.get("type")) != "tuneable":
+            continue
+        promoted.append(row)
+    if bool(args.json):
+        print(json.dumps(promoted, indent=2))
+        return 0
+    if not promoted:
+        print("No active promoted tuneable changes in ledger.")
+        return 0
+    print("ACTIVE PROMOTED CHANGES")
+    print("=" * 70)
+    for row in promoted:
+        proposal = row.get("proposal") if isinstance(row.get("proposal"), dict) else {}
+        print(
+            f"Cycle {int(row.get('cycle', 0) or 0):03d}  "
+            f"{proposal.get('section', '')}.{proposal.get('key', '')}  "
+            f"{proposal.get('from')} -> {proposal.get('to')}  "
+            f"delta={float(row.get('delta', 0.0) or 0.0):+.4f}"
+        )
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     goal_path = Path(args.goal).expanduser()
     ledger_path = Path(args.ledger).expanduser()
@@ -885,10 +1150,21 @@ def cmd_run(args: argparse.Namespace) -> int:
     if str(goal.get("status", "active")) == "reached":
         print("Goal already reached.")
         return 3
+    if _max_cycles_reached(goal):
+        goal["status"] = "failed"
+        _save_goal(goal_path, goal)
+        print("Goal reached max_cycles. Use `reset` to continue.")
+        return 2
 
     cycles = max(1, int(args.cycles))
     rc = 0
     for _ in range(cycles):
+        if _max_cycles_reached(goal):
+            goal["status"] = "failed"
+            _save_goal(goal_path, goal)
+            print("Goal reached max_cycles. Use `reset` to continue.")
+            rc = 2
+            break
         outcome, row = _run_cycle(
             goal,
             goal_path=goal_path,
@@ -906,6 +1182,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             rc = 3
             break
         if str(goal.get("status")) == "paused":
+            rc = 2
+            break
+        if str(goal.get("status")) == "failed":
             rc = 2
             break
     return rc
@@ -953,6 +1232,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p_hist.add_argument("--json", action="store_true")
     p_hist.set_defaults(fn=cmd_history)
 
+    p_diff = sub.add_parser("diff", help="Show active promoted tuneable changes")
+    _add_common_args(p_diff)
+    p_diff.add_argument("--json", action="store_true")
+    p_diff.set_defaults(fn=cmd_diff)
+
+    p_rollback = sub.add_parser("rollback", help="Rollback the last promoted tuneable change")
+    _add_common_args(p_rollback)
+    p_rollback.set_defaults(fn=cmd_rollback)
+
     p_pause = sub.add_parser("pause", help="Pause goal")
     _add_common_args(p_pause)
     p_pause.set_defaults(fn=cmd_pause)
@@ -960,6 +1248,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_resume = sub.add_parser("resume", help="Resume goal")
     _add_common_args(p_resume)
     p_resume.set_defaults(fn=cmd_resume)
+
+    p_reset = sub.add_parser("reset", help="Reset counters and regret")
+    _add_common_args(p_reset)
+    p_reset.add_argument("--clear-history", action="store_true", help="Archive ledger history file")
+    p_reset.set_defaults(fn=cmd_reset)
     return p
 
 
