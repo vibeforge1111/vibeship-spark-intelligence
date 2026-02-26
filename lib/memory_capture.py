@@ -253,6 +253,36 @@ def infer_category(text: str) -> CognitiveCategory:
     return CognitiveCategory.META_LEARNING
 
 
+def _llm_area_missed_signal_detect(text: str, score: float, breakdown: Dict[str, float]) -> float:
+    """LLM area: detect valuable signals missed by heuristic scoring.
+
+    Returns adjusted score. When disabled (default), returns original score.
+    """
+    try:
+        from .llm_dispatch import llm_area_call
+        from .llm_area_prompts import format_prompt
+
+        prompt = format_prompt(
+            "missed_signal_detect",
+            statement=text[:500],
+            current_score=str(score),
+            breakdown=str(breakdown),
+        )
+        result = llm_area_call("missed_signal_detect", prompt, fallback=str(score))
+        if result.used_llm and result.text:
+            import json as _json
+            try:
+                data = _json.loads(result.text)
+                if isinstance(data, dict) and data.get("valuable"):
+                    boost = float(data.get("boost", 0.15))
+                    return min(1.0, score + max(0.0, min(0.3, boost)))
+            except (ValueError, TypeError):
+                pass
+        return score
+    except Exception:
+        return score
+
+
 def _llm_area_novelty_score(text: str) -> float:
     """LLM area: score semantic novelty of a memory candidate.
 
@@ -717,7 +747,10 @@ def process_recent_memory_events(limit: int = 50) -> Dict[str, Any]:
 
         score, breakdown = importance_score(txt)
         if score < SUGGEST_THRESHOLD:
-            continue
+            # LLM area: missed_signal_detect — check if valuable signal was missed
+            score = _llm_area_missed_signal_detect(txt, score, breakdown)
+            if score < SUGGEST_THRESHOLD:
+                continue
 
         # Dedupe: avoid storing the same preference repeatedly (even across sessions)
         norm_txt = normalize_memory_text(txt)

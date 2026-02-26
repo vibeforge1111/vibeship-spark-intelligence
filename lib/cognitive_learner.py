@@ -1621,6 +1621,31 @@ class CognitiveLearner:
             return evidence
 
     @staticmethod
+    def _llm_area_conflict_resolve(new_insight: str, existing: "CognitiveInsight") -> str:
+        """LLM area: resolve contradictions between new and existing insights.
+
+        Returns the resolved insight text (may merge, prefer new, or prefer existing).
+        When disabled (default), returns new_insight unchanged.
+        """
+        try:
+            from .llm_dispatch import llm_area_call
+            from .llm_area_prompts import format_prompt
+
+            prompt = format_prompt(
+                "conflict_resolve",
+                new_insight=new_insight[:300],
+                existing_insight=(existing.insight or "")[:300],
+                existing_confidence=str(existing.confidence),
+                existing_validations=str(existing.times_validated),
+            )
+            result = llm_area_call("conflict_resolve", prompt, fallback=new_insight)
+            if result.used_llm and result.text:
+                return result.text
+            return new_insight
+        except Exception:
+            return new_insight
+
+    @staticmethod
     def _llm_area_generic_demotion(insight_text: str, query: str) -> bool:
         """LLM area: check if insight is too generic for the given query context.
 
@@ -1690,6 +1715,10 @@ class CognitiveLearner:
         if key in self.insights:
             # Update existing - boost confidence!
             existing = self.insights[key]
+
+            # LLM area: conflict_resolve — detect and resolve contradictions
+            insight = self._llm_area_conflict_resolve(insight, existing)
+
             self._touch_validation(existing, validated_delta=1)
             existing.confidence = _boost_confidence(confidence, existing.times_validated)
             if context_evidence and context_evidence not in existing.evidence:
