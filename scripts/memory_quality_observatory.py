@@ -25,8 +25,12 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from lib.memory_capture import importance_score, normalize_memory_text
+from lib.metric_contract import (
+    METRIC_CONTRACT_VERSION,
+    RETRIEVAL_GUARDRAIL_THRESHOLDS,
+    metric_contract_payload,
+)
 from lib.queue import EventType, read_recent_events
-
 
 SPARK_DIR = Path.home() / ".spark"
 MEMORY_DB = SPARK_DIR / "memory_store.sqlite"
@@ -36,15 +40,6 @@ ADVISORY_ENGINE_LOG = SPARK_DIR / "advisory_engine.jsonl"
 MIND_OFFLINE_QUEUE = SPARK_DIR / "mind_offline_queue.jsonl"
 OBSERVATORY_DIR = Path("_observatory")
 REPORTS_DIR = Path("docs") / "reports"
-RETRIEVAL_GUARDRAIL_THRESHOLDS = {
-    "semantic_sim_avg_min": 0.22,
-    "semantic_sim_low_ratio_max": 0.20,
-    "semantic_dominant_key_ratio_max": 0.35,
-    "advisory_emit_rate_min": 0.15,
-    "advisory_global_dedupe_ratio_max": 0.55,
-    "capture_noise_ratio_max": 0.15,
-    "context_p50_min": 120,
-}
 
 NOISE_MARKERS = (
     "you are spark intelligence, observing a live coding session",
@@ -397,6 +392,7 @@ def _retrieval_guardrails(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     ]
     failed = [c for c in checks if not c.get("pass")]
     return {
+        "metric_contract_version": METRIC_CONTRACT_VERSION,
         "passing": len(failed) == 0,
         "checks": checks,
         "failed_count": len(failed),
@@ -412,6 +408,7 @@ def write_outputs(snapshot: Dict[str, Any]) -> None:
     grade = _snapshot_grade(snapshot)
     guardrails = _retrieval_guardrails(snapshot)
     payload = dict(snapshot)
+    payload["metric_contract"] = metric_contract_payload()
     payload["grade"] = grade
     payload["retrieval_guardrails"] = guardrails
 
@@ -427,6 +424,7 @@ def write_outputs(snapshot: Dict[str, Any]) -> None:
         "",
         f"- Generated: {snapshot.get('generated_at')}",
         f"- Window: last {snapshot.get('window_hours')}h",
+        f"- Metric contract: `{METRIC_CONTRACT_VERSION}`",
         f"- Grade: **{grade['band']}** (score={grade['score']})",
         "",
         "## 1) Capture Precision",
@@ -490,6 +488,7 @@ def main() -> int:
     snapshot = build_snapshot(window_hours=24)
     write_outputs(snapshot)
     out = {
+        "metric_contract_version": METRIC_CONTRACT_VERSION,
         "grade": _snapshot_grade(snapshot),
         "retrieval_guardrails": _retrieval_guardrails(snapshot),
     }

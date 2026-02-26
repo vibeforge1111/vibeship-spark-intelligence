@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from .config_authority import resolve_section
-
+from .metric_contract import METRIC_CONTRACT_VERSION
 
 SPARK_DIR = Path.home() / ".spark"
 COGNITIVE_FILE = SPARK_DIR / "cognitive_insights.json"
@@ -617,6 +617,7 @@ def evaluate_gates(
     passed = sum(1 for c in checks if c["ok"])
     total = len(checks)
     return {
+        "metric_contract_version": METRIC_CONTRACT_VERSION,
         "passed": passed,
         "total": total,
         "ready": passed == total,
@@ -633,6 +634,9 @@ def format_gate_report(metrics: LoopMetrics, result: Dict[str, Any]) -> str:
     lines.append(
         f"Gate status: {'READY' if result.get('ready') else 'NOT READY'} "
         f"({result.get('passed', 0)}/{result.get('total', 0)} passed)"
+    )
+    lines.append(
+        f"Metric contract: {result.get('metric_contract_version', METRIC_CONTRACT_VERSION)}"
     )
     lines.append("")
     lines.append("Metrics:")
