@@ -257,9 +257,9 @@ def _load_pipeline_state() -> Dict:
 
 def _save_pipeline_state(state: Dict) -> None:
     PIPELINE_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PIPELINE_STATE_FILE.write_text(
-        json.dumps(state, indent=2), encoding="utf-8",
-    )
+    tmp = PIPELINE_STATE_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    tmp.replace(PIPELINE_STATE_FILE)
 
 
 def _save_pipeline_metrics(metrics: ProcessingMetrics) -> None:
@@ -276,9 +276,9 @@ def _save_pipeline_metrics(metrics: ProcessingMetrics) -> None:
     entries.append(metrics.to_dict())
     # Keep last 100 entries for trend analysis
     entries = entries[-100:]
-    PIPELINE_METRICS_FILE.write_text(
-        json.dumps(entries, indent=2), encoding="utf-8",
-    )
+    tmp = PIPELINE_METRICS_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+    tmp.replace(PIPELINE_METRICS_FILE)
 
 
 # ============= Adaptive Batch Sizing =============
