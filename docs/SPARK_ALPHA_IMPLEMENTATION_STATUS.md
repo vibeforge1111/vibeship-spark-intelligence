@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, VibeForge CLI skeleton added + alpha replay streak 14)
+Last updated: 2026-02-27 (local branch snapshot, VibeForge tuneable loop hardened + alpha replay streak 14)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -186,6 +186,17 @@ Branch: feat/spark-alpha
   - regret tracking + auto-pause support
 - Added helper tests: `tests/test_vibeforge_helpers.py`.
 
+27. `291d3cb` - `feat(alpha-vibeforge): harden tuneable loop with rollback/reset/diff and adaptive proposals`
+- Extended VibeForge CLI with operational commands:
+  - `rollback`, `reset`, `diff`
+- Added adaptive proposal ranking over recent ledger outcomes (lightweight UCB-style exploration/exploitation).
+- Added max-cycle budget enforcement via goal `max_cycles`.
+- Added stronger cycle safety behavior:
+  - gate readiness required for promotion
+  - error-time auto-rollback path when apply/measure fails
+  - explicit `error_rolled_back` and `max_cycles_reached` ledger outcomes
+- Expanded helper tests for ranking and rollback-row discovery in `tests/test_vibeforge_helpers.py`.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -218,7 +229,7 @@ Branch: feat/spark-alpha
 - `python scripts/memory_spine_parity_report.py --list-limit 5` -> payload parity `1.0`, gate pass `true`
 - `python scripts/memory_spine_parity_gate.py --required-streak 3` -> `ready_for_json_retirement=true` (streak `5`)
 - `pytest tests/test_advisory_engine_alpha.py -q` -> `2 passed`
-- `pytest tests/test_vibeforge_helpers.py -q` -> `3 passed`
+- `pytest tests/test_vibeforge_helpers.py -q` -> `5 passed`
 - Replay artifacts:
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.json`
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`
@@ -240,7 +251,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 1. Full advisory collapse (17 modules -> compact 3-module architecture) is not implemented.
 2. Storage consolidation to single SQLite-first memory/advisory store is not implemented.
 3. Memory compaction engine (ACT-R decay + Mem0-style add/update/delete/noop) is not implemented.
-4. VibeForge goal-directed self-improvement loop is partially implemented (CLI skeleton + tuneable lane shipped; code-evolve lane/oracle cascade expansion still pending).
+4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane now operational with rollback/reset/diff, adaptive proposal ranking, and cycle budget enforcement; code-evolve lane and benchmark-stage oracle cascade are still pending).
 5. Large config surface reduction (hard pruning to minimal knobs) is not implemented.
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
 7. Broad file/function deletion pass to reach Carmack-size target is not done.

@@ -44,6 +44,7 @@ Completed commits:
 24. `dede8a5` PR-05 follow-up: removed superseded fallback rank-extension branch in retrieval prefilter
 25. `687d965` PR-06 follow-up: alpha-native post-tool and user-prompt handlers (legacy delegation removed)
 26. `a7ec9bb` PR-08 start: VibeForge loop CLI skeleton (`init/status/run-once/run/history/pause/resume`)
+27. `291d3cb` PR-08 hardening: tuneable loop gets adaptive proposer ranking + `rollback/reset/diff` + cycle budget enforcement
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -115,9 +116,14 @@ Current measured state:
 
 ### PR-08 VibeForge Loop (Partial)
 1. Initial CLI landed in `scripts/vibeforge.py` with `init/status/run-once/run/history/pause/resume`.
-2. Shipped v1 tuneable proposal lane with schema validation, backup/rollback, and append-only ledger.
-3. Uses oracle measurement from existing `production_gates` + `carmack_kpi`.
-4. Remaining: EVOLVE-BLOCK code patch lane, full evaluation cascade staging, and richer proposer strategy.
+2. Tuneable proposal lane ships with schema validation, backup/rollback, and append-only ledger.
+3. Added operational controls for tuneable lane: `rollback`, `reset`, and `diff`.
+4. Added adaptive candidate ordering from ledger outcomes (lightweight exploration/exploitation scoring).
+5. Added max-cycle budget enforcement (`max_cycles`) with explicit terminal outcome tracking.
+6. Added safer promotion criteria and failure handling:
+   - promotion requires objective improvement + constraint pass + gates-ready
+   - apply/measure exceptions auto-rollback and emit explicit `error_rolled_back` row
+7. Remaining: EVOLVE-BLOCK code patch lane and benchmark-stage oracle cascade.
 
 ### PR-09 Config Reduction + Utility Dedup  (Partial)
 1. Consolidated duplicated JSONL helpers into shared `lib/jsonl_utils.py`.
