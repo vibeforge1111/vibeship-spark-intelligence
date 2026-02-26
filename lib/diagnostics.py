@@ -7,7 +7,7 @@ import sys
 import threading
 import traceback
 from pathlib import Path
-from typing import Optional, List
+from typing import Any, Optional, List
 
 
 _DEBUG_VALUES = {"1", "true", "yes", "on"}
@@ -49,7 +49,7 @@ def _rotate_log_file(path: Path, max_bytes: int, backups: int) -> None:
 
 
 class _RotatingFile:
-    def __init__(self, path: Path, max_bytes: int, backups: int):
+    def __init__(self, path: Path, max_bytes: int, backups: int) -> None:
         self.path = path
         self.max_bytes = max_bytes
         self.backups = backups
@@ -78,7 +78,7 @@ class _RotatingFile:
         _rotate_log_file(self.path, self.max_bytes, self.backups)
         self._handle = open(self.path, "a", encoding="utf-8", errors="replace")
 
-    def write(self, data):
+    def write(self, data: str) -> int:
         if data is None:
             return 0
         text = data if isinstance(data, str) else str(data)
@@ -90,13 +90,13 @@ class _RotatingFile:
             except Exception:
                 return len(text)
 
-    def flush(self):
+    def flush(self) -> None:
         try:
             self._handle.flush()
         except Exception:
             pass
 
-    def isatty(self):
+    def isatty(self) -> bool:
         return False
 
 
@@ -131,11 +131,11 @@ def log_exception(component: str, message: str, exc: Optional[BaseException] = N
 
 
 class _Tee:
-    def __init__(self, primary, secondary):
+    def __init__(self, primary: Any, secondary: Any) -> None:
         self.primary = primary
         self.secondary = secondary
 
-    def write(self, data):
+    def write(self, data: str) -> int:
         try:
             if self.primary:
                 self.primary.write(data)
@@ -148,7 +148,7 @@ class _Tee:
             pass
         return len(data)
 
-    def flush(self):
+    def flush(self) -> None:
         try:
             if self.primary:
                 self.primary.flush()
@@ -160,7 +160,7 @@ class _Tee:
         except Exception:
             pass
 
-    def isatty(self):
+    def isatty(self) -> bool:
         try:
             return bool(getattr(self.primary, "isatty", lambda: False)())
         except Exception:

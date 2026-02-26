@@ -10,6 +10,8 @@ This provides visibility into the output pipeline:
 The dashboard can then show real output stats instead of unused MarkdownWriter.
 """
 
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -50,7 +52,7 @@ class SyncTracker:
         "openclaw": {"name": "OpenClaw", "file": "~/.openclaw/workspace/", "tier": "core"},
     }
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # Initialize known adapters
         for key, info in self.KNOWN_ADAPTERS.items():
             if key not in self.adapters:
@@ -65,7 +67,7 @@ class SyncTracker:
         tier = str(info.get("tier") or "optional").strip().lower()
         return "core" if tier == "core" else "optional"
 
-    def record_sync(self, adapter_key: str, status: str, items: int = 0, error: str = None):
+    def record_sync(self, adapter_key: str, status: str, items: int = 0, error: Optional[str] = None) -> None:
         """Record a sync attempt."""
         now = datetime.now().isoformat(timespec="seconds")
 
@@ -86,7 +88,7 @@ class SyncTracker:
 
         self._save()
 
-    def record_full_sync(self, results: Dict[str, str], items_per_adapter: int = 0):
+    def record_full_sync(self, results: Dict[str, str], items_per_adapter: int = 0) -> None:
         """Record results from a full sync operation."""
         now = datetime.now().isoformat(timespec="seconds")
 
@@ -166,7 +168,7 @@ class SyncTracker:
             "adapters": adapter_list,
         }
 
-    def _save(self):
+    def _save(self) -> None:
         """Save to disk."""
         SYNC_STATS_FILE.parent.mkdir(parents=True, exist_ok=True)
         data = {

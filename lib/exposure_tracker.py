@@ -7,7 +7,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from .primitive_filter import is_primitive_text
 
@@ -58,7 +58,7 @@ def _normalize_signature(value: str) -> str:
     return " ".join(value.strip().lower().split())
 
 
-def _exposure_signature(row: Dict) -> str:
+def _exposure_signature(row: Dict[str, Any]) -> str:
     """Stable signature for dedupe across repeated emissions."""
     key = row.get("insight_key")
     if isinstance(key, str) and key.strip():
@@ -121,7 +121,7 @@ def _tail_lines(path: Path, count: int) -> List[str]:
         return []
 
 
-def _maybe_rotate_exposures():
+def _maybe_rotate_exposures() -> None:
     """Rotate exposures.jsonl when it exceeds 5MB."""
     if not EXPOSURES_FILE.exists():
         return

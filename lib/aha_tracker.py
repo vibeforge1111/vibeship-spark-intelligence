@@ -16,12 +16,14 @@ Surprise detection:
 4. Extract the lesson
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 from enum import Enum
 
@@ -51,7 +53,7 @@ class AhaMoment:
     lesson_extracted: Optional[str]  # What we learned
     importance: float  # How important this surprise is (0-1)
     occurrences: int = 1  # How many times this surprise has occurred
-    
+
     def format_visible(self) -> str:
         """Format for user-visible display."""
         emoji = {
@@ -78,7 +80,7 @@ class AhaMoment:
             lines.append(f"   💡 Lesson: {self.lesson_extracted}")
 
         return "\n".join(lines)
-    
+
     def format_shareable(self) -> str:
         """Format for sharing/tweet."""
         return f"💡 My AI surprised itself:\n\nExpected: {self.predicted_outcome}\nGot: {self.actual_outcome}\n\nLesson learned: {self.lesson_extracted or 'Still processing...'}\n\n#Vibeship #Spark"
@@ -100,11 +102,11 @@ class AhaTracker:
         insights = tracker.get_insights()
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.data = self._load()
         self.pending_surface: List[str] = []  # IDs to show user
 
-    def _load(self) -> dict:
+    def _load(self) -> Dict[str, Any]:
         if AHA_FILE.exists():
             try:
                 data = json.loads(AHA_FILE.read_text(encoding='utf-8'))
@@ -125,7 +127,7 @@ class AhaTracker:
             }
         }
 
-    def _save(self):
+    def _save(self) -> None:
         SPARK_DIR.mkdir(parents=True, exist_ok=True)
         self.data["pending_surface"] = self.pending_surface
         AHA_FILE.write_text(json.dumps(self.data, indent=2, default=str), encoding='utf-8')
@@ -263,7 +265,7 @@ class AhaTracker:
                 results.append(formatted)
         return results
 
-    def extract_lesson(self, moment_id: str, lesson: str):
+    def extract_lesson(self, moment_id: str, lesson: str) -> bool:
         """Add a lesson to an existing moment."""
         for moment in self.data["moments"]:
             if moment["id"] == moment_id:
@@ -353,7 +355,7 @@ class AhaTracker:
         """Get all extracted lessons."""
         return self.data["lessons"]
 
-    def get_insights(self) -> Dict:
+    def get_insights(self) -> Dict[str, Any]:
         """Analyze surprises and generate insights."""
         moments = [AhaMoment(**m) for m in self.data["moments"]]
         if not moments:
@@ -395,7 +397,7 @@ class AhaTracker:
         insights["recommendations"] = recommendations
         return insights
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> Dict[str, Any]:
         """Get tracker statistics."""
         total_occurrences = sum(m.get("occurrences", 1) for m in self.data["moments"])
         return {
@@ -409,7 +411,8 @@ class AhaTracker:
 
 
 # Singleton
-_tracker = None
+_tracker: Optional[AhaTracker] = None
+
 
 def get_aha_tracker() -> AhaTracker:
     global _tracker
