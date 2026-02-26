@@ -17,29 +17,53 @@ jobs:
       - name: Checkout target repo
         uses: actions/checkout@v4
 
+      - name: Check sentinel repo access
+        id: sentinel_access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/vibeforge1111/spark-pr-sentinel)
+          if [ "$status" = "200" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout spark-pr-sentinel
+        if: steps.sentinel_access.outputs.available == 'true'
         uses: actions/checkout@v4
         with:
           repository: vibeforge1111/spark-pr-sentinel
           path: spark-pr-sentinel
 
       - name: Setup Python
+        if: steps.sentinel_access.outputs.available == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install Sentinel
+        if: steps.sentinel_access.outputs.available == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -e ./spark-pr-sentinel
 
       - name: PR policy validation
+        if: steps.sentinel_access.outputs.available == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
           PR_POLICY_FILE: spark-pr-sentinel/docs/pr_review_merge_policy.yaml
         run: |
           python spark-pr-sentinel/scripts/validate_pr.py
+
+      - name: Sentinel unavailable (skip policy-gate)
+        if: steps.sentinel_access.outputs.available != 'true'
+        run: |
+          echo "spark-pr-sentinel repository is not accessible with this token; skipping policy-gate."
 
   triage:
     runs-on: ubuntu-latest
@@ -51,23 +75,42 @@ jobs:
       - name: Checkout target repo
         uses: actions/checkout@v4
 
+      - name: Check sentinel repo access
+        id: sentinel_access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/vibeforge1111/spark-pr-sentinel)
+          if [ "$status" = "200" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout spark-pr-sentinel
+        if: steps.sentinel_access.outputs.available == 'true'
         uses: actions/checkout@v4
         with:
           repository: vibeforge1111/spark-pr-sentinel
           path: spark-pr-sentinel
 
       - name: Setup Python
+        if: steps.sentinel_access.outputs.available == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install Sentinel
+        if: steps.sentinel_access.outputs.available == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -e ./spark-pr-sentinel
 
       - name: Collect + Score PRs
+        if: steps.sentinel_access.outputs.available == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -76,14 +119,21 @@ jobs:
           python scripts/pr_sentinel_score.py
 
       - name: Build markdown report
+        if: steps.sentinel_access.outputs.available == 'true'
         run: |
           cd spark-pr-sentinel
           python scripts/pr_sentinel_report.py
 
       - name: Upload Sentinel artifacts
+        if: steps.sentinel_access.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: pr-sentinel-${{ github.run_id }}
           path: |
             spark-pr-sentinel/data/*.json
             spark-pr-sentinel/reports/*.md
+
+      - name: Sentinel unavailable (skip triage)
+        if: steps.sentinel_access.outputs.available != 'true'
+        run: |
+          echo "spark-pr-sentinel repository is not accessible with this token; skipping triage."
