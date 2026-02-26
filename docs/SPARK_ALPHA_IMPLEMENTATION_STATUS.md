@@ -92,7 +92,7 @@ Branch: feat/spark-alpha
   - consecutive pass streak tracking
 - Added replay arena unit tests (`tests/test_spark_alpha_replay_arena.py`).
 
-12. `(working tree)` - `refactor(alpha-utils): dedup JSONL helpers into shared module`
+12. `e5b1263` - `refactor(alpha-utils): dedup JSONL helpers into shared module`
 - Added shared JSONL helper module (`lib/jsonl_utils.py`) with:
   - `tail_jsonl_objects(...)`
   - `append_jsonl_capped(...)`
@@ -102,7 +102,7 @@ Branch: feat/spark-alpha
   - `lib/advisory_orchestrator.py`
   - `lib/advisory_quarantine.py`
 
-13. `(working tree)` - `feat(alpha-deletion): remove legacy advisory fallback paths`
+13. `2c4c3cb` - `feat(alpha-deletion): remove legacy advisory fallback paths`
 - Removed hook-level legacy fallback path in `hooks/observe.py` that directly called `lib.advisor.advise_on_tool` when orchestrator failed.
 - Removed legacy `live_quick` pre-retrieval fallback branch from `lib/advisory_engine.py`.
 - Removed packet no-emit fallback emission branch from `lib/advisory_engine.py` (gate-suppressed now remains explicit no-emit).

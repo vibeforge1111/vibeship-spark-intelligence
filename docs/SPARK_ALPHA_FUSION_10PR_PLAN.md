@@ -29,8 +29,8 @@ Completed commits:
 9. `(working tree)` PR-05 deterministic RRF retrieval fusion signal (runtime + AB harness)
 10. `23ef06a` PR-06 advisory alpha vertical slice route + canary orchestration
 11. `d02fdae` PR-07 deterministic replay arena + promotion ledger
-12. `(working tree)` PR-09 utility dedup: shared JSONL helper extraction
-13. `(working tree)` PR-10 initial legacy fallback deletion sweep
+12. `e5b1263` PR-09 utility dedup: shared JSONL helper extraction
+13. `2c4c3cb` PR-10 initial legacy fallback deletion sweep
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
