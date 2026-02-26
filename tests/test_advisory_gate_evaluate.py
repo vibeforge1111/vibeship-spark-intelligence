@@ -176,7 +176,8 @@ def test_tool_cooldown_allows_when_clear():
 def test_dynamic_budget_base():
     """Base budget should be MAX_EMIT_PER_CALL (2)."""
     state = MockState()
-    items = [MockAdvice(advice_id=f"adv_{i}", confidence=0.7, context_match=0.6) for i in range(5)]
+    # Keep per-item score below warning threshold so warning boost does not apply.
+    items = [MockAdvice(advice_id=f"adv_{i}", confidence=0.6, context_match=0.4) for i in range(5)]
 
     with patch("lib.advisory_state.is_tool_suppressed", return_value=False):
         result = evaluate(items, state, "Edit")
