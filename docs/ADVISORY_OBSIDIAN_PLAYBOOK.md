@@ -136,6 +136,20 @@ Then run a normal advisory session to trigger real packet writes.
 python scripts/check_obsidian_watchtower.py
 ```
 
+## Helpfulness calibration check (optional, recommended)
+
+```bash
+python scripts/helpfulness_watcher.py --once
+python scripts/helpfulness_llm_adjudicator.py --provider auto --max-events 120
+python scripts/helpfulness_watcher.py --once
+python scripts/generate_observatory.py --force --verbose
+```
+
+Then review:
+- `_observatory/explore/helpfulness/_index.md`
+- `_observatory/explore/feedback/_index.md`
+- `_observatory/explore/decisions/_index.md`
+
 - This checks:
   - obsidian config + enabled flags
   - export directory state
