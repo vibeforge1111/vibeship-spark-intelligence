@@ -17,6 +17,41 @@ def test_dedupe_scope_key_tree_mode(monkeypatch):
     assert key == "agent:spark-ship"
 
 
+def test_dedupe_scope_key_contextual_mode(monkeypatch):
+    """Contextual mode includes intent_family and task_phase in the scope key."""
+    monkeypatch.setattr(engine, "GLOBAL_DEDUPE_SCOPE", "contextual")
+
+    # With both context dimensions
+    key = engine._dedupe_scope_key(
+        "agent:spark-ship:subagent:abc",
+        intent_family="emergent_refactor",
+        task_phase="implementation",
+    )
+    assert key == "agent:spark-ship:implementation:emergent_refactor"
+
+    # Different phase = different key
+    key2 = engine._dedupe_scope_key(
+        "agent:spark-ship:subagent:abc",
+        intent_family="emergent_refactor",
+        task_phase="exploration",
+    )
+    assert key2 == "agent:spark-ship:exploration:emergent_refactor"
+    assert key != key2
+
+    # Different intent = different key
+    key3 = engine._dedupe_scope_key(
+        "agent:spark-ship:subagent:abc",
+        intent_family="emergent_debug",
+        task_phase="implementation",
+    )
+    assert key3 == "agent:spark-ship:implementation:emergent_debug"
+    assert key != key3
+
+    # Missing context falls back to tree key only
+    key_bare = engine._dedupe_scope_key("agent:spark-ship:main")
+    assert key_bare == "agent:spark-ship"
+
+
 def test_global_recently_emitted_respects_scope_key(monkeypatch, tmp_path):
     monkeypatch.setattr(engine, "GLOBAL_DEDUPE_LOG", tmp_path / "global.jsonl")
     now = 1000.0
