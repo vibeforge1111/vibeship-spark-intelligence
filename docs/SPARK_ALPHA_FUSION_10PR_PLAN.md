@@ -43,6 +43,7 @@ Completed commits:
 23. `a29a5d4` PR-04 promotion: cognitive learner moved to SQLite-canonical mode with JSON mirror compatibility
 24. `dede8a5` PR-05 follow-up: removed superseded fallback rank-extension branch in retrieval prefilter
 25. `687d965` PR-06 follow-up: alpha-native post-tool and user-prompt handlers (legacy delegation removed)
+26. `a7ec9bb` PR-08 start: VibeForge loop CLI skeleton (`init/status/run-once/run/history/pause/resume`)
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -59,7 +60,7 @@ Current measured state:
 3. Advisory collapse (17 files -> 3): partial
 4. Memory compaction (ACT-R + Mem0 protocol): pending
 5. Delivery-time retrieval improvement: partial
-6. VibeForge self-improvement loop (goal + oracle + propose/test/promote ledger): pending
+6. VibeForge self-improvement loop (goal + oracle + propose/test/promote ledger): partial
 7. Config reduction (576 -> ~70): pending
 8. Distillation pipeline collapse: pending
 9. Test overhaul (behavioral/replay dominant): partial
@@ -112,11 +113,11 @@ Current measured state:
 4. Added regression diff artifacts in `benchmarks/out/replay_arena/`.
 5. Remaining: run larger deterministic episode windows as ongoing evidence before irreversible deletions.
 
-### PR-08 VibeForge Loop (Pending)
-1. Implement single-script goal-directed improvement loop from [`VIBEFORGE_LOOP.md`](./VIBEFORGE_LOOP.md).
-2. Loop contract: measure -> diagnose -> propose one change -> oracle test -> promote/rollback -> ledger.
-3. Scope replaces Thompson source-selector lane for alpha.
-4. Constraint: keep proposer bounded to EVOLVE-BLOCKs + tuneable schema validation.
+### PR-08 VibeForge Loop (Partial)
+1. Initial CLI landed in `scripts/vibeforge.py` with `init/status/run-once/run/history/pause/resume`.
+2. Shipped v1 tuneable proposal lane with schema validation, backup/rollback, and append-only ledger.
+3. Uses oracle measurement from existing `production_gates` + `carmack_kpi`.
+4. Remaining: EVOLVE-BLOCK code patch lane, full evaluation cascade staging, and richer proposer strategy.
 
 ### PR-09 Config Reduction + Utility Dedup  (Partial)
 1. Consolidated duplicated JSONL helpers into shared `lib/jsonl_utils.py`.

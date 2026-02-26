@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, sqlite-canonical memory + alpha-native post/prompt + replay streak 13)
+Last updated: 2026-02-27 (local branch snapshot, VibeForge CLI skeleton added + alpha replay streak 14)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -174,6 +174,18 @@ Branch: feat/spark-alpha
 - Alpha now records post-tool outcomes, implicit feedback, packet outcomes/invalidation, and user-prompt baseline/prefetch directly.
 - Added focused alpha handler tests in `tests/test_advisory_engine_alpha.py`.
 
+26. `a7ec9bb` - `feat(alpha-vibeforge): add goal-driven loop CLI skeleton`
+- Added `scripts/vibeforge.py` with initial commands:
+  - `init`, `status`, `run-once`, `run`, `history`, `pause`, `resume`
+- Implemented VibeForge v1 cycle path:
+  - goal lifecycle in `~/.spark/forge_goal.json`
+  - oracle measurement via `production_gates` + `carmack_kpi`
+  - one-change-per-cycle tuneable proposal lane
+  - schema-validated tuneable apply + rollback backup
+  - append-only ledger `~/.spark/forge_ledger.jsonl`
+  - regret tracking + auto-pause support
+- Added helper tests: `tests/test_vibeforge_helpers.py`.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -202,9 +214,11 @@ Branch: feat/spark-alpha
 - `python scripts/spark_alpha_replay_arena.py --episodes 60 --seed 42` -> alpha winner, promotion gate pass, streak reached `5/3`
 - `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `12/3`
 - `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `13/3`
+- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `14/3`
 - `python scripts/memory_spine_parity_report.py --list-limit 5` -> payload parity `1.0`, gate pass `true`
 - `python scripts/memory_spine_parity_gate.py --required-streak 3` -> `ready_for_json_retirement=true` (streak `5`)
 - `pytest tests/test_advisory_engine_alpha.py -q` -> `2 passed`
+- `pytest tests/test_vibeforge_helpers.py -q` -> `3 passed`
 - Replay artifacts:
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.json`
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`
@@ -226,7 +240,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 1. Full advisory collapse (17 modules -> compact 3-module architecture) is not implemented.
 2. Storage consolidation to single SQLite-first memory/advisory store is not implemented.
 3. Memory compaction engine (ACT-R decay + Mem0-style add/update/delete/noop) is not implemented.
-4. VibeForge goal-directed self-improvement loop is not implemented yet (replaces Thompson-only self-tuning for alpha).
+4. VibeForge goal-directed self-improvement loop is partially implemented (CLI skeleton + tuneable lane shipped; code-evolve lane/oracle cascade expansion still pending).
 5. Large config surface reduction (hard pruning to minimal knobs) is not implemented.
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
 7. Broad file/function deletion pass to reach Carmack-size target is not done.
