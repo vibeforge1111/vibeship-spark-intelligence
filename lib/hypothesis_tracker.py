@@ -24,6 +24,8 @@ Hypothesis Lifecycle:
 
 import json
 import hashlib
+import os
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -164,13 +166,16 @@ class HypothesisTracker:
                 pass
 
     def _save_hypotheses(self):
-        """Save hypotheses to disk."""
+        """Save hypotheses to disk (atomic write to avoid partial-JSON on crash)."""
         self.HYPOTHESES_FILE.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "hypotheses": [h.to_dict() for h in self.hypotheses.values()],
             "observation_buffer": self._observation_buffer,
         }
-        self.HYPOTHESES_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        fd, tmp_path = tempfile.mkstemp(dir=self.HYPOTHESES_FILE.parent, suffix=".tmp")
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_path, self.HYPOTHESES_FILE)
 
     def _extract_pattern(self, observation: str) -> str:
         """Extract a normalizable pattern from an observation."""

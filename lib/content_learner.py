@@ -11,8 +11,10 @@ the project context but don't override explicit user preferences.
 
 from __future__ import annotations
 
-import re
 import json
+import os
+import re
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
@@ -44,7 +46,10 @@ class ContentLearner:
 
     def _save_state(self) -> None:
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        STATE_FILE.write_text(json.dumps(self.state, indent=2), encoding="utf-8")
+        fd, tmp_path = tempfile.mkstemp(dir=STATE_FILE.parent, suffix=".tmp")
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(self.state, f, indent=2)
+        os.replace(tmp_path, STATE_FILE)
 
     def learn_from_code(self, code: str, file_path: str) -> List[Tuple[str, str]]:
         """Extract learnable patterns from code. Returns list of (pattern_type, value)."""
