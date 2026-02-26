@@ -2750,6 +2750,59 @@ class SparkAdvisor:
             merged.append(a)
         return merged
 
+    # -- LLM area hooks (opt-in via llm_areas tuneable section) --
+
+    @staticmethod
+    def _llm_area_retrieval_rewrite(query: str, tool_name: str) -> str:
+        """LLM area: rewrite retrieval query for better recall.
+
+        When disabled (default), returns query unchanged.
+        """
+        try:
+            from .llm_dispatch import llm_area_call
+            from .llm_area_prompts import format_prompt
+
+            prompt = format_prompt(
+                "retrieval_rewrite",
+                query=query[:300],
+                tool_name=tool_name or "unknown",
+            )
+            result = llm_area_call("retrieval_rewrite", prompt, fallback=query)
+            if result.used_llm and result.text and result.text != query:
+                return result.text
+            return query
+        except Exception:
+            return query
+
+    @staticmethod
+    def _llm_area_retrieval_explain(
+        base_reason: str,
+        insight_text: str,
+        query: str,
+        context_match: float,
+    ) -> str:
+        """LLM area: annotate retrieval result with relevance explanation.
+
+        When disabled (default), returns base_reason unchanged.
+        """
+        try:
+            from .llm_dispatch import llm_area_call
+            from .llm_area_prompts import format_prompt
+
+            prompt = format_prompt(
+                "retrieval_explain",
+                insight=insight_text[:300],
+                query=query[:200],
+                match_score=f"{context_match:.2f}",
+                base_reason=base_reason[:200],
+            )
+            result = llm_area_call("retrieval_explain", prompt, fallback=base_reason)
+            if result.used_llm and result.text:
+                return result.text
+            return base_reason
+        except Exception:
+            return base_reason
+
     def _get_semantic_cognitive_advice(
         self,
         tool_name: str,
@@ -2830,6 +2883,10 @@ class SparkAdvisor:
         should_escalate = False
         escalate_reasons: List[str] = []
         primary_results: List[Any] = []
+
+        # LLM area: retrieval_rewrite — enhance query before retrieval
+        context = self._llm_area_retrieval_rewrite(context, tool_name)
+
         primary_start = time.perf_counter()
         try:
             primary_results = list(retriever.retrieve(context, active_insights, limit=semantic_limit))
@@ -3074,6 +3131,11 @@ class SparkAdvisor:
                 reason = base_reason or f"Hybrid-agentic route: {route_reason}"
             else:
                 reason = base_reason or "Semantic route (embeddings primary)"
+
+            # LLM area: retrieval_explain — annotate result with relevance explanation
+            reason = self._llm_area_retrieval_explain(
+                reason, r.insight_text, context, context_match,
+            )
 
             # Propagate advisory_quality from cognitive insight if available
             _adv_q = {}
