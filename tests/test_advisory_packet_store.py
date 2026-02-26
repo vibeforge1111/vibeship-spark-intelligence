@@ -333,3 +333,36 @@ def test_relaxed_lookup_rejects_plane_only_match(monkeypatch, tmp_path):
         task_plane="build_delivery",
     )
     assert chosen is None
+
+
+def test_record_packet_usage_refreshes_fresh_until(monkeypatch, tmp_path):
+    _patch_store_paths(monkeypatch, tmp_path)
+
+    packet = store.build_packet(
+        project_key="proj",
+        session_context_key="ctx",
+        tool_name="Edit",
+        intent_family="auth_security",
+        task_plane="build_delivery",
+        advisory_text="Keep auth checks deterministic.",
+        source_mode="prefetch",
+        lineage={"sources": ["prefetch"], "memory_absent_declared": False},
+        ttl_s=120,
+    )
+    packet_id = store.save_packet(packet)
+
+    stale = store.get_packet(packet_id)
+    assert stale is not None
+    stale["fresh_until_ts"] = time.time() - 5.0
+    store.save_packet(stale)
+
+    before = store.get_packet(packet_id)
+    assert before is not None
+    assert float(before.get("fresh_until_ts", 0.0) or 0.0) < time.time()
+
+    out = store.record_packet_usage(packet_id, emitted=False, route="packet_exact")
+    assert out.get("ok") is True
+
+    after = store.get_packet(packet_id)
+    assert after is not None
+    assert float(after.get("fresh_until_ts", 0.0) or 0.0) > time.time() + 100.0

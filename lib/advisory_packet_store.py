@@ -2918,6 +2918,12 @@ def record_packet_usage(
         )
     packet["last_route"] = str(route or packet.get("last_route") or "")
     packet["last_used_ts"] = usage_ts
+    if not bool(packet.get("invalidated", False)):
+        ttl_s = max(30.0, float(packet.get("ttl_s", 0.0) or DEFAULT_PACKET_TTL_S))
+        packet["fresh_until_ts"] = max(
+            float(packet.get("fresh_until_ts", 0.0) or 0.0),
+            usage_ts + ttl_s,
+        )
     packet = _normalize_packet(packet)
     save_packet(packet)
     return {
