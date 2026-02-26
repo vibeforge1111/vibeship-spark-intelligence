@@ -438,6 +438,39 @@ class Promoter:
                 return target
         return None
     
+    def _llm_area_soft_promotion_triage(
+        self, insight: "CognitiveInsight", target: "PromotionTarget",
+    ) -> bool:
+        """LLM area: verify an insight is genuinely worth promoting.
+
+        Returns True if promotion should proceed, False to skip.
+        When the area is disabled (default), always returns True (no-op).
+        """
+        try:
+            from .llm_dispatch import llm_area_call
+            from .llm_area_prompts import format_prompt
+
+            prompt = format_prompt(
+                "soft_promotion_triage",
+                statement=str(insight.insight)[:500],
+                reliability=str(insight.reliability),
+                validations=str(insight.times_validated),
+                category=str(insight.category),
+            )
+            result = llm_area_call("soft_promotion_triage", prompt, fallback="")
+            if not result.used_llm:
+                return True  # Area disabled — proceed with promotion
+
+            import json as _json
+            try:
+                data = _json.loads(result.text)
+            except (ValueError, TypeError):
+                return True  # Parse error — default to promote
+
+            return bool(data.get("promote", True))
+        except Exception:
+            return True  # Any error — default to promote
+
     def _format_insight_for_promotion(self, insight: CognitiveInsight) -> str:
         """Format an insight as a concise rule for documentation."""
         # Extract the core insight without verbose details
@@ -795,11 +828,15 @@ class Promoter:
 
         return candidates
     
-    def promote_insight(self, insight: CognitiveInsight, insight_key: str, 
+    def promote_insight(self, insight: CognitiveInsight, insight_key: str,
                        target: PromotionTarget) -> bool:
         """Promote a single insight to its target file."""
         file_path = self.project_dir / target.filename
-        
+
+        # LLM area: soft_promotion_triage — verify promotion worthiness
+        if not self._llm_area_soft_promotion_triage(insight, target):
+            return False
+
         try:
             # Format the insight
             formatted = self._format_insight_for_promotion(insight)

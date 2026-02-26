@@ -65,14 +65,58 @@ QUALITY_WINDOW_EXCLUDE_TEXT_PREFIXES = [
     "another reply is:",
     "[hook_smoke_test]",
 ]
+RUNTIME_REFINER_LLM_ENABLED = False
+RUNTIME_REFINER_LLM_TIMEOUT_S = 6.0
+RUNTIME_REFINER_LLM_MAX_CHARS = 260
+RUNTIME_REFINER_LLM_PROVIDER = "auto"
+_ALLOWED_RUNTIME_REFINER_PROVIDERS = {
+    "auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude",
+}
+
+
+def _clamp_float(value: Any, default: float, lo: float, hi: float) -> float:
+    try:
+        out = float(value)
+    except Exception:
+        out = float(default)
+    return max(float(lo), min(float(hi), out))
+
+
+def _clamp_int(value: Any, default: int, lo: int, hi: int) -> int:
+    try:
+        out = int(value)
+    except Exception:
+        out = int(default)
+    return max(int(lo), min(int(hi), out))
 
 
 def _load_meta_ralph_config() -> None:
     """Load meta_ralph tuneables via config_authority resolve_section."""
     try:
-        from .config_authority import resolve_section
+        from .config_authority import (
+            resolve_section,
+            env_bool,
+            env_float,
+            env_int,
+            env_str,
+        )
         tuneables = Path.home() / ".spark" / "tuneables.json"
-        cfg = resolve_section("meta_ralph", runtime_path=tuneables).data
+        cfg = resolve_section(
+            "meta_ralph",
+            runtime_path=tuneables,
+            env_overrides={
+                "runtime_refiner_llm_enabled": env_bool("SPARK_META_RALPH_RUNTIME_REFINER_LLM_ENABLED"),
+                "runtime_refiner_llm_timeout_s": env_float(
+                    "SPARK_META_RALPH_RUNTIME_REFINER_LLM_TIMEOUT_S", lo=0.5, hi=60.0
+                ),
+                "runtime_refiner_llm_max_chars": env_int(
+                    "SPARK_META_RALPH_RUNTIME_REFINER_LLM_MAX_CHARS", lo=80, hi=2000
+                ),
+                "runtime_refiner_llm_provider": env_str(
+                    "SPARK_META_RALPH_RUNTIME_REFINER_LLM_PROVIDER", lower=True
+                ),
+            },
+        ).data
         if isinstance(cfg, dict):
             reload_meta_ralph_from(cfg)
     except Exception:
@@ -93,6 +137,8 @@ def reload_meta_ralph_from(cfg: Dict[str, Any]) -> None:
     global INSIGHT_STRICT_QUALITY_FLOOR, INSIGHT_SUPPRESSION_RETEST_AFTER_S
     global QUALITY_WINDOW_TRACE_REPEAT_CAP
     global QUALITY_WINDOW_EXCLUDE_TRACE_PREFIXES, QUALITY_WINDOW_EXCLUDE_TEXT_PREFIXES
+    global RUNTIME_REFINER_LLM_ENABLED, RUNTIME_REFINER_LLM_TIMEOUT_S
+    global RUNTIME_REFINER_LLM_MAX_CHARS, RUNTIME_REFINER_LLM_PROVIDER
     if "quality_threshold" in cfg:
         QUALITY_THRESHOLD = float(cfg["quality_threshold"])
     if "needs_work_threshold" in cfg:
@@ -133,6 +179,17 @@ def reload_meta_ralph_from(cfg: Dict[str, Any]) -> None:
             QUALITY_WINDOW_EXCLUDE_TEXT_PREFIXES = [
                 str(item).strip().lower() for item in raw if str(item).strip()
             ]
+    if "runtime_refiner_llm_enabled" in cfg:
+        RUNTIME_REFINER_LLM_ENABLED = bool(cfg["runtime_refiner_llm_enabled"])
+    if "runtime_refiner_llm_timeout_s" in cfg:
+        RUNTIME_REFINER_LLM_TIMEOUT_S = _clamp_float(cfg["runtime_refiner_llm_timeout_s"], 6.0, 0.5, 60.0)
+    if "runtime_refiner_llm_max_chars" in cfg:
+        RUNTIME_REFINER_LLM_MAX_CHARS = _clamp_int(cfg["runtime_refiner_llm_max_chars"], 260, 80, 2000)
+    if "runtime_refiner_llm_provider" in cfg:
+        provider = str(cfg["runtime_refiner_llm_provider"] or "auto").strip().lower()
+        if provider not in _ALLOWED_RUNTIME_REFINER_PROVIDERS:
+            provider = "auto"
+        RUNTIME_REFINER_LLM_PROVIDER = provider
 
 
 try:
@@ -762,6 +819,20 @@ class MetaRalph:
                     # Partial improvement - note it but keep needs_work
                     self.refinements_made += 1
 
+            # LLM area: unsuppression_score — score suppressed items for rescue
+            if final_score.verdict != RoastVerdict.QUALITY:
+                rescued = self._llm_area_unsuppression_score(
+                    final_learning, final_score, source,
+                )
+                if rescued is not None:
+                    rescued_score = self._score_learning(rescued, context)
+                    if rescued_score.total > final_score.total:
+                        final_learning = rescued
+                        final_score = rescued_score
+                        if rescued_score.verdict == RoastVerdict.QUALITY:
+                            self.refinements_made += 1
+                            issues_found = [f"LLM-rescued from: {learning[:50]}..."]
+
         # Step 7: Update stats
         if final_score.verdict == RoastVerdict.QUALITY:
             self.quality_passed += 1
@@ -1144,6 +1215,119 @@ class MetaRalph:
 
         return suggestions
 
+    @staticmethod
+    def _refinement_rank(score: QualityScore) -> tuple[int, int]:
+        verdict_rank = {
+            RoastVerdict.PRIMITIVE: 0,
+            RoastVerdict.NEEDS_WORK: 1,
+            RoastVerdict.QUALITY: 2,
+            RoastVerdict.DUPLICATE: 0,
+        }.get(score.verdict, 0)
+        return verdict_rank, int(score.total)
+
+    @staticmethod
+    def _runtime_provider_chain(provider: str) -> Tuple[str, ...]:
+        preferred = str(provider or "auto").strip().lower()
+        if preferred == "claude":
+            return ("claude",)
+        ordered: List[str] = []
+        for p in (preferred, "minimax", "ollama", "gemini", "openai", "anthropic"):
+            if p and p != "auto" and p not in ordered:
+                ordered.append(p)
+        return tuple(ordered)
+
+    @staticmethod
+    def _extract_runtime_refinement(raw: str, max_chars: int) -> str:
+        text = str(raw or "").strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].strip().startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip().startswith("```"):
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+        candidate = ""
+        if text.startswith("{"):
+            try:
+                payload = json.loads(text)
+                if isinstance(payload, dict):
+                    for key in ("refined", "refinement", "text"):
+                        value = payload.get(key)
+                        if isinstance(value, str) and value.strip():
+                            candidate = value.strip()
+                            break
+            except Exception:
+                candidate = ""
+        if not candidate:
+            candidate = (text.splitlines()[0] if text else "").strip()
+        candidate = re.sub(r"\s+", " ", candidate).strip()
+        if len(candidate) > max_chars:
+            candidate = candidate[:max_chars].rstrip(" ,.;:")
+        return candidate if len(candidate) >= 20 else ""
+
+    def _attempt_llm_refinement(
+        self,
+        learning: str,
+        issues: List[str],
+        context: Optional[Dict[str, Any]],
+    ) -> Optional[str]:
+        prompt = (
+            "Rewrite this Meta-Ralph NEEDS_WORK learning into ONE concrete, action-first sentence.\n"
+            "Rules:\n"
+            "- Keep original meaning.\n"
+            "- Do not invent facts.\n"
+            "- Prefer format: 'When <condition>: <action> because <reason>'.\n"
+            "- 20 to 220 chars.\n"
+            "- Output JSON only: {\"refined\": \"...\"}\n\n"
+            f"Issues: {issues[:4]}\n"
+            f"Context: {json.dumps(context or {}, ensure_ascii=False)}\n"
+            f"Input: {learning}"
+        )
+
+        raw: Optional[str] = None
+        provider = str(RUNTIME_REFINER_LLM_PROVIDER or "auto")
+        timeout_s = float(RUNTIME_REFINER_LLM_TIMEOUT_S or 6.0)
+        max_chars = int(RUNTIME_REFINER_LLM_MAX_CHARS or 260)
+        try:
+            if provider == "claude":
+                from .llm import ask_claude
+
+                raw = ask_claude(
+                    prompt,
+                    system_prompt="Return JSON only.",
+                    timeout_s=max(1, int(round(timeout_s))),
+                    max_tokens=280,
+                )
+            else:
+                try:
+                    from .advisory_synthesizer import _query_provider  # type: ignore
+
+                    for p in self._runtime_provider_chain(provider):
+                        resp = _query_provider(p, prompt)
+                        if resp and str(resp).strip():
+                            raw = str(resp).strip()
+                            break
+                except Exception:
+                    raw = None
+
+                if not raw:
+                    from .llm import ask_claude
+
+                    raw = ask_claude(
+                        prompt,
+                        system_prompt="Return JSON only.",
+                        timeout_s=max(1, int(round(timeout_s))),
+                        max_tokens=280,
+                    )
+        except Exception:
+            raw = None
+
+        if not raw:
+            return None
+        candidate = self._extract_runtime_refinement(raw, max_chars=max_chars)
+        return candidate or None
+
     def _attempt_refinement(self, learning: str, issues: List[str],
                             context: Optional[Dict] = None) -> Optional[str]:
         """Attempt to auto-refine a learning that needs work.
@@ -1185,7 +1369,61 @@ class MetaRalph:
         except ImportError:
             pass
 
+        # Stage 3: Optional runtime LLM assist (tuneable + hot-reload).
+        if RUNTIME_REFINER_LLM_ENABLED:
+            source_text = refined if made_changes else learning
+            llm_candidate = self._attempt_llm_refinement(source_text, issues, context or {})
+            if llm_candidate and llm_candidate != source_text:
+                base_score = self._score_learning(source_text, context or {})
+                cand_score = self._score_learning(llm_candidate, context or {})
+                if self._refinement_rank(cand_score) > self._refinement_rank(base_score):
+                    refined = llm_candidate
+                    made_changes = True
+
         return refined if made_changes else None
+
+    def _llm_area_unsuppression_score(
+        self, statement: str, score: "QualityScore", source: str,
+    ) -> Optional[str]:
+        """LLM area: score a suppressed item for rescue potential.
+
+        Returns the rewritten text if rescue is recommended, None otherwise.
+        """
+        try:
+            from .llm_dispatch import llm_area_call
+            from .llm_area_prompts import format_prompt
+
+            prompt = format_prompt(
+                "unsuppression_score",
+                statement=statement,
+                original_score=str(score.total if hasattr(score, "total") else 0),
+                suppression_type=str(score.verdict.name if hasattr(score, "verdict") else "unknown"),
+            )
+            result = llm_area_call("unsuppression_score", prompt, fallback="")
+            if not result.used_llm or not result.text:
+                return None
+
+            import json as _json
+            try:
+                data = _json.loads(result.text)
+            except (ValueError, TypeError):
+                return None
+
+            rescue_score = float(data.get("score", 0.0))
+            if rescue_score >= 0.6:
+                # High rescue potential — try rewriting via archive_rewrite
+                rewrite_prompt = format_prompt(
+                    "archive_rewrite",
+                    statement=statement,
+                    reason=str(data.get("reason", "low quality")),
+                    score=str(score.total if hasattr(score, "total") else 0),
+                )
+                rewrite_result = llm_area_call("archive_rewrite", rewrite_prompt, fallback="")
+                if rewrite_result.used_llm and rewrite_result.text:
+                    return rewrite_result.text
+            return None
+        except Exception:
+            return None
 
     def _record_roast(self, result: RoastResult, source: str, context: Optional[Dict] = None):
         """Record roast for history and learning."""
