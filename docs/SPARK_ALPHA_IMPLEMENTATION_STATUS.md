@@ -118,6 +118,12 @@ Branch: feat/spark-alpha
   - Removed `fallback_budget_window`
 - Updated affected tests and observatory narrative references for single-path emission behavior.
 
+15. `80d8df2` - `feat(alpha-meta): promote single scoring path and retire dual-score runtime`
+- Promoted alpha scorer to the primary Meta-Ralph scoring path.
+- Removed dual-score shadow/enforce runtime behavior (single scorer path with legacy emergency fallback).
+- Simplified scorer metadata and stats to reflect alpha-primary execution.
+- Updated Meta-Ralph tests for alpha-primary + legacy-fallback behavior.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -139,7 +145,7 @@ Branch: feat/spark-alpha
 - `pytest tests/test_spark_alpha_replay_arena.py -q` -> `4 passed`
 - `pytest tests/test_advisory_dual_path_router.py -q` -> `10 passed`
 - `python scripts/spark_alpha_replay_arena.py --episodes 60 --seed 42` -> alpha winner, promotion gate pass, streak reached `5/3`
-- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `8/3`
+- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `9/3`
 - Replay artifacts:
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.json`
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`
@@ -164,11 +170,10 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
 7. Broad file/function deletion pass to reach Carmack-size target is not done.
 8. Final migration playbook for old paths/deprecated modules is not done.
-9. PR-03 deletion commitment is still pending (legacy scorer path removal after replay wins).
-10. PR-04 deletion commitment is still pending (JSONL/legacy path retirement after parity criteria).
-11. PR-05 deletion commitment is still pending (retire superseded rank paths after replay/canary wins).
-12. PR-06 broad file deletion commitment is still pending (full legacy advisory file removals after live canary pass).
-13. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup and dead fallback removal.
+9. PR-04 deletion commitment is still pending (JSONL/legacy path retirement after parity criteria).
+10. PR-05 deletion commitment is still pending (retire superseded rank paths after replay/canary wins).
+11. PR-06 broad file deletion commitment is still pending (full legacy advisory file removals after live canary pass).
+12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup and dead fallback removal.
 
 ## In progress right now
 

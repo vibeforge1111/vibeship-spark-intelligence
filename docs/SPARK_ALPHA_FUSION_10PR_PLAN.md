@@ -32,6 +32,7 @@ Completed commits:
 12. `e5b1263` PR-09 utility dedup: shared JSONL helper extraction
 13. `2c4c3cb` PR-10 initial legacy fallback deletion sweep
 14. `52d555f` PR-10 follow-up: dead fallback config surface deletion + schema prune
+15. `80d8df2` PR-03 promotion: single-score primary path, dual runtime retired
 
 Current measured state:
 1. `production_loop_report.py`: `NOT READY (16/19 passed)`
@@ -40,7 +41,7 @@ Current measured state:
 4. Replay arena latest (`scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42`):
    - winner: `alpha`
    - `promotion_gate_pass=true`
-   - `consecutive_pass_streak=8`
+   - `consecutive_pass_streak=9`
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial
@@ -64,11 +65,10 @@ Current measured state:
 1. Unified classifier introduced.
 2. Legacy-vs-unified disagreement logging.
 
-### PR-03 Dual Scoring (Meta)  (Partial: Implemented, Replay Promotion Pending)
-1. Run legacy + alpha scorer side-by-side.
-2. Challenger scoring is now shadowed by default with an explicit enforce flag.
-3. Promote decisions from challenger only after replay win criteria.
-4. Deletion commitment: remove legacy scorer path after 3 consecutive replay wins.
+### PR-03 Dual Scoring (Meta)  (Done)
+1. Promotion criteria met (replay streak above gate); alpha scorer is now primary.
+2. Dual-score shadow/enforce runtime path is retired.
+3. Legacy scorer remains only as emergency fallback on scorer errors.
 
 ### PR-04 Memory Spine + Contextual Write  (Partial)
 1. Contextual write path is done.
