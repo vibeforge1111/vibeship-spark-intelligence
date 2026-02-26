@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, VibeForge tuneable loop hardened + alpha replay streak 14)
+Last updated: 2026-02-27 (local branch snapshot, storage-compaction/tooling + VibeForge benchmark-gate hardening)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -236,6 +236,45 @@ Branch: feat/spark-alpha
 - Updated dual-path router test harness to isolate advisor recent-delivery files per test temp dir.
 - Keeps PR-10 telemetry cleanup while making repeated local test runs deterministic.
 
+35. `1ebbf8f` - `refactor(alpha-pr09): remove dead advisory parser fallback surface and startup quick-fallback flags`
+- Removed dead fallback-only parser parameters from `lib/advisory_parser.py`.
+- Removed deprecated scorer flag `--include-engine-fallback` from `scripts/advisory_auto_scorer.py`.
+- Removed stale startup quick-fallback env defaults from `start_spark.bat`.
+
+36. `665a118` - `feat(alpha-replay): add batch replay evidence runner with aggregate cutover summary`
+- Added `scripts/run_alpha_replay_evidence.py` for multi-seed/multi-episode replay batches.
+- Added aggregate run summary and artifact emission for cutover evidence review.
+- Added helper tests in `tests/test_run_alpha_replay_evidence_helpers.py`.
+
+37. `10136e7` - `feat(alpha-pr04): add JSON-memory consumer audit tool for sqlite retirement planning`
+- Added `scripts/memory_json_consumer_audit.py` to inventory direct JSON memory references by token and surface.
+- Emits JSON + Markdown reports to `benchmarks/out/memory_spine_audit/`.
+- Added helper tests in `tests/test_memory_json_consumer_audit_helpers.py`.
+
+38. `123a558` - `feat(alpha-pr04): add ACT-R style memory compaction planner and runner`
+- Added compaction planner core (`lib/memory_compaction.py`) with:
+  - activation scoring via temporal decay
+  - duplicate grouping
+  - explicit action labeling (`update/delete/noop`)
+- Added runner `scripts/cognitive_memory_compaction.py` for preview/apply passes with artifact output.
+- Added tests in `tests/test_memory_compaction.py`.
+
+39. `5df7ae9` - `feat(alpha-pr08): add benchmark-stage oracle checks to vibeforge promotion gating`
+- Added optional `goal.benchmark_checks[]` validation + runtime evaluation in `scripts/vibeforge.py`.
+- Benchmark checks execute only after candidate passes cheap gates (`improved + constraints + gates_ready`).
+- Blocking benchmark check failures now force rollback; results are recorded in ledger rows.
+- Expanded helper coverage in `tests/test_vibeforge_helpers.py`.
+
+40. `f513369` - `refactor(alpha-pr10): remove route-derived provider diagnostics field`
+- Removed route-only `provider_path` diagnostic field and helper from `lib/advisory_engine.py`.
+- Keeps diagnostic envelope focused on source evidence/session lineage without route-derived duplication.
+- Updated diagnostics envelope evidence tests.
+
+41. `74cce2a` - `feat(alpha-pr04): add JSON-consumer retirement gate with streak ledger`
+- Added `scripts/memory_json_consumer_gate.py` to convert audit results into streaked cutover readiness decisions.
+- Gate supports runtime-hit and total-hit thresholds with optional enforcement mode.
+- Added helper tests in `tests/test_memory_json_consumer_gate_helpers.py`.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -268,10 +307,18 @@ Branch: feat/spark-alpha
 - `python scripts/memory_spine_parity_report.py --list-limit 5` -> payload parity `1.0`, gate pass `true`
 - `python scripts/memory_spine_parity_gate.py --required-streak 3` -> `ready_for_json_retirement=true` (streak `5`)
 - `pytest tests/test_advisory_engine_alpha.py -q` -> `2 passed`
-- `pytest tests/test_vibeforge_helpers.py -q` -> `8 passed`
+- `pytest tests/test_memory_json_consumer_audit_helpers.py -q` -> `2 passed`
+- `pytest tests/test_memory_compaction.py -q` -> `5 passed`
+- `pytest tests/test_memory_json_consumer_gate_helpers.py -q` -> `2 passed`
+- `pytest tests/test_advisory_engine_evidence.py -q` -> `13 passed`
+- `pytest tests/test_run_alpha_replay_evidence_helpers.py -q` -> `2 passed`
+- `pytest tests/test_vibeforge_helpers.py -q` -> `10 passed`
 - `pytest tests/test_vibeforge_helpers.py tests/test_tuneables_alignment.py -q` -> `9 passed`
 - `pytest tests/test_advisory_orchestrator.py tests/test_advisory_dual_path_router.py tests/test_advisory_engine_alpha.py -q` -> `16 passed`
 - `pytest tests/test_advisory_dual_path_router.py tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_on_pre_tool.py -q` -> `31 passed`
+- `python scripts/cognitive_memory_compaction.py --candidate-limit 5` -> preview produced compaction report (`total=72`, `update_candidates=12`)
+- `python scripts/memory_json_consumer_audit.py --out-dir benchmarks/out/memory_spine_audit` -> audit report refreshed (`hits=150`, `runtime_hits=35`)
+- `python scripts/memory_json_consumer_gate.py --max-runtime-hits 40 --max-total-hits 200 --required-streak 3` -> gate pass, streak `1/3`
 - Replay artifacts:
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.json`
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`
@@ -292,13 +339,13 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 
 1. Full advisory collapse (17 modules -> compact 3-module architecture) is not implemented.
 2. Storage consolidation to single SQLite-first memory/advisory store is not implemented.
-3. Memory compaction engine (ACT-R decay + Mem0-style add/update/delete/noop) is not implemented.
-4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane now operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, and benchmark metric source support; code-evolve lane and richer benchmark orchestration/cascade policy are still pending).
+3. Memory compaction engine is partially implemented (ACT-R style planner + preview/apply runner for cognitive insights is in place); broader integration across advisory/memory stores and automated scheduling is still pending.
+4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).
 5. Large config surface reduction (hard pruning to minimal knobs) is not implemented.
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
 7. Broad file/function deletion pass to reach Carmack-size target is not done.
 8. Final migration playbook for old paths/deprecated modules is not done.
-9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + JSON mirror compatibility); broader JSON consumer retirement is still pending.
+9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + JSON mirror compatibility); JSON consumer audit + retirement gate tooling is now in place, but broader runtime JSON consumer deletion is still pending.
 10. PR-05 superseded fallback rank-extension branch deletion is complete, and keyword/parser fallback paths are removed; broader retrieval simplification outside these branches is still pending.
 11. PR-06 alpha ownership expansion for post-tool/user-prompt is complete; broad legacy advisory file removals after canary burn-in are still pending.
 12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup and dead fallback removal.

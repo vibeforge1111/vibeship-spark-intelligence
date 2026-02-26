@@ -52,6 +52,13 @@ Completed commits:
 32. `ca0b106` PR-10 follow-up: removed orchestrator auto-fallback and set startup route default to alpha
 33. `a7562e2` PR-10 follow-up: removed advisory-emitter legacy compatibility shim in engine
 34. `22f56ea` PR-10 follow-up: removed duplicate `route_hint` ledger field and hardened dual-path test hermeticity
+35. `1ebbf8f` PR-09 follow-up: removed dead parser fallback scorer/startup control surface
+36. `665a118` PR-07 follow-up: added batch replay evidence runner with aggregate summaries
+37. `10136e7` PR-04 follow-up: added JSON memory consumer audit report tool
+38. `123a558` PR-04 follow-up: added ACT-R style memory compaction planner + runner
+39. `5df7ae9` PR-08 follow-up: added blocking benchmark-stage checks to VibeForge promotion gating
+40. `f513369` PR-10 follow-up: removed route-derived provider diagnostics field in advisory engine
+41. `74cce2a` PR-04 follow-up: added JSON-consumer retirement streak gate ledger
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -95,7 +102,9 @@ Current measured state:
 3. Added parity tooling (`memory_spine_parity_report.py`) with threshold gate semantics.
 4. Added parity streak ledger gate (`memory_spine_parity_gate.py`) and reached `5/3` consecutive passes.
 5. JSON writes are now compatibility mirror only (`SPARK_MEMORY_SPINE_JSON_MIRROR`), not canonical source.
-6. Remaining: extend SQLite-first coverage across advisory/memory surfaces beyond cognitive learner.
+6. Added JSON consumer inventory tooling (`scripts/memory_json_consumer_audit.py`) and streak gate (`scripts/memory_json_consumer_gate.py`) for explicit retirement readiness.
+7. Added ACT-R style compaction planner (`lib/memory_compaction.py`) and preview/apply runner (`scripts/cognitive_memory_compaction.py`) with Mem0 action labels.
+8. Remaining: extend SQLite-first coverage across advisory/memory surfaces beyond cognitive learner and delete remaining runtime JSON consumers.
 
 ### PR-05 Retrieval Fusion (RRF + Contextual Retrieval)  (Done for Current Scope)
 1. Hybrid retrieval now includes deterministic RRF fusion (semantic + lexical + support ranks).
@@ -137,7 +146,8 @@ Current measured state:
    - file-backed benchmark payloads via `metric.path`
    - command-refreshed payloads via `metric.command`
    - optional stdout JSON parse via `metric.json_from_stdout=true`
-10. Remaining: EVOLVE-BLOCK code patch lane and richer benchmark-stage oracle cascade policy.
+10. Added benchmark-stage blocking checks (`goal.benchmark_checks[]`) evaluated only after cheap gate pass; failing checks auto-rollback promotion candidates.
+11. Remaining: EVOLVE-BLOCK code patch lane and richer multi-stage benchmark/oracle policy beyond current blocking checks.
 
 ### PR-09 Config Reduction + Utility Dedup  (Partial)
 1. Consolidated duplicated JSONL helpers into shared `lib/jsonl_utils.py`.
@@ -154,12 +164,13 @@ Current measured state:
 5. Removed orchestrator automatic alpha->engine fallback path (engine now explicit-route only).
 6. Removed advisory-emitter legacy compatibility shim (`_emit_advisory_compat`) from advisory engine hot path.
 7. Removed duplicate route-only ledger field (`route_hint`) from advisory decision entries.
-8. Remaining: larger advisory-stack file deletion set after live canary pass.
-9. Pending broader sweep once PR-03/04/05/06 are proven:
+8. Removed route-derived `provider_path` diagnostics field from advisory engine envelope.
+9. Remaining: larger advisory-stack file deletion set after live canary pass.
+10. Pending broader sweep once PR-03/04/05/06 are proven:
    - Legacy advisory stack (targeting 17-file collapse from V2)
    - Redundant noise filters no longer used
    - Legacy storage write paths replaced by SQLite spine
-10. Output required: explicit deleted file list + LOC removed + rollback tag.
+11. Output required: explicit deleted file list + LOC removed + rollback tag.
 
 ## Methods Decision (RL Governor vs VibeForge Loop)
 Default path for alpha:
