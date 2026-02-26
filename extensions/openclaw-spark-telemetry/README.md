@@ -10,6 +10,7 @@ OpenClaw `openclaw.json` snippet:
 ```json
 {
   "plugins": {
+    "allow": ["spark-telemetry-hooks"],
     "load": {
       "paths": [
         "/path/to/vibeship-spark-intelligence\\extensions\\openclaw-spark-telemetry"

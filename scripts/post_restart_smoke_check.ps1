@@ -93,7 +93,7 @@ if ($openclawCfg) {
         Add-Check "plugin.allowlist" "PASS" "spark-telemetry-hooks included."
     }
     else {
-        Add-Check "plugin.allowlist" "FAIL" "spark-telemetry-hooks missing from plugins.allow."
+        Add-Check "plugin.allowlist" "FAIL" 'spark-telemetry-hooks missing from plugins.allow. Add "allow": ["spark-telemetry-hooks"] to the plugins section of openclaw.json (see extensions/openclaw-spark-telemetry/README.md).'
     }
 
     $entry = $null

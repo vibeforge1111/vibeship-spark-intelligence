@@ -58,6 +58,7 @@ Use plugin-based hook capture + tailer ingestion:
 ```json
 {
   "plugins": {
+    "allow": ["spark-telemetry-hooks"],
     "load": {
       "paths": [
         "/path/to/vibeship-spark-intelligence\\extensions\\openclaw-spark-telemetry"
