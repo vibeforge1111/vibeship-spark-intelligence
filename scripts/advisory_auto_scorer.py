@@ -36,9 +36,9 @@ def run_autoscore(
     max_match_window_s: float,
     use_minimax: bool,
 ) -> Dict[str, Any]:
+    del include_engine_fallback  # legacy parser fallback lane removed
     advisories = load_advisories(
         limit_requests=limit_requests,
-        include_engine_fallback=include_engine_fallback,
     )
     matches = match_actions(
         advisories,
@@ -83,7 +83,11 @@ def run_autoscore(
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Score advisory->action conversion automatically.")
-    ap.add_argument("--include-engine-fallback", action="store_true", help="Use advisory_engine previews when no requests exist.")
+    ap.add_argument(
+        "--include-engine-fallback",
+        action="store_true",
+        help="Deprecated no-op (legacy parser fallback path removed).",
+    )
     ap.add_argument("--limit-requests", type=int, default=2000, help="Max request rows to parse.")
     ap.add_argument("--max-match-window-s", type=float, default=6 * 3600, help="Max seconds after advisory to consider action matches.")
     ap.add_argument("--use-minimax", action="store_true", help="Use MiniMax for ambiguous effect inference.")
