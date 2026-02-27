@@ -176,14 +176,14 @@ def run_workload(
     prompt_mode: str = "constant",
     tool_input_mode: str = "synthetic",
 ) -> Dict[str, Any]:
-    from lib import advisory_engine
+    from lib import advisory_orchestrator as advisory_runtime
     from lib import advisory_gate
     from lib import advisor as advisor_mod
     from lib import advisory_packet_store as packet_store
 
     repo_root = Path(__file__).resolve().parents[1]
     spark_dir = Path.home() / ".spark"
-    engine_log = spark_dir / "advisory_engine.jsonl"
+    engine_log = spark_dir / "advisory_engine_alpha.jsonl"
     feedback_requests = spark_dir / "advice_feedback_requests.jsonl"
     feedback_state = spark_dir / "advice_feedback_state.json"
 
@@ -238,9 +238,9 @@ def run_workload(
                     "Evaluate advisory quality under repeated tool execution. "
                     "Focus on precise, non-repetitive, actionable guidance with trace binding."
                 )
-            advisory_engine.on_user_prompt(session_id, prompt)
+            advisory_runtime.on_user_prompt(session_id, prompt, trace_id=trace_id)
             tool_input = {"file_path": file_path, "attempt": i}
-            text = advisory_engine.on_pre_tool(
+            text = advisory_runtime.on_pre_tool(
                 session_id=session_id,
                 tool_name=tool_name,
                 tool_input=tool_input,
@@ -249,7 +249,7 @@ def run_workload(
             if text:
                 emitted_count += 1
             success = not (tool_name in {"Task", "WebFetch"} and (i % 3 == 0))
-            advisory_engine.on_post_tool(
+            advisory_runtime.on_post_tool(
                 session_id=session_id,
                 tool_name=tool_name,
                 success=success,
@@ -282,7 +282,7 @@ def run_workload(
             "tool_input_mode": str(tool_input_mode),
         },
         "config": {
-            "advisory_engine": advisory_engine.get_engine_config(),
+            "advisory_route": advisory_runtime.get_route_status(),
             "advisory_gate": advisory_gate.get_gate_config(),
             "advisor": {
                 "max_items": int(getattr(advisor_mod, "MAX_ADVICE_ITEMS", 0)),
