@@ -1192,6 +1192,19 @@ Notable metrics now:
     - streak progressed to `4`, `promotion_gate_pass=true`, `eligible_for_cutover=true`
   - `python scripts/advisory_controlled_delta.py --rounds 2 ...` -> pass
 
+### Latest strict readiness evidence (2026-02-27, end-to-end alpha gate)
+
+- `python scripts/alpha_start_readiness.py --strict --emit-report` -> `ready=true`
+- Stage outcomes:
+  - `production_gates`: `READY (19/19 passed)`
+  - `replay_evidence`: `alpha_win_rate=1.0`, `promotion_pass_rate=1.0`, runs=`4`
+  - `controlled_delta`: pass
+  - `alpha_gap_audit`: `advisory_files=4`, `tuneable_keys=282`, `distillation_files=3`, `lib_jsonl_runtime_ext_refs=148`
+  - `pytest_alpha_core`: `250 passed in 7.44s`
+- Artifacts:
+  - `benchmarks/out/alpha_start/alpha_start_readiness_20260227_190641.json`
+  - `benchmarks/out/alpha_start/alpha_start_readiness_20260227_190641.md`
+
 ## Not done yet
 
 These are still pending relative to the broader Simplification/Fast-Track goals:
