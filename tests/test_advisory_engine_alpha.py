@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 
 import lib.advisory_engine_alpha as alpha_engine
-import lib.advisory_implicit_feedback as implicit_feedback
 import lib.advisory_packet_store as packet_store
 import lib.runtime_session_state as runtime_session_state
 
@@ -62,7 +61,7 @@ def test_on_post_tool_records_outcome_and_invokes_implicit_feedback(monkeypatch,
     def _fake_packet_outcome(*_a, **_k):
         calls["packet"] += 1
 
-    monkeypatch.setattr(implicit_feedback, "record_implicit_feedback", _fake_implicit)
+    monkeypatch.setattr(alpha_engine, "record_implicit_feedback", _fake_implicit)
     monkeypatch.setattr(packet_store, "record_packet_outcome", _fake_packet_outcome)
 
     alpha_engine.on_post_tool(
