@@ -2,7 +2,7 @@
 """Deterministic replay arena for Spark advisory champion/challenger evaluation.
 
 Runs identical episodes through:
-- Champion: legacy advisory engine (`lib.advisory_engine.on_pre_tool`)
+- Champion: advisory orchestrator (`lib.advisory_orchestrator.on_pre_tool`)
 - Challenger: alpha advisory engine (`lib.advisory_engine_alpha.on_pre_tool`)
 
 Scores each route on utility, safety, trace integrity, and latency, then writes:
@@ -33,7 +33,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 DEFAULT_OUT_DIR = ROOT / "benchmarks" / "out" / "replay_arena"
-ENGINE_LOG = Path.home() / ".spark" / "advisory_engine.jsonl"
 ALPHA_LOG = Path.home() / ".spark" / "advisory_engine_alpha.jsonl"
 PROMOTION_LEDGER = Path.home() / ".spark" / "alpha_replay_promotion_ledger.jsonl"
 DEFAULT_WEIGHTS = {
@@ -224,7 +223,7 @@ def build_diff(current: Mapping[str, Any], previous: Mapping[str, Any]) -> Dict[
 
     return {
         "winner_changed": str((current.get("winner") or {}).get("route", "")) != str((previous.get("winner") or {}).get("route", "")),
-        "champion_weighted_delta": _route_delta("legacy", "weighted_score"),
+        "champion_weighted_delta": _route_delta("orchestrator", "weighted_score"),
         "challenger_weighted_delta": _route_delta("alpha", "weighted_score"),
         "challenger_emit_rate_delta": _route_delta("alpha", "emit_rate"),
         "challenger_safety_delta": _route_delta("alpha", "safety_rate"),
@@ -338,9 +337,9 @@ def _run_route(
     episodes: List[Episode],
     trace_prefix: str,
 ) -> List[EpisodeResult]:
-    if route == "legacy":
-        from lib.advisory_engine import on_pre_tool as run_on_pre_tool
-        log_path = ENGINE_LOG
+    if route == "orchestrator":
+        from lib.advisory_orchestrator import on_pre_tool as run_on_pre_tool
+        log_path = ALPHA_LOG
     elif route == "alpha":
         from lib.advisory_engine_alpha import on_pre_tool as run_on_pre_tool
         log_path = ALPHA_LOG
@@ -394,7 +393,7 @@ def _run_route(
 def _render_markdown(report: Dict[str, Any]) -> str:
     winner = report.get("winner") or {}
     promo = report.get("promotion") or {}
-    legacy = (report.get("scorecards") or {}).get("legacy") or {}
+    champion = (report.get("scorecards") or {}).get("orchestrator") or {}
     alpha = (report.get("scorecards") or {}).get("alpha") or {}
     lines = [
         "# Spark Alpha Replay Arena",
@@ -403,17 +402,17 @@ def _render_markdown(report: Dict[str, Any]) -> str:
         f"- deterministic: `{report.get('deterministic')}`",
         f"- episodes: `{report.get('episodes')}`",
         f"- episodes_hash: `{report.get('episodes_hash')}`",
-        f"- winner: `{winner.get('route', 'legacy')}` (`{winner.get('reason', '')}`)",
+        f"- winner: `{winner.get('route', 'orchestrator')}` (`{winner.get('reason', '')}`)",
         "",
         "## Champion vs Challenger Scorecards",
         "",
-        "| Metric | Champion (legacy) | Challenger (alpha) |",
+        "| Metric | Champion (orchestrator) | Challenger (alpha) |",
         "|---|---:|---:|",
-        f"| weighted_score | {legacy.get('weighted_score', 0.0)} | {alpha.get('weighted_score', 0.0)} |",
-        f"| utility_score | {legacy.get('utility_score', 0.0)} | {alpha.get('utility_score', 0.0)} |",
-        f"| safety_rate | {legacy.get('safety_rate', 0.0)} | {alpha.get('safety_rate', 0.0)} |",
-        f"| trace_integrity_rate | {legacy.get('trace_integrity_rate', 0.0)} | {alpha.get('trace_integrity_rate', 0.0)} |",
-        f"| latency_p95_ms | {legacy.get('latency_p95_ms', 0.0)} | {alpha.get('latency_p95_ms', 0.0)} |",
+        f"| weighted_score | {champion.get('weighted_score', 0.0)} | {alpha.get('weighted_score', 0.0)} |",
+        f"| utility_score | {champion.get('utility_score', 0.0)} | {alpha.get('utility_score', 0.0)} |",
+        f"| safety_rate | {champion.get('safety_rate', 0.0)} | {alpha.get('safety_rate', 0.0)} |",
+        f"| trace_integrity_rate | {champion.get('trace_integrity_rate', 0.0)} | {alpha.get('trace_integrity_rate', 0.0)} |",
+        f"| latency_p95_ms | {champion.get('latency_p95_ms', 0.0)} | {alpha.get('latency_p95_ms', 0.0)} |",
         "",
         "## Promotion Gate",
         "",
@@ -434,7 +433,7 @@ def _apply_deterministic_env() -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Run Spark advisory replay arena (legacy champion vs alpha challenger).")
+    ap = argparse.ArgumentParser(description="Run Spark advisory replay arena (orchestrator champion vs alpha challenger).")
     ap.add_argument("--seed", type=int, default=42, help="Deterministic episode seed.")
     ap.add_argument("--episodes", type=int, default=120, help="Number of episodes to replay.")
     ap.add_argument("--episodes-file", type=str, default="", help="Optional JSON file containing replay episodes.")
@@ -470,11 +469,11 @@ def main() -> int:
     run_id = time.strftime("%Y%m%d_%H%M%S", time.localtime())
     trace_prefix = f"arena:{run_id}"
 
-    legacy_results = _run_route(route="legacy", run_tag=run_id, episodes=episodes, trace_prefix=trace_prefix)
+    legacy_results = _run_route(route="orchestrator", run_tag=run_id, episodes=episodes, trace_prefix=trace_prefix)
     alpha_results = _run_route(route="alpha", run_tag=run_id, episodes=episodes, trace_prefix=trace_prefix)
 
     legacy_card = _compute_scorecard(
-        route="legacy",
+        route="orchestrator",
         results=legacy_results,
         weights=weights,
         latency_ref_ms=float(args.latency_ref_ms),
@@ -500,7 +499,7 @@ def main() -> int:
         "safety_gate": bool(safety_gate),
         "trace_gate": bool(trace_gate),
         "promotion_gate_pass": bool(promotion_gate_pass),
-        "legacy_weighted_score": float(legacy_card.weighted_score),
+        "orchestrator_weighted_score": float(legacy_card.weighted_score),
         "alpha_weighted_score": float(alpha_card.weighted_score),
     }
     _append_jsonl(PROMOTION_LEDGER, ledger_row)
@@ -509,8 +508,8 @@ def main() -> int:
     streak = consecutive_promotion_wins(ledger_rows)
     eligible = bool(streak >= max(1, int(args.min_consecutive_wins)))
 
-    winner_route = "alpha" if alpha_win_weighted else "legacy"
-    winner_reason = "alpha_weighted_score_higher" if alpha_win_weighted else "legacy_retains_champion"
+    winner_route = "alpha" if alpha_win_weighted else "orchestrator"
+    winner_reason = "alpha_weighted_score_higher" if alpha_win_weighted else "orchestrator_retains_champion"
 
     report = {
         "run_id": run_id,
@@ -530,7 +529,7 @@ def main() -> int:
             "reason": winner_reason,
         },
         "scorecards": {
-            "legacy": asdict(legacy_card),
+            "orchestrator": asdict(legacy_card),
             "alpha": asdict(alpha_card),
         },
         "promotion": {
@@ -603,7 +602,7 @@ def main() -> int:
                 "ok": True,
                 "run_id": run_id,
                 "winner": winner_route,
-                "legacy_weighted": legacy_card.weighted_score,
+                "orchestrator_weighted": legacy_card.weighted_score,
                 "alpha_weighted": alpha_card.weighted_score,
                 "promotion_gate_pass": promotion_gate_pass,
                 "consecutive_pass_streak": streak,

@@ -27,7 +27,7 @@ def test_build_summary_rates():
     mod = _load_module()
     rows = [
         {"winner": "alpha", "promotion_gate_pass": True, "eligible_for_cutover": True},
-        {"winner": "legacy", "promotion_gate_pass": False, "eligible_for_cutover": False},
+        {"winner": "orchestrator", "promotion_gate_pass": False, "eligible_for_cutover": False},
     ]
     summary = mod._build_summary(rows)
     totals = summary.get("totals") or {}
@@ -36,4 +36,3 @@ def test_build_summary_rates():
     assert totals.get("promotion_passes") == 1
     assert abs(float(totals.get("alpha_win_rate", 0.0)) - 0.5) < 1e-9
     assert abs(float(totals.get("promotion_pass_rate", 0.0)) - 0.5) < 1e-9
-
