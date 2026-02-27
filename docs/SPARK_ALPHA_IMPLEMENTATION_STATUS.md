@@ -785,6 +785,23 @@ Branch: feat/spark-alpha
   - `python scripts/alpha_gap_audit.py` -> `advisory_files=13`, `tuneable_keys=415`, `distillation_files=5`, `orchestrator_module_present=false`
   - `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=415`, `hits=7551`, `orphan_keys=0`, `scanned_files=504`
 
+102. `fcde9a1` - `refactor(alpha-wave1): migrate advisory parser helpers to runtime_feedback_parser`
+- Renamed `lib/advisory_parser.py` -> `lib/runtime_feedback_parser.py` to remove another advisory-prefixed module while preserving helper behavior.
+- Updated all callsites:
+  - `scripts/advisory_auto_scorer.py`
+  - `scripts/advisory_day_trial.py`
+  - `tests/test_advisory_auto_scorer.py`
+- Regression + gate evidence:
+  - `python -m py_compile lib/runtime_feedback_parser.py scripts/advisory_auto_scorer.py scripts/advisory_day_trial.py tests/test_advisory_auto_scorer.py` -> pass
+  - `pytest tests/test_advisory_auto_scorer.py tests/test_advisory_day_trial.py -q` -> `6 passed`
+  - `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_150634`)
+    - production gate: `READY (19/19 passed)`
+    - replay evidence: `alpha_win_rate=1.0`, `promotion_pass_rate=1.0`, `runs=4`
+    - controlled delta: pass
+    - pytest core slice: `242 passed`
+  - `python scripts/alpha_gap_audit.py` -> `advisory_files=12`, `tuneable_keys=415`, `distillation_files=5`, `orchestrator_module_present=false`
+  - `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=415`, `hits=7551`, `orphan_keys=0`, `scanned_files=504`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -797,11 +814,11 @@ Branch: feat/spark-alpha
 
 ### Current measured state (latest run)
 
-- `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_150002`)
+- `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_150634`)
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
 - replay evidence batch (`seeds=42,77`; `episodes=8,20`) -> `alpha_win_rate=1.0`, `promotion_pass_rate=1.0`, `runs=4`
 - alpha core pytest slice in readiness run -> `242 passed`
-- `python scripts/alpha_gap_audit.py` -> `advisory_files=13`, `tuneable_keys=415`, `lib_jsonl_refs=376`, `distillation_files=5`, `orchestrator_module_present=false`, `vibeforge_has_code_evolve_lane=false`
+- `python scripts/alpha_gap_audit.py` -> `advisory_files=12`, `tuneable_keys=415`, `lib_jsonl_refs=376`, `distillation_files=5`, `orchestrator_module_present=false`, `vibeforge_has_code_evolve_lane=false`
 - `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=415`, `hits=7551`, `orphan_keys=0`, `scanned_files=504`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `18`
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
