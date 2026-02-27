@@ -845,7 +845,7 @@ def main():
         # This replaces the old fire-and-forget advisor call.
         # The engine handles retrieval, filtering, synthesis, and emission.
         try:
-            from lib.advisory_orchestrator import on_pre_tool
+            from lib.advisory_engine_alpha import on_pre_tool
             emitted_text = on_pre_tool(
                 session_id=session_id,
                 tool_name=tool_name,
@@ -868,7 +868,7 @@ def main():
             if elapsed_ms > PRETOOL_BUDGET_MS:
                 log_debug("observe", f"OBS_PRETOOL_BUDGET_EXCEEDED:{tool_name}:{elapsed_ms:.1f}ms>{PRETOOL_BUDGET_MS:.0f}ms", None)
         except Exception as e:
-            log_debug("observe", "advisory orchestrator pre-tool failed", e)
+            log_debug("observe", "advisory alpha pre-tool failed", e)
         save_prediction(session_id, tool_name, prediction)
 
         # EIDOS: Create step and check control plane
@@ -912,7 +912,7 @@ def main():
 
         # Advisory Engine: record outcome for implicit feedback loop
         try:
-            from lib.advisory_orchestrator import on_post_tool
+            from lib.advisory_engine_alpha import on_post_tool
             on_post_tool(
                 session_id=session_id,
                 tool_name=tool_name,
@@ -981,7 +981,7 @@ def main():
         trace_id = _resolve_post_trace_id(session_id, tool_name, trace_id)
         # Advisory Engine: record failure outcome for implicit feedback
         try:
-            from lib.advisory_orchestrator import on_post_tool
+            from lib.advisory_engine_alpha import on_post_tool
             on_post_tool(
                 session_id=session_id,
                 tool_name=tool_name,
@@ -1132,7 +1132,7 @@ def main():
 
             # Advisory Engine: capture user intent for contextual retrieval
             try:
-                from lib.advisory_orchestrator import on_user_prompt
+                from lib.advisory_engine_alpha import on_user_prompt
                 on_user_prompt(session_id, txt, trace_id=trace_id)
             except Exception as e:
                 log_debug("observe", "advisory engine intent capture failed", e)

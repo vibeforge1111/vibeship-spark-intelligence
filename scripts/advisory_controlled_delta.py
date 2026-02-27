@@ -188,7 +188,7 @@ def run_workload(
     prompt_mode: str = "constant",
     tool_input_mode: str = "synthetic",
 ) -> Dict[str, Any]:
-    from lib import advisory_orchestrator as advisory_runtime
+    from lib import advisory_engine_alpha as advisory_runtime
     from lib import advisory_gate
     from lib import advisor as advisor_mod
     from lib import advisory_packet_store as packet_store
@@ -229,7 +229,7 @@ def run_workload(
                     "README.md",
                     "docs/reports/2026-02-15_233443_prompt_run_10_2_6.md",
                     "lib/advisor.py",
-                    "lib/advisory_orchestrator.py",
+                    "lib/advisory_engine_alpha.py",
                     "lib/advisory_engine_alpha.py",
                     "scripts/advisory_controlled_delta.py",
                 ]
@@ -295,7 +295,10 @@ def run_workload(
             "tool_input_mode": str(tool_input_mode),
         },
         "config": {
-            "advisory_route": advisory_runtime.get_route_status(),
+            "advisory_route": {
+                "mode": "alpha",
+                "decision_log": str(engine_log),
+            },
             "advisory_gate": advisory_gate.get_gate_config(),
             "advisor": {
                 "max_items": int(getattr(advisor_mod, "MAX_ADVICE_ITEMS", 0)),
