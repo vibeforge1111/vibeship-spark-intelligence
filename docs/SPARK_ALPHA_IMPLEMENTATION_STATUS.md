@@ -764,6 +764,27 @@ Branch: feat/spark-alpha
     - `scanned_files=505`
     - report: `benchmarks/out/alpha_start/tuneables_usage_audit_20260227_145330.json`
 
+101. `1fe7195` - `refactor(alpha-wave1): inline alpha log path and remove advisory_log_paths module`
+- Removed `lib/advisory_log_paths.py` and inlined the canonical alpha log path (`~/.spark/advisory_engine_alpha.jsonl`) in active consumers:
+  - `lib/advisory_packet_store.py`
+  - `lib/carmack_kpi.py`
+  - `scripts/advisory_day_trial.py`
+  - `scripts/advisory_self_review.py`
+  - `scripts/cross_surface_drift_checker.py`
+  - `scripts/memory_quality_observatory.py`
+  - `scripts/openclaw_realtime_e2e_benchmark.py`
+- This is the first Wave-1 advisory-surface compaction step from the reduction-waves plan.
+- Regression + gate evidence:
+  - `python -m py_compile lib/advisory_packet_store.py lib/carmack_kpi.py scripts/advisory_day_trial.py scripts/advisory_self_review.py scripts/cross_surface_drift_checker.py scripts/memory_quality_observatory.py scripts/openclaw_realtime_e2e_benchmark.py` -> pass
+  - `pytest tests/test_advisory_packet_store.py tests/test_carmack_kpi.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_advisory_self_review.py tests/test_advisory_day_trial.py -q` -> `35 passed`
+  - `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_150002`)
+    - production gate: `READY (19/19 passed)`
+    - replay evidence: `alpha_win_rate=1.0`, `promotion_pass_rate=1.0`, `runs=4`
+    - controlled delta: pass
+    - pytest core slice: `242 passed`
+  - `python scripts/alpha_gap_audit.py` -> `advisory_files=13`, `tuneable_keys=415`, `distillation_files=5`, `orchestrator_module_present=false`
+  - `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=415`, `hits=7551`, `orphan_keys=0`, `scanned_files=504`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -776,12 +797,12 @@ Branch: feat/spark-alpha
 
 ### Current measured state (latest run)
 
-- `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_144522`)
+- `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_150002`)
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
 - replay evidence batch (`seeds=42,77`; `episodes=8,20`) -> `alpha_win_rate=1.0`, `promotion_pass_rate=1.0`, `runs=4`
 - alpha core pytest slice in readiness run -> `242 passed`
-- `python scripts/alpha_gap_audit.py` -> `advisory_files=14`, `tuneable_keys=415`, `lib_jsonl_refs=375`, `distillation_files=5`, `orchestrator_module_present=false`, `vibeforge_has_code_evolve_lane=false`
-- `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=415`, `hits=7551`, `orphan_keys=0`, `scanned_files=505`
+- `python scripts/alpha_gap_audit.py` -> `advisory_files=13`, `tuneable_keys=415`, `lib_jsonl_refs=376`, `distillation_files=5`, `orchestrator_module_present=false`, `vibeforge_has_code_evolve_lane=false`
+- `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=415`, `hits=7551`, `orphan_keys=0`, `scanned_files=504`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `18`
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
