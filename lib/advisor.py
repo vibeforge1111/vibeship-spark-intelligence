@@ -116,6 +116,14 @@ MIND_RESERVE_MIN_RANK: float = 0.45
 RETRIEVAL_ROUTE_LOG = ADVISOR_DIR / "retrieval_router.jsonl"
 RETRIEVAL_ROUTE_LOG_MAX = 800
 
+DEFAULT_SEMANTIC_FUSION_WEIGHTS: Dict[str, float] = {
+    "lexical_weight": 0.30,
+    "intent_coverage_weight": 0.05,
+    "support_boost_weight": 0.05,
+    "reliability_weight": 0.03,
+    "rrf_weight": 0.18,
+}
+
 DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
     "1": {
         "profile": "local_free",
@@ -134,11 +142,7 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "prefilter_enabled": True,
         "prefilter_max_insights": 300,
         "prefilter_drop_low_signal": True,
-        "lexical_weight": 0.25,
-        "intent_coverage_weight": 0.0,
-        "support_boost_weight": 0.0,
-        "reliability_weight": 0.0,
-        "rrf_weight": 0.18,
+        **DEFAULT_SEMANTIC_FUSION_WEIGHTS,
         "semantic_context_min": 0.15,
         "semantic_lexical_min": 0.03,
         "semantic_intent_min": 0.0,
@@ -156,20 +160,12 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "domain_profiles": {
             "memory": {
                 "semantic_limit": 10,
-                "lexical_weight": 0.32,
-                "intent_coverage_weight": 0.05,
-                "support_boost_weight": 0.05,
-                "reliability_weight": 0.03,
                 "semantic_intent_min": 0.02,
                 "min_results_no_escalation": 4,
                 "min_top_score_no_escalation": 0.70,
             },
             "coding": {
                 "semantic_limit": 9,
-                "lexical_weight": 0.30,
-                "intent_coverage_weight": 0.04,
-                "support_boost_weight": 0.04,
-                "reliability_weight": 0.02,
                 "semantic_intent_min": 0.01,
             },
         },
@@ -189,11 +185,7 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "prefilter_enabled": True,
         "prefilter_max_insights": 500,
         "prefilter_drop_low_signal": True,
-        "lexical_weight": 0.30,
-        "intent_coverage_weight": 0.0,
-        "support_boost_weight": 0.0,
-        "reliability_weight": 0.0,
-        "rrf_weight": 0.18,
+        **DEFAULT_SEMANTIC_FUSION_WEIGHTS,
         "semantic_context_min": 0.15,
         "semantic_lexical_min": 0.03,
         "semantic_intent_min": 0.0,
@@ -213,20 +205,12 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
                 "semantic_limit": 12,
                 "max_queries": 4,
                 "agentic_query_limit": 4,
-                "lexical_weight": 0.40,
-                "intent_coverage_weight": 0.10,
-                "support_boost_weight": 0.10,
-                "reliability_weight": 0.05,
                 "semantic_intent_min": 0.03,
                 "min_results_no_escalation": 4,
                 "min_top_score_no_escalation": 0.74,
             },
             "coding": {
                 "semantic_limit": 11,
-                "lexical_weight": 0.34,
-                "intent_coverage_weight": 0.06,
-                "support_boost_weight": 0.08,
-                "reliability_weight": 0.04,
                 "semantic_intent_min": 0.02,
             },
         },
@@ -246,11 +230,7 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "prefilter_enabled": True,
         "prefilter_max_insights": 800,
         "prefilter_drop_low_signal": True,
-        "lexical_weight": 0.35,
-        "intent_coverage_weight": 0.10,
-        "support_boost_weight": 0.10,
-        "reliability_weight": 0.10,
-        "rrf_weight": 0.18,
+        **DEFAULT_SEMANTIC_FUSION_WEIGHTS,
         "semantic_context_min": 0.12,
         "semantic_lexical_min": 0.02,
         "semantic_intent_min": 0.02,
@@ -270,20 +250,12 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
                 "semantic_limit": 14,
                 "max_queries": 5,
                 "agentic_query_limit": 5,
-                "lexical_weight": 0.42,
-                "intent_coverage_weight": 0.12,
-                "support_boost_weight": 0.12,
-                "reliability_weight": 0.06,
                 "semantic_intent_min": 0.03,
                 "min_results_no_escalation": 5,
                 "min_top_score_no_escalation": 0.80,
             },
             "coding": {
                 "semantic_limit": 13,
-                "lexical_weight": 0.36,
-                "intent_coverage_weight": 0.08,
-                "support_boost_weight": 0.10,
-                "reliability_weight": 0.05,
                 "semantic_intent_min": 0.02,
             },
         },
@@ -496,11 +468,6 @@ RETRIEVAL_DOMAIN_PROFILE_KEYS = {
     "prefilter_enabled",
     "prefilter_max_insights",
     "prefilter_drop_low_signal",
-    "lexical_weight",
-    "intent_coverage_weight",
-    "support_boost_weight",
-    "reliability_weight",
-    "rrf_weight",
     "bm25_k1",
     "bm25_b",
     "bm25_mix",
@@ -1963,18 +1930,64 @@ class SparkAdvisor:
             prefilter_raw = 500
         policy["prefilter_max_insights"] = max(20, int(prefilter_raw))
         policy["prefilter_drop_low_signal"] = bool(policy.get("prefilter_drop_low_signal", True))
-        policy["lexical_weight"] = max(0.0, min(1.0, float(policy.get("lexical_weight", 0.25) or 0.25)))
+        policy["lexical_weight"] = max(
+            0.0,
+            min(
+                1.0,
+                float(
+                    policy.get("lexical_weight", DEFAULT_SEMANTIC_FUSION_WEIGHTS["lexical_weight"])
+                    or DEFAULT_SEMANTIC_FUSION_WEIGHTS["lexical_weight"]
+                ),
+            ),
+        )
         policy["intent_coverage_weight"] = max(
-            0.0, min(1.0, float(policy.get("intent_coverage_weight", 0.0) or 0.0))
+            0.0,
+            min(
+                1.0,
+                float(
+                    policy.get(
+                        "intent_coverage_weight",
+                        DEFAULT_SEMANTIC_FUSION_WEIGHTS["intent_coverage_weight"],
+                    )
+                    or DEFAULT_SEMANTIC_FUSION_WEIGHTS["intent_coverage_weight"]
+                ),
+            ),
         )
         policy["support_boost_weight"] = max(
-            0.0, min(1.0, float(policy.get("support_boost_weight", 0.0) or 0.0))
+            0.0,
+            min(
+                1.0,
+                float(
+                    policy.get(
+                        "support_boost_weight",
+                        DEFAULT_SEMANTIC_FUSION_WEIGHTS["support_boost_weight"],
+                    )
+                    or DEFAULT_SEMANTIC_FUSION_WEIGHTS["support_boost_weight"]
+                ),
+            ),
         )
         policy["reliability_weight"] = max(
-            0.0, min(1.0, float(policy.get("reliability_weight", 0.0) or 0.0))
+            0.0,
+            min(
+                1.0,
+                float(
+                    policy.get(
+                        "reliability_weight",
+                        DEFAULT_SEMANTIC_FUSION_WEIGHTS["reliability_weight"],
+                    )
+                    or DEFAULT_SEMANTIC_FUSION_WEIGHTS["reliability_weight"]
+                ),
+            ),
         )
         policy["rrf_weight"] = max(
-            0.0, min(1.0, float(policy.get("rrf_weight", 0.18) or 0.18))
+            0.0,
+            min(
+                1.0,
+                float(
+                    policy.get("rrf_weight", DEFAULT_SEMANTIC_FUSION_WEIGHTS["rrf_weight"])
+                    or DEFAULT_SEMANTIC_FUSION_WEIGHTS["rrf_weight"]
+                ),
+            ),
         )
         policy["minimax_fast_rerank"] = _parse_bool(policy.get("minimax_fast_rerank", True), True)
         policy["minimax_fast_rerank_top_k"] = max(4, int(policy.get("minimax_fast_rerank_top_k", 16) or 16))
@@ -2834,18 +2847,36 @@ class SparkAdvisor:
         fast_path_budget_ms = int(policy.get("fast_path_budget_ms", 250) or 250)
         prefilter_enabled = bool(policy.get("prefilter_enabled", True))
         prefilter_max_insights = int(policy.get("prefilter_max_insights", 500))
-        lexical_weight = float(policy.get("lexical_weight", 0.25) or 0.25)
+        lexical_weight = float(
+            policy.get("lexical_weight", DEFAULT_SEMANTIC_FUSION_WEIGHTS["lexical_weight"])
+            or DEFAULT_SEMANTIC_FUSION_WEIGHTS["lexical_weight"]
+        )
         semantic_context_min = float(policy.get("semantic_context_min", 0.15) or 0.15)
         semantic_lexical_min = float(policy.get("semantic_lexical_min", 0.03) or 0.03)
         semantic_intent_min = float(policy.get("semantic_intent_min", 0.0) or 0.0)
         semantic_strong_override = float(policy.get("semantic_strong_override", 0.90) or 0.90)
-        rrf_weight = float(policy.get("rrf_weight", 0.18) or 0.18)
+        rrf_weight = float(
+            policy.get("rrf_weight", DEFAULT_SEMANTIC_FUSION_WEIGHTS["rrf_weight"])
+            or DEFAULT_SEMANTIC_FUSION_WEIGHTS["rrf_weight"]
+        )
         bm25_k1 = float(policy.get("bm25_k1", 1.2) or 1.2)
         bm25_b = float(policy.get("bm25_b", 0.75) or 0.75)
         bm25_mix = float(policy.get("bm25_mix", 0.75) or 0.75)
-        intent_coverage_weight = float(policy.get("intent_coverage_weight", 0.0) or 0.0)
-        support_boost_weight = float(policy.get("support_boost_weight", 0.0) or 0.0)
-        reliability_weight = float(policy.get("reliability_weight", 0.0) or 0.0)
+        intent_coverage_weight = float(
+            policy.get(
+                "intent_coverage_weight",
+                DEFAULT_SEMANTIC_FUSION_WEIGHTS["intent_coverage_weight"],
+            )
+            or DEFAULT_SEMANTIC_FUSION_WEIGHTS["intent_coverage_weight"]
+        )
+        support_boost_weight = float(
+            policy.get("support_boost_weight", DEFAULT_SEMANTIC_FUSION_WEIGHTS["support_boost_weight"])
+            or DEFAULT_SEMANTIC_FUSION_WEIGHTS["support_boost_weight"]
+        )
+        reliability_weight = float(
+            policy.get("reliability_weight", DEFAULT_SEMANTIC_FUSION_WEIGHTS["reliability_weight"])
+            or DEFAULT_SEMANTIC_FUSION_WEIGHTS["reliability_weight"]
+        )
         emotion_cfg = self._load_memory_emotion_cfg()
         emotion_state_enabled = bool(emotion_cfg.get("enabled", True))
         emotion_state_weight = (
