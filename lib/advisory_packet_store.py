@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 from collections import Counter
 from pathlib import Path
@@ -27,7 +28,10 @@ from .advisory_packet_spine import (
 )
 from .config_authority import resolve_section
 
-# httpx moved to advisory_packet_llm_reranker.py
+try:
+    import httpx as _HTTPX
+except Exception:
+    _HTTPX = None
 
 PACKET_DIR = Path.home() / ".spark" / "advice_packets"
 INDEX_FILE = PACKET_DIR / "index.json"
@@ -68,7 +72,15 @@ RELAXED_MIN_MATCH_SCORE = 3.0
 DEFAULT_PACKET_RELAXED_MAX_CANDIDATES = 6
 DEFAULT_PACKET_RELAXED_PREVIEW_CHARS = 360
 DEFAULT_PACKET_LOOKUP_CANDIDATES = 6
-# LLM reranking defaults moved to advisory_packet_llm_reranker.py
+PACKET_LOOKUP_LLM_ENABLED = False
+PACKET_LOOKUP_LLM_PROVIDER = "minimax"
+PACKET_LOOKUP_LLM_TIMEOUT_S = 1.2
+PACKET_LOOKUP_LLM_TOP_K = 3
+PACKET_LOOKUP_LLM_MIN_CANDIDATES = 2
+PACKET_LOOKUP_LLM_CONTEXT_CHARS = 220
+PACKET_LOOKUP_LLM_URL = "https://api.minimax.io/v1"
+PACKET_LOOKUP_LLM_MODEL = "MiniMax-M2.5"
+PACKET_LOOKUP_LLM_FALLBACK_TO_SCORING = True
 DEFAULT_OBSIDIAN_EXPORT_MAX_PACKETS = 300
 DEFAULT_OBSIDIAN_EXPORT_ENABLED = False
 DEFAULT_OBSIDIAN_AUTO_EXPORT = False
@@ -659,21 +671,230 @@ def _meta_count(row: Dict[str, Any], key: str, *, fallback_key: Optional[str] = 
     return 0
 
 
-# ── LLM reranker (extracted to advisory_packet_llm_reranker.py) ──────
-# LLM config globals now live in advisory_packet_llm_reranker module.
+# LLM-assisted packet reranking helpers.
 # apply_packet_store_config() updates them there via module reference.
-import lib.advisory_packet_llm_reranker as _llm_reranker  # noqa: E402
+def _sanitize_lookup_provider(raw: Any) -> str:
+    provider = str(raw or "").strip().lower()
+    if not provider:
+        return PACKET_LOOKUP_LLM_PROVIDER
+    if provider in {"minimax", "openai", "ollama", "anthropic", "gemini"}:
+        return provider
+    return PACKET_LOOKUP_LLM_PROVIDER
 
-from .advisory_packet_llm_reranker import (  # noqa: F401,E402 — re-export for compat
-    _build_lookup_payload,
-    _call_lookup_llm,
-    _extract_json_like_array,
-    _lookup_llm_api_key,
-    _lookup_llm_url,
-    _rerank_candidates_with_lookup_llm,
-    _sanitize_lookup_provider,
-)
 
+def _build_lookup_payload(
+    packet_candidates: List[Dict[str, Any]],
+    context_text: str,
+    top_k: int,
+) -> str:
+    prompt_lines = [
+        "You are a strict ranker for advisory packet retrieval.",
+        "Return exactly one JSON array of packet_id strings in descending relevance order.",
+        "Only include packet_ids from the provided candidate list.",
+        f"Select at most {top_k} packet_ids.",
+        "Prefer packets with higher expected usefulness for the immediate user intent.",
+    ]
+    context = str(context_text or "").strip().replace("\n", " ")
+    if context:
+        prompt_lines.append(f'Context: "{context}"')
+    prompt_lines.append("Candidates (packet_id, score, tool_name, intent_family, task_plane, advisory_preview):")
+    for row in packet_candidates[:top_k]:
+        prompt_lines.append(
+            json.dumps(
+                {
+                    "packet_id": str(row.get("packet_id") or ""),
+                    "score": float(row.get("score", 0.0) or 0.0),
+                    "tool_name": str(row.get("tool_name") or ""),
+                    "intent_family": str(row.get("intent_family") or ""),
+                    "task_plane": str(row.get("task_plane") or ""),
+                    "effectiveness_score": float(row.get("effectiveness_score", 0.0) or 0.0),
+                    "advisory_text_preview": str(row.get("advisory_text_preview") or ""),
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        )
+    prompt_lines.append('Return only JSON. No markdown. Example: ["pkt_abc", "pkt_def"]')
+    return "\n".join(prompt_lines)
+
+
+def _extract_json_like_array(raw: str) -> List[str]:
+    if not raw:
+        return []
+    text = str(raw).strip()
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        match = re.search(r"\[[^\r\n]*\]", text, re.DOTALL)
+        if not match:
+            return []
+        try:
+            parsed = json.loads(match.group(0))
+        except Exception:
+            return []
+    if isinstance(parsed, dict):
+        parsed_list: Optional[List[Any]] = None
+        for key in ("packet_ids", "reranked_ids", "result", "ids"):
+            candidate = parsed.get(key)
+            if isinstance(candidate, list):
+                parsed_list = candidate
+                break
+        parsed = parsed_list if parsed_list is not None else []
+    if not isinstance(parsed, list):
+        return []
+    out: List[str] = []
+    for value in parsed:
+        packet_id = str(value or "").strip()
+        if packet_id:
+            out.append(packet_id)
+    return out
+
+
+def _lookup_llm_api_key(provider: str) -> Optional[str]:
+    p = str(provider or "").strip().lower()
+    if p == "minimax":
+        return (
+            os.getenv("SPARK_MINIMAX_API_KEY")
+            or os.getenv("MINIMAX_API_KEY")
+            or os.getenv("SPARK_MINIMAX_TOKEN")
+        )
+    if p == "openai":
+        return os.getenv("OPENAI_API_KEY") or os.getenv("SPARK_OPENAI_API_KEY")
+    if p == "anthropic":
+        return (
+            os.getenv("ANTHROPIC_API_KEY")
+            or os.getenv("SPARK_ANTHROPIC_API_KEY")
+            or os.getenv("CLAUDE_API_KEY")
+        )
+    if p == "gemini":
+        return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    return None
+
+
+def _lookup_llm_url(provider: str) -> str:
+    p = str(provider or "").strip().lower()
+    if p == "ollama":
+        return str(os.getenv("SPARK_OLLAMA_API", "http://localhost:11434")).rstrip("/")
+    if p == "minimax":
+        return str(os.getenv("SPARK_MINIMAX_BASE_URL", PACKET_LOOKUP_LLM_URL)).rstrip("/")
+    if p == "openai":
+        return str(os.getenv("SPARK_OPENAI_BASE_URL", "https://api.openai.com")).rstrip("/")
+    if p == "anthropic":
+        return str(os.getenv("SPARK_ANTHROPIC_BASE_URL", "https://api.anthropic.com")).rstrip("/")
+    if p == "gemini":
+        return str(os.getenv("SPARK_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com")).rstrip("/")
+    return str(PACKET_LOOKUP_LLM_URL).rstrip("/")
+
+
+def _call_lookup_llm(
+    prompt: str,
+    *,
+    provider: str,
+    timeout_s: float,
+) -> Optional[str]:
+    if _HTTPX is None:
+        return None
+    provider = str(provider or "").strip().lower()
+    base_url = _lookup_llm_url(provider)
+    if provider == "ollama":
+        request_url = f"{base_url}/api/chat"
+        payload = {
+            "model": PACKET_LOOKUP_LLM_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "options": {"temperature": 0.0},
+        }
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
+    else:
+        if provider == "minimax":
+            request_url = f"{base_url}/chat/completions"
+        else:
+            request_url = f"{base_url}/v1/chat/completions"
+        api_key = _lookup_llm_api_key(provider)
+        if not api_key:
+            return None
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": PACKET_LOOKUP_LLM_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 220,
+            "temperature": 0.0,
+            "response_format": {"type": "json_object"},
+        }
+    try:
+        with _HTTPX.Client(timeout=timeout_s) as client:
+            resp = client.post(request_url, headers=headers, json=payload)
+        if not (200 <= int(resp.status_code) < 300):
+            return None
+        data = resp.json()
+        if isinstance(data, dict):
+            choices = data.get("choices") or []
+            if choices:
+                msg = choices[0].get("message") if isinstance(choices[0], dict) else {}
+                content = msg.get("content", "") if isinstance(msg, dict) else ""
+                if isinstance(content, str) and content.strip():
+                    return content.strip()
+            raw = data.get("response")
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+    except Exception:
+        return None
+    return None
+
+
+def _rerank_candidates_with_lookup_llm(
+    candidates: List[Dict[str, Any]],
+    *,
+    context_text: str,
+) -> List[Dict[str, Any]]:
+    if not PACKET_LOOKUP_LLM_ENABLED or not candidates:
+        return candidates
+    provider = _sanitize_lookup_provider(PACKET_LOOKUP_LLM_PROVIDER)
+    if provider not in {"minimax", "openai", "ollama", "anthropic", "gemini"}:
+        return candidates
+    min_candidates = max(1, int(PACKET_LOOKUP_LLM_MIN_CANDIDATES))
+    if len(candidates) < min_candidates:
+        return candidates
+
+    top_k = max(1, min(len(candidates), int(PACKET_LOOKUP_LLM_TOP_K)))
+    context = str(context_text or "").strip().replace("\n", " ")
+    if context:
+        context = context[: max(1, int(PACKET_LOOKUP_LLM_CONTEXT_CHARS))]
+    prompt = _build_lookup_payload(candidates, context, top_k)
+    response = _call_lookup_llm(prompt, provider=provider, timeout_s=PACKET_LOOKUP_LLM_TIMEOUT_S)
+    if not response:
+        return candidates
+    ranked_ids = _extract_json_like_array(response)
+    if not ranked_ids:
+        return candidates
+
+    lookup = {str(row.get("packet_id") or ""): row for row in candidates}
+    reranked: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for packet_id in ranked_ids:
+        packet_id = str(packet_id or "").strip()
+        if not packet_id or packet_id in seen:
+            continue
+        row = lookup.get(packet_id)
+        if row is not None:
+            row = dict(row)
+            row["llm_rank"] = len(reranked)
+            row["llm_reranked"] = True
+            reranked.append(row)
+            seen.add(packet_id)
+
+    for row in candidates:
+        packet_id = str(row.get("packet_id") or "")
+        if packet_id in seen:
+            continue
+        row = dict(row)
+        row["llm_rank"] = len(reranked)
+        row["llm_reranked"] = False
+        reranked.append(row)
+    return reranked
 
 def _coerce_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, bool):
@@ -3003,13 +3224,223 @@ def record_packet_usage(
     }
 
 
-# ── Feedback/outcome recording (extracted to advisory_packet_feedback.py) ──
-from .advisory_packet_feedback import (  # noqa: F401,E402 — re-export for compat
-    record_packet_feedback,
-    record_packet_feedback_for_advice,
-    record_packet_outcome,
-    record_packet_outcome_for_advice,
-)
+def record_packet_feedback(
+    packet_id: str,
+    *,
+    helpful: Optional[bool],
+    noisy: bool = False,
+    followed: bool = True,
+    source: str = "explicit",
+    trace_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    packet = get_packet(packet_id)
+    if not packet:
+        return {"ok": False, "reason": "packet_not_found", "packet_id": packet_id}
+
+    packet["feedback_count"] = int(packet.get("feedback_count", 0) or 0) + 1
+    if helpful is True:
+        packet["helpful_count"] = int(packet.get("helpful_count", 0) or 0) + 1
+    elif helpful is False:
+        packet["unhelpful_count"] = int(packet.get("unhelpful_count", 0) or 0) + 1
+    if noisy:
+        packet["noisy_count"] = int(packet.get("noisy_count", 0) or 0) + 1
+
+    feedback_ts = _now()
+    if trace_id or packet.get("last_trace_id"):
+        resolved_trace = str(trace_id or packet.get("last_trace_id") or "").strip()
+        if resolved_trace:
+            feedback_history = packet.get("trace_usage_history") or []
+            feedback_history.append(
+                {
+                    "ts": feedback_ts,
+                    "trace_id": resolved_trace,
+                    "tool_name": str(packet.get("tool_name") or "").strip(),
+                    "route": "feedback",
+                    "event": f"feedback:{'helpful' if helpful is True else 'unhelpful' if helpful is False else 'unknown'}",
+                    "source": str(source or "").strip(),
+                    "route_order": len(feedback_history) + 1,
+                    "emitted": False,
+                }
+            )
+            packet["trace_usage_history"] = _normalize_trace_usage_history(
+                feedback_history,
+                limit=TRACE_EVENT_HISTORY_MAX,
+            )
+            packet["last_trace_id"] = resolved_trace
+
+    packet["last_feedback"] = {
+        "helpful": helpful,
+        "noisy": bool(noisy),
+        "followed": bool(followed),
+        "source": str(source or "")[:80],
+        "ts": feedback_ts,
+    }
+    packet = _normalize_packet(packet)
+    save_packet(packet)
+    return {
+        "ok": True,
+        "packet_id": packet_id,
+        "effectiveness_score": float(packet.get("effectiveness_score", 0.5) or 0.5),
+        "feedback_count": int(packet.get("feedback_count", 0) or 0),
+    }
+
+
+def record_packet_outcome(
+    packet_id: str,
+    *,
+    status: str,
+    source: str = "implicit",
+    tool_name: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    notes: str = "",
+    count_effectiveness: bool = True,
+) -> Dict[str, Any]:
+    st = str(status or "").strip().lower()
+    if st not in {"acted", "blocked", "harmful", "ignored"}:
+        return {"ok": False, "reason": "invalid_status", "status": st, "packet_id": packet_id}
+
+    packet = get_packet(packet_id)
+    if not packet:
+        return {"ok": False, "reason": "packet_not_found", "packet_id": packet_id}
+
+    if st == "acted":
+        packet["acted_count"] = int(packet.get("acted_count", 0) or 0) + 1
+    elif st == "blocked":
+        packet["blocked_count"] = int(packet.get("blocked_count", 0) or 0) + 1
+    elif st == "harmful":
+        packet["harmful_count"] = int(packet.get("harmful_count", 0) or 0) + 1
+    elif st == "ignored":
+        packet["ignored_count"] = int(packet.get("ignored_count", 0) or 0) + 1
+
+    outcome_ts = _now()
+    if trace_id:
+        outcome_history = packet.get("trace_usage_history") or []
+        outcome_history.append(
+            {
+                "ts": outcome_ts,
+                "trace_id": str(trace_id or "").strip(),
+                "tool_name": str(tool_name or "").strip(),
+                "route": "outcome",
+                "event": f"outcome:{st}",
+                "source": str(source or "").strip(),
+                "emitted": False,
+                "route_order": len(outcome_history) + 1,
+            }
+        )
+        packet["last_trace_id"] = str(trace_id or "").strip()
+        packet["trace_usage_history"] = _normalize_trace_usage_history(
+            outcome_history,
+            limit=TRACE_EVENT_HISTORY_MAX,
+        )
+
+    if count_effectiveness:
+        if st == "acted":
+            packet["helpful_count"] = int(packet.get("helpful_count", 0) or 0) + 1
+        elif st in {"blocked", "harmful"}:
+            packet["unhelpful_count"] = int(packet.get("unhelpful_count", 0) or 0) + 1
+
+    packet["last_outcome"] = {
+        "status": st,
+        "source": str(source or "")[:80],
+        "tool": str(tool_name or "")[:40] if tool_name else "",
+        "trace_id": str(trace_id or "")[:120] if trace_id else "",
+        "notes": str(notes or "")[:200] if notes else "",
+        "ts": outcome_ts,
+    }
+    packet = _normalize_packet(packet)
+    save_packet(packet)
+    return {
+        "ok": True,
+        "packet_id": packet_id,
+        "status": st,
+        "effectiveness_score": float(packet.get("effectiveness_score", 0.5) or 0.5),
+        "acted_count": int(packet.get("acted_count", 0) or 0),
+        "blocked_count": int(packet.get("blocked_count", 0) or 0),
+        "harmful_count": int(packet.get("harmful_count", 0) or 0),
+        "ignored_count": int(packet.get("ignored_count", 0) or 0),
+    }
+
+
+def record_packet_outcome_for_advice(
+    advice_id: str,
+    *,
+    status: str,
+    source: str = "explicit",
+    tool_name: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    notes: str = "",
+    count_effectiveness: bool = True,
+) -> Dict[str, Any]:
+    advice = str(advice_id or "").strip()
+    if not advice:
+        return {"ok": False, "reason": "missing_advice_id"}
+
+    index = _load_index()
+    meta = index.get("packet_meta") or {}
+    ordered_ids = sorted(
+        meta.keys(),
+        key=lambda pid: float((meta.get(pid) or {}).get("updated_ts", 0.0)),
+        reverse=True,
+    )
+    for packet_id in ordered_ids:
+        packet = get_packet(packet_id)
+        if not packet:
+            continue
+        advice_rows = packet.get("advice_items") or []
+        for row in advice_rows:
+            if str((row or {}).get("advice_id") or "").strip() == advice:
+                result = record_packet_outcome(
+                    packet_id,
+                    status=status,
+                    source=source,
+                    tool_name=tool_name,
+                    trace_id=trace_id,
+                    notes=notes,
+                    count_effectiveness=count_effectiveness,
+                )
+                result["matched_advice_id"] = advice
+                return result
+    return {"ok": False, "reason": "packet_not_found_for_advice", "advice_id": advice}
+
+
+def record_packet_feedback_for_advice(
+    advice_id: str,
+    *,
+    helpful: Optional[bool],
+    noisy: bool = False,
+    followed: bool = True,
+    source: str = "explicit",
+    trace_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    advice = str(advice_id or "").strip()
+    if not advice:
+        return {"ok": False, "reason": "missing_advice_id"}
+
+    index = _load_index()
+    meta = index.get("packet_meta") or {}
+    ordered_ids = sorted(
+        meta.keys(),
+        key=lambda pid: float((meta.get(pid) or {}).get("updated_ts", 0.0)),
+        reverse=True,
+    )
+    for packet_id in ordered_ids:
+        packet = get_packet(packet_id)
+        if not packet:
+            continue
+        advice_rows = packet.get("advice_items") or []
+        for row in advice_rows:
+            if str((row or {}).get("advice_id") or "").strip() == advice:
+                result = record_packet_feedback(
+                    packet_id,
+                    helpful=helpful,
+                    noisy=noisy,
+                    followed=followed,
+                    source=source,
+                    trace_id=trace_id,
+                )
+                result["matched_advice_id"] = advice
+                return result
+    return {"ok": False, "reason": "packet_not_found_for_advice", "advice_id": advice}
 
 
 def enqueue_prefetch_job(job: Dict[str, Any]) -> str:
@@ -3038,7 +3469,14 @@ def apply_packet_store_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     global PACKET_RELAXED_MAX_CANDIDATES
     global PACKET_LOOKUP_CANDIDATES
     global PACKET_SQLITE_LOOKUP_ENABLED
-    # LLM globals now live in _llm_reranker module (set via module reference below)
+    global PACKET_LOOKUP_LLM_ENABLED
+    global PACKET_LOOKUP_LLM_PROVIDER
+    global PACKET_LOOKUP_LLM_TIMEOUT_S
+    global PACKET_LOOKUP_LLM_TOP_K
+    global PACKET_LOOKUP_LLM_MIN_CANDIDATES
+    global PACKET_LOOKUP_LLM_CONTEXT_CHARS
+    global PACKET_LOOKUP_LLM_URL
+    global PACKET_LOOKUP_LLM_MODEL
     global OBSIDIAN_EXPORT_ENABLED
     global OBSIDIAN_AUTO_EXPORT
     global OBSIDIAN_EXPORT_MAX_PACKETS
@@ -3140,35 +3578,35 @@ def apply_packet_store_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
         )
         applied.append("packet_sqlite_lookup_enabled")
 
-    # LLM reranking config → set on extracted module
+    # LLM reranking config
     if "packet_lookup_llm_enabled" in cfg:
-        _llm_reranker.PACKET_LOOKUP_LLM_ENABLED = _coerce_bool(
+        PACKET_LOOKUP_LLM_ENABLED = _coerce_bool(
             cfg.get("packet_lookup_llm_enabled"),
-            _llm_reranker.PACKET_LOOKUP_LLM_ENABLED,
+            PACKET_LOOKUP_LLM_ENABLED,
         )
         applied.append("packet_lookup_llm_enabled")
 
     if "packet_lookup_llm_provider" in cfg:
-        _llm_reranker.PACKET_LOOKUP_LLM_PROVIDER = _sanitize_lookup_provider(cfg.get("packet_lookup_llm_provider"))
+        PACKET_LOOKUP_LLM_PROVIDER = _sanitize_lookup_provider(cfg.get("packet_lookup_llm_provider"))
         applied.append("packet_lookup_llm_provider")
 
     if "packet_lookup_llm_timeout_s" in cfg:
         try:
-            _llm_reranker.PACKET_LOOKUP_LLM_TIMEOUT_S = max(0.2, float(cfg.get("packet_lookup_llm_timeout_s")))
+            PACKET_LOOKUP_LLM_TIMEOUT_S = max(0.2, float(cfg.get("packet_lookup_llm_timeout_s")))
             applied.append("packet_lookup_llm_timeout_s")
         except Exception:
             warnings.append("invalid_packet_lookup_llm_timeout_s")
 
     if "packet_lookup_llm_top_k" in cfg:
         try:
-            _llm_reranker.PACKET_LOOKUP_LLM_TOP_K = max(1, min(20, int(cfg.get("packet_lookup_llm_top_k") or 1)))
+            PACKET_LOOKUP_LLM_TOP_K = max(1, min(20, int(cfg.get("packet_lookup_llm_top_k") or 1)))
             applied.append("packet_lookup_llm_top_k")
         except Exception:
             warnings.append("invalid_packet_lookup_llm_top_k")
 
     if "packet_lookup_llm_min_candidates" in cfg:
         try:
-            _llm_reranker.PACKET_LOOKUP_LLM_MIN_CANDIDATES = max(
+            PACKET_LOOKUP_LLM_MIN_CANDIDATES = max(
                 1, min(20, int(cfg.get("packet_lookup_llm_min_candidates") or 1))
             )
             applied.append("packet_lookup_llm_min_candidates")
@@ -3177,7 +3615,7 @@ def apply_packet_store_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
 
     if "packet_lookup_llm_context_chars" in cfg:
         try:
-            _llm_reranker.PACKET_LOOKUP_LLM_CONTEXT_CHARS = max(
+            PACKET_LOOKUP_LLM_CONTEXT_CHARS = max(
                 40, min(5000, int(cfg.get("packet_lookup_llm_context_chars") or 40))
             )
             applied.append("packet_lookup_llm_context_chars")
@@ -3185,15 +3623,15 @@ def apply_packet_store_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
             warnings.append("invalid_packet_lookup_llm_context_chars")
 
     if "packet_lookup_llm_provider_url" in cfg:
-        url = str(cfg.get("packet_lookup_llm_provider_url") or _llm_reranker.PACKET_LOOKUP_LLM_URL).strip()
+        url = str(cfg.get("packet_lookup_llm_provider_url") or PACKET_LOOKUP_LLM_URL).strip()
         if url:
-            _llm_reranker.PACKET_LOOKUP_LLM_URL = url.rstrip("/")
+            PACKET_LOOKUP_LLM_URL = url.rstrip("/")
             applied.append("packet_lookup_llm_provider_url")
 
     if "packet_lookup_llm_model" in cfg:
-        model = str(cfg.get("packet_lookup_llm_model") or _llm_reranker.PACKET_LOOKUP_LLM_MODEL).strip()
+        model = str(cfg.get("packet_lookup_llm_model") or PACKET_LOOKUP_LLM_MODEL).strip()
         if model:
-            _llm_reranker.PACKET_LOOKUP_LLM_MODEL = model
+            PACKET_LOOKUP_LLM_MODEL = model
             applied.append("packet_lookup_llm_model")
 
     if "obsidian_enabled" in cfg:
@@ -3245,14 +3683,14 @@ def get_packet_store_config() -> Dict[str, Any]:
         "relaxed_max_candidates": int(PACKET_RELAXED_MAX_CANDIDATES),
         "packet_lookup_candidates": int(PACKET_LOOKUP_CANDIDATES),
         "packet_sqlite_lookup_enabled": bool(PACKET_SQLITE_LOOKUP_ENABLED),
-        "packet_lookup_llm_enabled": bool(_llm_reranker.PACKET_LOOKUP_LLM_ENABLED),
-        "packet_lookup_llm_provider": str(_llm_reranker.PACKET_LOOKUP_LLM_PROVIDER),
-        "packet_lookup_llm_timeout_s": float(_llm_reranker.PACKET_LOOKUP_LLM_TIMEOUT_S),
-        "packet_lookup_llm_top_k": int(_llm_reranker.PACKET_LOOKUP_LLM_TOP_K),
-        "packet_lookup_llm_min_candidates": int(_llm_reranker.PACKET_LOOKUP_LLM_MIN_CANDIDATES),
-        "packet_lookup_llm_context_chars": int(_llm_reranker.PACKET_LOOKUP_LLM_CONTEXT_CHARS),
-        "packet_lookup_llm_provider_url": str(_llm_reranker.PACKET_LOOKUP_LLM_URL),
-        "packet_lookup_llm_model": str(_llm_reranker.PACKET_LOOKUP_LLM_MODEL),
+        "packet_lookup_llm_enabled": bool(PACKET_LOOKUP_LLM_ENABLED),
+        "packet_lookup_llm_provider": str(PACKET_LOOKUP_LLM_PROVIDER),
+        "packet_lookup_llm_timeout_s": float(PACKET_LOOKUP_LLM_TIMEOUT_S),
+        "packet_lookup_llm_top_k": int(PACKET_LOOKUP_LLM_TOP_K),
+        "packet_lookup_llm_min_candidates": int(PACKET_LOOKUP_LLM_MIN_CANDIDATES),
+        "packet_lookup_llm_context_chars": int(PACKET_LOOKUP_LLM_CONTEXT_CHARS),
+        "packet_lookup_llm_provider_url": str(PACKET_LOOKUP_LLM_URL),
+        "packet_lookup_llm_model": str(PACKET_LOOKUP_LLM_MODEL),
         "obsidian_enabled": bool(OBSIDIAN_EXPORT_ENABLED),
         "obsidian_auto_export": bool(OBSIDIAN_AUTO_EXPORT),
         "obsidian_export_max_packets": int(OBSIDIAN_EXPORT_MAX_PACKETS),
@@ -3398,9 +3836,9 @@ def get_store_status() -> Dict[str, Any]:
         "deliver_hit_rate": (deliver_total / max(usage_total, 1)) if usage_total > 0 else None,
         "hit_rate": (deliver_total / max(usage_total, 1)) if usage_total > 0 else None,
         "avg_effectiveness_score": round(float(avg_effectiveness), 3),
-        "lookup_rerank_enabled": bool(_llm_reranker.PACKET_LOOKUP_LLM_ENABLED),
+        "lookup_rerank_enabled": bool(PACKET_LOOKUP_LLM_ENABLED),
         "config": get_packet_store_config(),
-        "lookup_rerank_provider": str(_llm_reranker.PACKET_LOOKUP_LLM_PROVIDER),
+        "lookup_rerank_provider": str(PACKET_LOOKUP_LLM_PROVIDER),
         "obsidian_enabled": bool(OBSIDIAN_EXPORT_ENABLED),
         "obsidian_auto_export": bool(OBSIDIAN_AUTO_EXPORT),
         "obsidian_export_dir": str(_obsidian_export_dir()),
@@ -3429,4 +3867,6 @@ try:
         pass
 except Exception:
     pass
+
+
 
