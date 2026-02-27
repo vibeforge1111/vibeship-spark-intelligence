@@ -1,5 +1,7 @@
-﻿"""
-Advisory Engine: orchestrator for direct-path advisory and predictive packets.
+﻿"""Legacy advisory engine compatibility module.
+
+Runtime ownership has moved to `lib.advisory_engine_alpha`.
+This module keeps compatibility helpers/config APIs and forwards runtime entrypoints.
 """
 
 from __future__ import annotations
@@ -7,124 +9,35 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from .advisory_quarantine import record_quarantine_item
 from .advisory_implicit_feedback import record_implicit_feedback as _record_implicit_feedback
 from .diagnostics import log_debug
 from .error_taxonomy import build_error_fields
-from .jsonl_utils import append_jsonl_capped as _append_jsonl_capped
-from .jsonl_utils import tail_jsonl_objects as _tail_jsonl
 
 ENGINE_ENABLED = os.getenv("SPARK_ADVISORY_ENGINE", "1") != "0"
 ENGINE_LOG = Path.home() / ".spark" / "advisory_engine.jsonl"
 ENGINE_LOG_MAX = 500
-ADVISORY_DECISION_LEDGER_FILE = Path.home() / ".spark" / "advisory_decision_ledger.jsonl"
-ADVISORY_DECISION_LEDGER_ENABLED = True
-ADVISORY_DECISION_LEDGER_MAX = 1500
 MAX_ENGINE_MS = float(os.getenv("SPARK_ADVISORY_MAX_MS", "4000"))
 INCLUDE_MIND_IN_MEMORY = os.getenv("SPARK_ADVISORY_INCLUDE_MIND", "0") == "1"
-ENABLE_PREFETCH_QUEUE = os.getenv("SPARK_ADVISORY_PREFETCH_QUEUE", "1") != "0"
-ENABLE_INLINE_PREFETCH_WORKER = os.getenv("SPARK_ADVISORY_PREFETCH_INLINE", "1") != "0"
-
-MEMORY_SCOPE_DEFAULT = str(os.getenv("SPARK_MEMORY_SCOPE_DEFAULT", "session") or "session").strip() or "session"
 ACTIONABILITY_ENFORCE = os.getenv("SPARK_ADVISORY_REQUIRE_ACTION", "1") != "0"
-
-# Action-first formatting: move the actionable "Next check" command to the first line.
-ACTION_FIRST_ENABLED = os.getenv("SPARK_ADVISORY_ACTION_FIRST", "0") == "1"
-
-# Advisory speed lever: force programmatic synthesis (no AI/network) on the hot path.
-# Default: ON (Carmack-style: deterministic + fast). Override via env or tuneable.
-FORCE_PROGRAMMATIC_SYNTH = os.getenv("SPARK_ADVISORY_FORCE_PROGRAMMATIC_SYNTH", "1") == "1"
-# Mixed policy: allow AI synthesis selectively even when programmatic forcing is enabled.
-# Default: ON â€” selective AI synthesis for high-authority advice improves delivery quality.
-SELECTIVE_AI_SYNTH_ENABLED = os.getenv("SPARK_ADVISORY_SELECTIVE_AI_SYNTH", "1") == "1"
-SELECTIVE_AI_MIN_REMAINING_MS = float(
-    os.getenv("SPARK_ADVISORY_SELECTIVE_AI_MIN_REMAINING_MS", "1800")
-)
-SELECTIVE_AI_MIN_AUTHORITY = str(
-    os.getenv("SPARK_ADVISORY_SELECTIVE_AI_MIN_AUTHORITY", "note") or "note"
-).strip().lower()
-
-_AUTHORITY_RANK = {
-    "silent": 0,
-    "whisper": 1,
-    "note": 2,
-    "warning": 3,
-    "block": 4,
-}
-
-_MOJIBAKE_REPLACEMENTS = {
-    "\u00e2\u20ac\u201d": "-",
-    "\u00e2\u20ac\u201c": "-",
-    "\u00e2\u20ac\u02dc": "'",
-    "\u00e2\u20ac\u2122": "'",
-    "\u00e2\u20ac\u0153": '"',
-    "\u00e2\u20ac\u009d": '"',
-    "\u00e2\u20ac\u00a6": "...",
-    "\u00c2 ": " ",
-    "\u00c2": "",
-}
-
-_PLACEHOLDER_SNIPPETS = (
-    "[reason]",
-    "<task-",
-    "<output-file>",
-    "<status>",
-    "<summary>",
-)
-_UNSAFE_PRINCIPLE_RE = re.compile(r"\b(skip|disable|ignore)\s+(?:all\s+)?error handling\b", re.I)
-_FAILURE_TELEMETRY_RE = re.compile(r"^\s*(read|bash)\s+failed\b", re.I)
-_FAILURE_TELEMETRY_TOKENS = (
-    "success rate",
-    "most common",
-    "exit code",
-    "exceeds maximum",
-    "exceeds maximum allowed tokens",
-    "tokens",
-)
-
-# Self-evolution speed lever: stable exact-keying for packets. When enabled, the session key includes
-# the recent tool sequence (higher specificity, lower cache hit rate). Default: OFF.
-SESSION_KEY_INCLUDE_RECENT_TOOLS = (
-    os.getenv("SPARK_ADVISORY_SESSION_KEY_INCLUDE_RECENT_TOOLS", "0") == "1"
-)
-
 DELIVERY_STALE_SECONDS = float(os.getenv("SPARK_ADVISORY_STALE_S", "900"))
 ADVISORY_TEXT_REPEAT_COOLDOWN_S = float(
     os.getenv("SPARK_ADVISORY_TEXT_REPEAT_COOLDOWN_S", "600")
 )
-QUALITY_REPEAT_ESCAPE_ENABLED = os.getenv("SPARK_ADVISORY_REPEAT_ESCAPE", "1") != "0"
-QUALITY_REPEAT_ESCAPE_MIN_AGE_S = float(
-    os.getenv("SPARK_ADVISORY_REPEAT_ESCAPE_MIN_AGE_S", "120")
-)
-
-# Cross-session dedupe for any emitted advice_id. This reduces high-frequency spam
-# like "Always Read..." when session_id churns and per-session cooldowns can't help.
-GLOBAL_DEDUPE_ENABLED = os.getenv("SPARK_ADVISORY_GLOBAL_DEDUPE", "1") != "0"
-GLOBAL_DEDUPE_TEXT_ENABLED = os.getenv("SPARK_ADVISORY_GLOBAL_DEDUPE_BY_TEXT", "1") != "0"
 try:
-    GLOBAL_DEDUPE_COOLDOWN_S = float(os.getenv("SPARK_ADVISORY_GLOBAL_DEDUPE_COOLDOWN_S", "600"))
+    GLOBAL_DEDUPE_COOLDOWN_S = float(
+        os.getenv("SPARK_ADVISORY_GLOBAL_DEDUPE_COOLDOWN_S", "600")
+    )
 except Exception:
     GLOBAL_DEDUPE_COOLDOWN_S = 600.0
-GLOBAL_DEDUPE_LOG = Path.home() / ".spark" / "advisory_global_dedupe.jsonl"
-GLOBAL_DEDUPE_LOG_MAX = 5000
-# Dedupe scope:
-# - global: all sessions share one dedupe scope
-# - tree: main + subagents under same agent tree
-# - contextual: tree + task phase + intent family
-GLOBAL_DEDUPE_SCOPE = str(os.getenv("SPARK_ADVISORY_GLOBAL_DEDUPE_SCOPE", "global") or "global").strip().lower()
+GLOBAL_DEDUPE_SCOPE = str(
+    os.getenv("SPARK_ADVISORY_GLOBAL_DEDUPE_SCOPE", "global") or "global"
+).strip().lower()
 
-# (pytest hygiene handled in *_recently_emitted helpers)
-
-# â”€â”€ Rejection telemetry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# Lightweight in-memory counters for each early-exit / rejection path.
-# Flushed to disk every 50 increments to avoid hot-path I/O.
 REJECTION_TELEMETRY_FILE = Path.home() / ".spark" / "advisory_rejection_telemetry.json"
 _rejection_counts: Dict[str, int] = {}
 _rejection_flush_interval = 50
@@ -132,30 +45,30 @@ _rejection_flush_counter = 0
 
 
 def _flush_rejection_telemetry() -> None:
-    """Merge in-memory rejection counters to disk and clear the buffer."""
     existing: Dict[str, int] = {}
     if REJECTION_TELEMETRY_FILE.exists():
-        loaded = json.loads(REJECTION_TELEMETRY_FILE.read_text(encoding="utf-8"))
-        if isinstance(loaded, dict):
-            existing = loaded
-    for k, v in _rejection_counts.items():
-        existing[k] = existing.get(k, 0) + v
+        try:
+            loaded = json.loads(REJECTION_TELEMETRY_FILE.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing = loaded
+        except Exception:
+            existing = {}
+    for key, value in _rejection_counts.items():
+        existing[key] = int(existing.get(key, 0)) + int(value)
     existing["_last_flush"] = time.time()
     REJECTION_TELEMETRY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    REJECTION_TELEMETRY_FILE.write_text(
-        json.dumps(existing, indent=2), encoding="utf-8"
-    )
+    REJECTION_TELEMETRY_FILE.write_text(json.dumps(existing, indent=2), encoding="utf-8")
     _rejection_counts.clear()
 
 
 def _record_rejection(reason: str) -> None:
-    """Increment a rejection reason counter. Flushes to disk periodically."""
     global _rejection_flush_counter
-    _rejection_counts[reason] = _rejection_counts.get(reason, 0) + 1
+    key = str(reason or "unknown").strip() or "unknown"
+    _rejection_counts[key] = int(_rejection_counts.get(key, 0)) + 1
     _rejection_flush_counter += 1
     should_flush = (
         _rejection_flush_counter >= _rejection_flush_interval
-        or reason == "global_dedupe_suppressed"
+        or key == "global_dedupe_suppressed"
         or not REJECTION_TELEMETRY_FILE.exists()
     )
     if should_flush:
@@ -166,16 +79,7 @@ def _record_rejection(reason: str) -> None:
             log_debug("advisory_engine", f"rejection telemetry flush failed: {exc}", None)
 
 
-try:
-    INLINE_PREFETCH_MAX_JOBS = max(
-        1, int(os.getenv("SPARK_ADVISORY_PREFETCH_INLINE_MAX_JOBS", "1") or 1)
-    )
-except Exception:
-    INLINE_PREFETCH_MAX_JOBS = 1
-
-
 def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
-    """Load advisory engine tuneables via config_authority resolve_section."""
     tuneables = path or (Path.home() / ".spark" / "tuneables.json")
     if (
         path is None
@@ -188,10 +92,9 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
                 return {}
         except Exception:
             return {}
-    if not tuneables.exists():
-        # Fall through to resolver so schema defaults still apply.
-        pass
+
     from .config_authority import env_bool, env_float, env_int, env_str, resolve_section
+
     cfg = resolve_section(
         "advisory_engine",
         runtime_path=tuneables,
@@ -199,14 +102,14 @@ def _load_engine_config(path: Optional[Path] = None) -> Dict[str, Any]:
             "enabled": env_bool("SPARK_ADVISORY_ENGINE"),
             "max_ms": env_float("SPARK_ADVISORY_MAX_MS"),
             "include_mind": env_bool("SPARK_ADVISORY_INCLUDE_MIND"),
-            "prefetch_queue_enabled": env_bool("SPARK_ADVISORY_PREFETCH_QUEUE"),
-            "prefetch_inline_enabled": env_bool("SPARK_ADVISORY_PREFETCH_INLINE"),
-            "prefetch_inline_max_jobs": env_int("SPARK_ADVISORY_PREFETCH_INLINE_MAX_JOBS"),
             "actionability_enforce": env_bool("SPARK_ADVISORY_REQUIRE_ACTION"),
             "delivery_stale_s": env_float("SPARK_ADVISORY_STALE_S"),
             "advisory_text_repeat_cooldown_s": env_float("SPARK_ADVISORY_TEXT_REPEAT_COOLDOWN_S"),
             "global_dedupe_cooldown_s": env_float("SPARK_ADVISORY_GLOBAL_DEDUPE_COOLDOWN_S"),
             "global_dedupe_scope": env_str("SPARK_ADVISORY_GLOBAL_DEDUPE_SCOPE", lower=True),
+            "prefetch_queue_enabled": env_bool("SPARK_ADVISORY_PREFETCH_QUEUE"),
+            "prefetch_inline_enabled": env_bool("SPARK_ADVISORY_PREFETCH_INLINE"),
+            "prefetch_inline_max_jobs": env_int("SPARK_ADVISORY_PREFETCH_INLINE_MAX_JOBS"),
         },
     ).data
     return cfg if isinstance(cfg, dict) else {}
@@ -224,23 +127,14 @@ def _parse_bool(value: Any, default: bool) -> bool:
 
 
 def apply_engine_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
-    """Apply advisory engine runtime tuneables."""
     global ENGINE_ENABLED
     global MAX_ENGINE_MS
     global INCLUDE_MIND_IN_MEMORY
-    global ENABLE_PREFETCH_QUEUE
-    global ENABLE_INLINE_PREFETCH_WORKER
-    global INLINE_PREFETCH_MAX_JOBS
     global ACTIONABILITY_ENFORCE
     global DELIVERY_STALE_SECONDS
     global ADVISORY_TEXT_REPEAT_COOLDOWN_S
     global GLOBAL_DEDUPE_COOLDOWN_S
     global GLOBAL_DEDUPE_SCOPE
-    global FORCE_PROGRAMMATIC_SYNTH
-    global SELECTIVE_AI_SYNTH_ENABLED
-    global SELECTIVE_AI_MIN_REMAINING_MS
-    global SELECTIVE_AI_MIN_AUTHORITY
-    global SESSION_KEY_INCLUDE_RECENT_TOOLS
 
     applied: List[str] = []
     warnings: List[str] = []
@@ -250,112 +144,42 @@ def apply_engine_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     if "enabled" in cfg:
         ENGINE_ENABLED = _parse_bool(cfg.get("enabled"), ENGINE_ENABLED)
         applied.append("enabled")
-
     if "max_ms" in cfg:
         try:
             MAX_ENGINE_MS = max(250.0, min(20000.0, float(cfg.get("max_ms"))))
             applied.append("max_ms")
         except Exception:
             warnings.append("invalid_max_ms")
-
     if "include_mind" in cfg:
         INCLUDE_MIND_IN_MEMORY = _parse_bool(cfg.get("include_mind"), INCLUDE_MIND_IN_MEMORY)
         applied.append("include_mind")
-
-    if "prefetch_queue_enabled" in cfg:
-        ENABLE_PREFETCH_QUEUE = _parse_bool(cfg.get("prefetch_queue_enabled"), ENABLE_PREFETCH_QUEUE)
-        applied.append("prefetch_queue_enabled")
-
-    if "prefetch_inline_enabled" in cfg:
-        ENABLE_INLINE_PREFETCH_WORKER = _parse_bool(
-            cfg.get("prefetch_inline_enabled"),
-            ENABLE_INLINE_PREFETCH_WORKER,
-        )
-        applied.append("prefetch_inline_enabled")
-
-    if "prefetch_inline_max_jobs" in cfg:
-        try:
-            INLINE_PREFETCH_MAX_JOBS = max(1, min(20, int(cfg.get("prefetch_inline_max_jobs") or 1)))
-            applied.append("prefetch_inline_max_jobs")
-        except Exception:
-            warnings.append("invalid_prefetch_inline_max_jobs")
-
     if "actionability_enforce" in cfg:
-        ACTIONABILITY_ENFORCE = _parse_bool(
-            cfg.get("actionability_enforce"),
-            ACTIONABILITY_ENFORCE,
-        )
+        ACTIONABILITY_ENFORCE = _parse_bool(cfg.get("actionability_enforce"), ACTIONABILITY_ENFORCE)
         applied.append("actionability_enforce")
-
-    if "force_programmatic_synth" in cfg:
-        FORCE_PROGRAMMATIC_SYNTH = _parse_bool(
-            cfg.get("force_programmatic_synth"),
-            FORCE_PROGRAMMATIC_SYNTH,
-        )
-        applied.append("force_programmatic_synth")
-
-    if "selective_ai_synth_enabled" in cfg:
-        SELECTIVE_AI_SYNTH_ENABLED = _parse_bool(
-            cfg.get("selective_ai_synth_enabled"),
-            SELECTIVE_AI_SYNTH_ENABLED,
-        )
-        applied.append("selective_ai_synth_enabled")
-
-    if "selective_ai_min_remaining_ms" in cfg:
-        try:
-            SELECTIVE_AI_MIN_REMAINING_MS = max(
-                100.0,
-                min(8000.0, float(cfg.get("selective_ai_min_remaining_ms") or SELECTIVE_AI_MIN_REMAINING_MS)),
-            )
-            applied.append("selective_ai_min_remaining_ms")
-        except Exception:
-            warnings.append("invalid_selective_ai_min_remaining_ms")
-
-    if "selective_ai_min_authority" in cfg:
-        auth = str(cfg.get("selective_ai_min_authority") or "").strip().lower()
-        if auth in _AUTHORITY_RANK:
-            SELECTIVE_AI_MIN_AUTHORITY = auth
-            applied.append("selective_ai_min_authority")
-        else:
-            warnings.append("invalid_selective_ai_min_authority")
-
-    if "session_key_include_recent_tools" in cfg:
-        SESSION_KEY_INCLUDE_RECENT_TOOLS = _parse_bool(
-            cfg.get("session_key_include_recent_tools"),
-            SESSION_KEY_INCLUDE_RECENT_TOOLS,
-        )
-        applied.append("session_key_include_recent_tools")
-
     if "delivery_stale_s" in cfg:
         try:
-            DELIVERY_STALE_SECONDS = max(
-                30.0,
-                min(86400.0, float(cfg.get("delivery_stale_s") or DELIVERY_STALE_SECONDS)),
-            )
+            DELIVERY_STALE_SECONDS = max(30.0, min(86400.0, float(cfg.get("delivery_stale_s"))))
             applied.append("delivery_stale_s")
         except Exception:
             warnings.append("invalid_delivery_stale_s")
-
     if "advisory_text_repeat_cooldown_s" in cfg:
         try:
             ADVISORY_TEXT_REPEAT_COOLDOWN_S = max(
                 0.0,
-                min(86400.0, float(cfg.get("advisory_text_repeat_cooldown_s") or 0.0)),
+                min(86400.0, float(cfg.get("advisory_text_repeat_cooldown_s"))),
             )
             applied.append("advisory_text_repeat_cooldown_s")
         except Exception:
             warnings.append("invalid_advisory_text_repeat_cooldown_s")
-
     if "global_dedupe_cooldown_s" in cfg:
         try:
             GLOBAL_DEDUPE_COOLDOWN_S = max(
                 0.0,
-                min(86400.0, float(cfg.get("global_dedupe_cooldown_s") or 0.0)),
+                min(86400.0, float(cfg.get("global_dedupe_cooldown_s"))),
             )
             applied.append("global_dedupe_cooldown_s")
         except Exception:
             warnings.append("invalid_global_dedupe_cooldown_s")
-
     if "global_dedupe_scope" in cfg:
         scope = str(cfg.get("global_dedupe_scope") or "").strip().lower()
         if scope in {"global", "tree", "contextual"}:
@@ -363,6 +187,7 @@ def apply_engine_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
             applied.append("global_dedupe_scope")
         else:
             warnings.append("invalid_global_dedupe_scope")
+
     return {"applied": applied, "warnings": warnings}
 
 
@@ -371,15 +196,7 @@ def get_engine_config() -> Dict[str, Any]:
         "enabled": bool(ENGINE_ENABLED),
         "max_ms": float(MAX_ENGINE_MS),
         "include_mind": bool(INCLUDE_MIND_IN_MEMORY),
-        "prefetch_queue_enabled": bool(ENABLE_PREFETCH_QUEUE),
-        "prefetch_inline_enabled": bool(ENABLE_INLINE_PREFETCH_WORKER),
-        "prefetch_inline_max_jobs": int(INLINE_PREFETCH_MAX_JOBS),
         "actionability_enforce": bool(ACTIONABILITY_ENFORCE),
-        "force_programmatic_synth": bool(FORCE_PROGRAMMATIC_SYNTH),
-        "selective_ai_synth_enabled": bool(SELECTIVE_AI_SYNTH_ENABLED),
-        "selective_ai_min_remaining_ms": float(SELECTIVE_AI_MIN_REMAINING_MS),
-        "selective_ai_min_authority": str(SELECTIVE_AI_MIN_AUTHORITY),
-        "session_key_include_recent_tools": bool(SESSION_KEY_INCLUDE_RECENT_TOOLS),
         "delivery_stale_s": float(DELIVERY_STALE_SECONDS),
         "advisory_text_repeat_cooldown_s": float(ADVISORY_TEXT_REPEAT_COOLDOWN_S),
         "global_dedupe_cooldown_s": float(GLOBAL_DEDUPE_COOLDOWN_S),
@@ -391,1100 +208,211 @@ _BOOT_ENGINE_CFG = _load_engine_config()
 if _BOOT_ENGINE_CFG:
     apply_engine_config(_BOOT_ENGINE_CFG)
 
-# Register for hot-reload so tuneables.json changes apply without restart
 try:
     from .tuneables_reload import register_reload as _engine_register
+
     _engine_register("advisory_engine", apply_engine_config, label="advisory_engine.apply_config")
 except Exception as exc:
     log_debug("advisory_engine", f"hot-reload registration failed: {exc}", None)
 
 
-def _project_key() -> str:
-    try:
-        from .memory_banks import infer_project_key
-
-        key = infer_project_key()
-        if key:
-            return str(key)
-    except Exception:
-        pass
-    return "unknown_project"
-
-
-def _intent_context(state, tool_name: str) -> Dict[str, Any]:
-    from .advisory_intent_taxonomy import map_intent
-
-    prompt = state.user_intent or ""
-    intent = map_intent(prompt, tool_name=tool_name)
-    state.intent_family = intent.get("intent_family", "emergent_other")
-    state.intent_confidence = float(intent.get("confidence", 0.0) or 0.0)
-    state.task_plane = intent.get("task_plane", "build_delivery")
-    state.intent_reason = intent.get("reason", "fallback")
-    return intent
-
-
-def _session_context_key(state, tool_name: str) -> str:
-    from .advisory_intent_taxonomy import build_session_context_key
-    from .advisory_state import get_recent_tool_sequence
-
-    # Default: stable session key so prefetched packets and exact lookups hit reliably.
-    # Opt-in volatility via recent tool inclusion when you want higher specificity.
-    if not SESSION_KEY_INCLUDE_RECENT_TOOLS:
-        raw = f"{state.session_id}|{(state.intent_family or 'emergent_other').strip()}"
-        return hashlib.sha1(raw.encode("utf-8", errors="replace")).hexdigest()[:12]
-
-    recent_tools = get_recent_tool_sequence(state, n=5)
-    return build_session_context_key(
-        # Tool/phase are already represented elsewhere in the exact key; keep the session key focused on
-        # the volatile recency signal when this mode is enabled.
-        task_phase="any",
-        intent_family=state.intent_family,
-        tool_name="*",
-        recent_tools=recent_tools,
-    )
-
-
-def _packet_to_advice(packet: Dict[str, Any]) -> List[Any]:
-    from .advisor import Advice
-
-    advice_rows = packet.get("advice_items") or []
-    out: List[Any] = []
-    stable_key_sources = {
-        "cognitive",
-        "bank",
-        "mind",
-        "chip",
-        "skill",
-        "niche",
-        "convo",
-        "eidos",
-        "engagement",
-        "replay",
-        "opportunity",
+def _proof_refs_for_advice(item: Any, trace_id: Optional[str]) -> Dict[str, Any]:
+    proof = {
+        "advice_id": str(getattr(item, "advice_id", "") or ""),
+        "insight_key": str(getattr(item, "insight_key", "") or ""),
+        "source": str(getattr(item, "source", "") or "unknown"),
     }
-    for row in advice_rows[:8]:
-        if not isinstance(row, dict):
-            continue
-        text = str(row.get("text") or "").strip()
-        if not text:
-            continue
-        source = str(row.get("source") or "packet")
-        canonical_source = source.strip().lower()
-        if canonical_source.startswith("semantic") or canonical_source == "trigger":
-            canonical_source = "cognitive"
+    tid = str(trace_id or "").strip()
+    if tid:
+        proof["trace_id"] = tid
+    return proof
 
-        quality_raw = row.get("advisory_quality")
-        if not isinstance(quality_raw, dict):
-            quality_raw = {}
-        readiness_raw = row.get("advisory_readiness")
-        try:
-            readiness_value = float(readiness_raw)
-        except Exception:
-            readiness_value = 0.0
 
-        category_raw = row.get("category") or quality_raw.get("domain") or row.get("domain")
-        category = str(category_raw or canonical_source or "general")
-        category = category.replace(":", "_").strip().lower()[:64]
+def _evidence_hash_for_row(*, advice_text: str, proof_refs: Dict[str, Any]) -> str:
+    raw = "|".join(
+        [
+            str(advice_text or "").strip().lower(),
+            str(proof_refs.get("advice_id") or "").strip(),
+            str(proof_refs.get("insight_key") or "").strip(),
+            str(proof_refs.get("source") or "").strip(),
+            str(proof_refs.get("trace_id") or "").strip(),
+        ]
+    )
+    return hashlib.sha1(raw.encode("utf-8", errors="replace")).hexdigest()[:20]
 
-        insight_key_raw = row.get("insight_key")
-        insight_key = str(insight_key_raw or "").strip()
-        advice_id = str(
-            row.get("advice_id") or f"{packet.get('packet_id', 'pkt')}_item_{len(out)}"
-        )
-        # Migrate legacy/random packet advice_ids to stable IDs when we have a durable key.
-        if insight_key_raw and insight_key and canonical_source in stable_key_sources:
-            advice_id = f"{canonical_source}:{insight_key}"
+
+def _advice_to_rows_with_proof(
+    advice_items: List[Any],
+    trace_id: Optional[str],
+    max_rows: int = 6,
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for item in list(advice_items or [])[: max(0, int(max_rows))]:
+        text = str(getattr(item, "text", "") or "").strip()
+        proof_refs = _proof_refs_for_advice(item, trace_id)
         out.append(
-            Advice(
-                advice_id=advice_id,
-                insight_key=insight_key or str(packet.get("packet_id") or ""),
-                text=text,
-                confidence=float(row.get("confidence") or 0.6),
-                source=source,
-                context_match=float(row.get("context_match") or 0.8),
-                reason=str(row.get("reason") or ""),
-                category=category,
-                advisory_quality=quality_raw,
-                advisory_readiness=readiness_value,
-            )
+            {
+                "advice_id": str(getattr(item, "advice_id", "") or ""),
+                "insight_key": str(getattr(item, "insight_key", "") or ""),
+                "text": text,
+                "confidence": float(getattr(item, "confidence", 0.0) or 0.0),
+                "source": str(getattr(item, "source", "") or "unknown"),
+                "context_match": float(getattr(item, "context_match", 0.0) or 0.0),
+                "reason": str(getattr(item, "reason", "") or ""),
+                "proof_refs": proof_refs,
+                "evidence_hash": _evidence_hash_for_row(
+                    advice_text=text,
+                    proof_refs=proof_refs,
+                ),
+            }
         )
-    if out:
-        return out
-
-    text = str(packet.get("advisory_text") or "").strip()
-    if not text:
-        return []
-    return [
-        Advice(
-            advice_id=f"{packet.get('packet_id', 'pkt')}_fallback",
-            insight_key=str(packet.get("packet_id") or "packet"),
-            text=text,
-            confidence=0.7,
-            source="packet",
-            context_match=0.8,
-            reason="packet_cached_advisory",
-        )
-    ]
+    return out
 
 
 def _advice_to_rows(advice_items: List[Any], max_rows: int = 6) -> List[Dict[str, Any]]:
     return _advice_to_rows_with_proof(advice_items, trace_id=None, max_rows=max_rows)
 
 
-def _proof_refs_for_advice(item: Any, trace_id: Optional[str]) -> Dict[str, Any]:
-    advice_id = str(getattr(item, "advice_id", "") or "")
-    insight_key = str(getattr(item, "insight_key", "") or "")
-    source = str(getattr(item, "source", "advisor") or "advisor")
-    reason = str(getattr(item, "reason", "") or "").strip()
-    refs: Dict[str, Any] = {
-        "advice_id": advice_id,
-        "insight_key": insight_key,
-        "source": source,
-    }
-    if trace_id:
-        refs["trace_id"] = str(trace_id)
-    if reason:
-        refs["reason"] = reason[:240]
-    return refs
-
-
-def _evidence_hash_for_row(*, advice_text: str, proof_refs: Dict[str, Any]) -> str:
-    raw = {
-        "text": str(advice_text or "").strip().lower(),
-        "advice_id": str(proof_refs.get("advice_id") or ""),
-        "insight_key": str(proof_refs.get("insight_key") or ""),
-        "source": str(proof_refs.get("source") or ""),
-        "trace_id": str(proof_refs.get("trace_id") or ""),
-    }
-    blob = json.dumps(raw, sort_keys=True, ensure_ascii=True)
-    return hashlib.sha1(blob.encode("utf-8", errors="ignore")).hexdigest()[:20]
-
-
-def _advice_to_rows_with_proof(
-    advice_items: List[Any],
-    *,
-    trace_id: Optional[str],
-    max_rows: int = 6,
-) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
-    for item in advice_items[:max_rows]:
-        text = str(getattr(item, "text", "") or "")
-        proof_refs = _proof_refs_for_advice(item, trace_id=trace_id)
-        rows.append(
-            {
-                "advice_id": str(getattr(item, "advice_id", "") or f"aid_{len(rows)}"),
-                "insight_key": str(getattr(item, "insight_key", "") or ""),
-                "text": text,
-                "confidence": float(getattr(item, "confidence", 0.5) or 0.5),
-                "source": str(getattr(item, "source", "advisor") or "advisor"),
-                "context_match": float(getattr(item, "context_match", 0.5) or 0.5),
-                "reason": str(getattr(item, "reason", "") or ""),
-                "proof_refs": proof_refs,
-                "evidence_hash": _evidence_hash_for_row(advice_text=text, proof_refs=proof_refs),
-            }
-        )
-    return rows
-
-
-def _baseline_text(intent_family: str) -> str:
-    defaults = {
-        "auth_security": "Validate auth inputs server-side and redact sensitive tokens from logs before changes.",
-        "deployment_ops": "Prefer reversible deployment steps and verify rollback path before release actions.",
-        "testing_validation": "Run focused tests after edits and confirm failures are reproducible before broad changes.",
-        "schema_contracts": "Check schema or contract compatibility before editing interfaces or payload shapes.",
-        "performance_latency": "Preserve response-time budget while editing and measure before and after hot-path changes.",
-        "tool_reliability": "Review target files before edits and keep changes minimal when failure risk is high.",
-        "knowledge_alignment": "Align edits with existing project patterns and docs before changing behavior.",
-        "team_coordination": "Clarify ownership and next action before delegating or switching tracks.",
-        "orchestration_execution": "Respect dependency order and unblock critical path items before low-priority work.",
-        "stakeholder_alignment": "Prioritize changes that match agreed outcomes and surface tradeoffs early.",
-        "research_decision_support": "Compare options against constraints and record decision rationale explicitly.",
-        "emergent_other": "Use conservative, test-backed edits and verify assumptions before irreversible actions.",
-    }
-    return defaults.get(intent_family, defaults["emergent_other"])
-
-
-def _fallback_synth_text_from_emitted(
-    emitted_advice: List[Any],
-    *,
-    intent_family: str,
-    max_chars: int = 320,
-) -> str:
-    """Derive deterministic synthesis text when LLM/programmatic synth is empty."""
-    for item in list(emitted_advice or [])[:3]:
-        text = str(getattr(item, "text", "") or "").strip()
-        if not text:
-            continue
-        compact = re.sub(r"\s+", " ", text).strip()
-        if not compact:
-            continue
-        if len(compact) > max(60, int(max_chars)):
-            compact = compact[: max(60, int(max_chars)) - 3].rstrip() + "..."
-        return compact
-    return _baseline_text(intent_family).strip()
-
-
-def _text_fingerprint(text: str) -> str:
-    cleaned = re.sub(r"\s+", " ", str(text or "").strip().lower())
-    if not cleaned:
-        return ""
-    return hashlib.sha1(cleaned.encode("utf-8", errors="ignore")).hexdigest()[:16]
-
-
-def _parse_timestamp(value: Any) -> float:
-    if value is None:
-        return 0.0
-    if isinstance(value, (int, float)):
-        return float(value)
-    text = str(value).strip()
-    if not text:
-        return 0.0
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        return float(text)
-    except Exception:
-        pass
-    try:
-        return datetime.fromisoformat(text).timestamp()
-    except Exception:
-        return 0.0
-
-
-def _normalize_advice_text(text: str) -> str:
-    cleaned = str(text or "").replace("\n", " ").replace("\r", " ").strip()
-    if not cleaned:
-        return ""
-    if any(tok in cleaned for tok in ("\u00c3", "\u00c2", "\u00e2")):
-        try:
-            decoded = cleaned.encode("latin-1").decode("utf-8")
-            if decoded:
-                cleaned = decoded
-        except Exception:
-            pass
-    for bad, good in _MOJIBAKE_REPLACEMENTS.items():
-        cleaned = cleaned.replace(bad, good)
-    cleaned = (
-        cleaned.replace("\u2014", "-")
-        .replace("\u2013", "-")
-        .replace("\u2018", "'")
-        .replace("\u2019", "'")
-        .replace("\u201c", '"')
-        .replace("\u201d", '"')
-        .replace("\u2026", "...")
-    )
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return cleaned
-
-
-def _classify_emission_quality_issue(text: str) -> Optional[str]:
-    content = _normalize_advice_text(text).lower()
-    if not content:
-        return "empty_text"
-    if any(snippet in content for snippet in _PLACEHOLDER_SNIPPETS):
-        return "template_placeholder"
-    if "failed with approach: unknow" in content or "resolved by: unknow" in content:
-        return "template_placeholder"
-    if _UNSAFE_PRINCIPLE_RE.search(content):
-        return "unsafe_principle"
-    if _FAILURE_TELEMETRY_RE.search(content) and any(tok in content for tok in _FAILURE_TELEMETRY_TOKENS):
-        return "operational_noise"
-    return None
-
-
-def _repeat_identity_from_fields(*, insight_key: str, text: str, advice_id: str) -> str:
-    ik = str(insight_key or "").strip().lower()
-    if ik:
-        return f"insight:{ik}"
-    text_sig = _text_fingerprint(_normalize_advice_text(text))
-    if text_sig:
-        return f"text:{text_sig}"
-    aid = str(advice_id or "").strip().lower()
-    if aid:
-        return f"advice:{aid}"
-    return ""
-
-
-def _repeat_identity_for_item(item: Any, *, advice_id: str) -> str:
-    return _repeat_identity_from_fields(
-        insight_key=str(getattr(item, "insight_key", "") or ""),
-        text=str(getattr(item, "text", "") or ""),
-        advice_id=advice_id,
-    )
-
-
-def _load_recent_delivery_identity_ts(*, max_rows: int = 500) -> Dict[str, float]:
-    try:
-        from .advisor import RECENT_ADVICE_LOG
-    except Exception:
-        return {}
-    latest: Dict[str, float] = {}
-    for row in _tail_jsonl(RECENT_ADVICE_LOG, max_rows):
-        ts = _parse_timestamp(row.get("ts") if row.get("ts") is not None else row.get("timestamp"))
-        if ts <= 0:
-            continue
-        advice_ids = row.get("advice_ids") or []
-        insight_keys = row.get("insight_keys") or []
-        advice_texts = row.get("advice_texts") or []
-        if not isinstance(advice_ids, list):
-            advice_ids = []
-        if not isinstance(insight_keys, list):
-            insight_keys = []
-        if not isinstance(advice_texts, list):
-            advice_texts = []
-        max_items = max(len(advice_ids), len(insight_keys), len(advice_texts))
-        for idx in range(max_items):
-            identity = _repeat_identity_from_fields(
-                insight_key=str(insight_keys[idx] if idx < len(insight_keys) else ""),
-                text=str(advice_texts[idx] if idx < len(advice_texts) else ""),
-                advice_id=str(advice_ids[idx] if idx < len(advice_ids) else ""),
-            )
-            if not identity:
-                continue
-            prev = float(latest.get(identity, 0.0) or 0.0)
-            if ts > prev:
-                latest[identity] = ts
-    return latest
-
-
-def _load_recent_outcome_update_ts(*, max_records: int = 800) -> Tuple[Dict[str, float], Dict[str, float]]:
-    path = Path.home() / ".spark" / "meta_ralph" / "outcome_tracking.json"
-    if not path.exists():
-        return {}, {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}, {}
-    rows = data.get("records") if isinstance(data, dict) else None
-    if not isinstance(rows, list):
-        return {}, {}
-    by_insight: Dict[str, float] = {}
-    by_advice_id: Dict[str, float] = {}
-    for rec in rows[-max(1, int(max_records)):]:
-        if not isinstance(rec, dict):
-            continue
-        if not bool(rec.get("acted_on")):
-            continue
-        outcome = str(rec.get("outcome") or "").strip().lower()
-        if outcome not in {"good", "bad", "neutral"}:
-            continue
-        ts = _parse_timestamp(rec.get("outcome_at") if rec.get("outcome_at") is not None else rec.get("retrieved_at"))
-        if ts <= 0:
-            continue
-        ik = str(rec.get("insight_key") or "").strip().lower()
-        if ik:
-            prev_ik = float(by_insight.get(ik, 0.0) or 0.0)
-            if ts > prev_ik:
-                by_insight[ik] = ts
-        aid = str(rec.get("learning_id") or "").strip().lower()
-        if aid:
-            prev_aid = float(by_advice_id.get(aid, 0.0) or 0.0)
-            if ts > prev_aid:
-                by_advice_id[aid] = ts
-    return by_insight, by_advice_id
-
-
-def _has_outcome_update_since_emit(
-    *,
-    item: Any,
-    advice_id: str,
-    last_emit_ts: float,
-    outcome_ts_by_insight: Dict[str, float],
-    outcome_ts_by_advice_id: Dict[str, float],
-) -> bool:
-    ik = str(getattr(item, "insight_key", "") or "").strip().lower()
-    aid = str(advice_id or "").strip().lower()
-    latest = 0.0
-    if ik:
-        latest = max(latest, float(outcome_ts_by_insight.get(ik, 0.0) or 0.0))
-    if aid:
-        latest = max(latest, float(outcome_ts_by_advice_id.get(aid, 0.0) or 0.0))
-    return latest > float(last_emit_ts)
-
-
-def _apply_emission_quality_filters(
-    emitted_decisions: List[Any],
-    advice_by_id: Dict[str, Any],
-    *,
-    now_ts: Optional[float] = None,
-    cooldown_s: Optional[float] = None,
-    recent_identity_ts: Optional[Dict[str, float]] = None,
-    outcome_ts_by_insight: Optional[Dict[str, float]] = None,
-    outcome_ts_by_advice_id: Optional[Dict[str, float]] = None,
-    recent_global_text_sig_age: Optional[Dict[str, float]] = None,
-) -> Tuple[List[Any], List[Dict[str, Any]]]:
-    kept: List[Any] = []
-    suppressed: List[Dict[str, Any]] = []
-    now_value = float(now_ts if now_ts is not None else time.time())
-    cooldown_value = float(cooldown_s if cooldown_s is not None else ADVISORY_TEXT_REPEAT_COOLDOWN_S)
-    recent_map = recent_identity_ts if isinstance(recent_identity_ts, dict) else {}
-    outcome_insight = outcome_ts_by_insight if isinstance(outcome_ts_by_insight, dict) else {}
-    outcome_advice = outcome_ts_by_advice_id if isinstance(outcome_ts_by_advice_id, dict) else {}
-    global_text_sig_age = (
-        recent_global_text_sig_age if isinstance(recent_global_text_sig_age, dict) else {}
-    )
-
-    for decision in list(emitted_decisions or []):
-        advice_id = str(getattr(decision, "advice_id", "") or "").strip()
-        item = advice_by_id.get(advice_id)
-        if item is None:
-            try:
-                decision.emit = False
-                decision.reason = "emission_quality_filter: missing advice item"
-            except Exception:
-                pass
-            suppressed.append({"advice_id": advice_id, "reason": "missing_item"})
-            continue
-
-        raw_text = str(getattr(item, "text", "") or "")
-        normalized_text = _normalize_advice_text(raw_text)
-        if normalized_text and normalized_text != raw_text:
-            try:
-                item.text = normalized_text
-            except Exception:
-                pass
-        issue = _classify_emission_quality_issue(normalized_text)
-        if issue:
-            try:
-                decision.emit = False
-                decision.reason = f"emission_quality_filter: {issue}"
-            except Exception:
-                pass
-            suppressed.append({"advice_id": advice_id, "reason": issue})
-            continue
-
-        text_sig = _text_fingerprint(normalized_text) if normalized_text else ""
-        text_repeat_age_s = (
-            float(global_text_sig_age.get(text_sig, -1.0) or -1.0) if text_sig else -1.0
-        )
-        if text_repeat_age_s >= 0.0:
-            try:
-                decision.emit = False
-                decision.reason = "emission_quality_filter: global_text_repeat"
-            except Exception:
-                pass
-            suppressed.append(
-                {
-                    "advice_id": advice_id,
-                    "reason": "text_sig",
-                    "repeat_age_s": round(float(text_repeat_age_s), 2),
-                    "repeat_cooldown_s": round(float(GLOBAL_DEDUPE_COOLDOWN_S), 2),
-                }
-            )
-            continue
-
-        identity = _repeat_identity_for_item(item, advice_id=advice_id)
-        last_emit_ts = float(recent_map.get(identity, 0.0) or 0.0) if identity else 0.0
-        if identity and cooldown_value > 0 and last_emit_ts > 0:
-            repeat_age_s = now_value - last_emit_ts
-            if 0 <= repeat_age_s < cooldown_value:
-                if not _has_outcome_update_since_emit(
-                    item=item,
-                    advice_id=advice_id,
-                    last_emit_ts=last_emit_ts,
-                    outcome_ts_by_insight=outcome_insight,
-                    outcome_ts_by_advice_id=outcome_advice,
-                ):
-                    try:
-                        decision.emit = False
-                        decision.reason = "emission_quality_filter: repeat_without_outcome_change"
-                    except Exception:
-                        pass
-                    suppressed.append(
-                        {
-                            "advice_id": advice_id,
-                            "reason": "insight_repeat_cooldown",
-                            "repeat_age_s": round(float(repeat_age_s), 2),
-                            "repeat_cooldown_s": round(float(cooldown_value), 2),
-                            "identity": identity,
-                        }
-                    )
-                    continue
-        kept.append(decision)
-
-    kept, suppressed = _restore_repeat_candidate_if_safe(
-        kept=kept,
-        suppressed=suppressed,
-        emitted_decisions=emitted_decisions,
-    )
-
-    return kept, suppressed
-
-
-def _restore_repeat_candidate_if_safe(
-    *,
-    kept: List[Any],
-    suppressed: List[Dict[str, Any]],
-    emitted_decisions: List[Any],
-) -> Tuple[List[Any], List[Dict[str, Any]]]:
-    """Restore one repeat-suppressed candidate when suppression is cooldown-only.
-
-    This avoids pathological no-emit loops where every candidate is blocked only
-    by repeat cooldown, while still preserving hard filters (unsafe/noise/template).
-    """
-    if kept or not suppressed or not emitted_decisions or not QUALITY_REPEAT_ESCAPE_ENABLED:
-        return kept, suppressed
-
-    # Only allow restoration when every suppression reason is repeat cooldown.
-    non_repeat = [row for row in suppressed if str(row.get("reason") or "") != "insight_repeat_cooldown"]
-    if non_repeat:
-        return kept, suppressed
-
-    min_age = max(0.0, float(QUALITY_REPEAT_ESCAPE_MIN_AGE_S))
-    by_id = {str(row.get("advice_id") or ""): row for row in suppressed}
-    candidates: List[Tuple[float, Any, Dict[str, Any]]] = []
-    for decision in list(emitted_decisions or []):
-        aid = str(getattr(decision, "advice_id", "") or "")
-        row = by_id.get(aid)
-        if not row:
-            continue
-        age_s = float(row.get("repeat_age_s") or 0.0)
-        if age_s < min_age:
-            continue
-        score = float(getattr(decision, "adjusted_score", 0.0) or 0.0)
-        candidates.append((score, decision, row))
-
-    if not candidates:
-        return kept, suppressed
-
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    _, winner, winner_row = candidates[0]
-    try:
-        winner.emit = True
-        winner.reason = "emission_quality_filter: repeat_escape_restored"
-    except Exception:
-        pass
-
-    kept = [winner]
-    kept_id = str(getattr(winner, "advice_id", "") or "")
-    remaining = [row for row in suppressed if str(row.get("advice_id") or "") != kept_id]
-    remaining.append(
-        {
-            "advice_id": kept_id,
-            "reason": "repeat_escape_restored",
-            "repeat_age_s": winner_row.get("repeat_age_s"),
-            "repeat_cooldown_s": winner_row.get("repeat_cooldown_s"),
-            "min_age_s": round(min_age, 2),
-        }
-    )
-    return kept, remaining
-
-
-def _duplicate_repeat_state(state, advisory_text: str) -> Dict[str, Any]:
-    now = time.time()
-    fingerprint = _text_fingerprint(advisory_text)
-    last_fingerprint = str(getattr(state, "last_advisory_text_fingerprint", "") or "")
-    last_at = float(getattr(state, "last_advisory_at", 0.0) or 0.0)
-    age_s = max(0.0, now - last_at) if last_at > 0 else None
-    repeat = bool(
-        fingerprint
-        and ADVISORY_TEXT_REPEAT_COOLDOWN_S > 0
-        and fingerprint == last_fingerprint
-        and age_s is not None
-        and age_s < ADVISORY_TEXT_REPEAT_COOLDOWN_S
-    )
-    return {
-        "repeat": repeat,
-        "fingerprint": fingerprint,
-        "age_s": round(age_s, 2) if age_s is not None else None,
-        "cooldown_s": float(ADVISORY_TEXT_REPEAT_COOLDOWN_S),
-    }
+def _advice_source_counts(advice_items: Optional[List[Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for item in list(advice_items or []):
+        source = str(getattr(item, "source", "") or "unknown").strip() or "unknown"
+        counts[source] = int(counts.get(source, 0)) + 1
+    return counts
 
 
 def _session_lineage(session_id: str) -> Dict[str, Any]:
-    sid = str(session_id or "").strip()
-    if not sid:
-        return {
-            "session_kind": "unknown",
-            "is_subagent": False,
-            "depth_hint": 0,
-            "session_tree_key": "",
-            "root_session_hint": "",
-            "parent_session_hint": "",
-        }
+    raw = str(session_id or "").strip()
+    parts = [p for p in raw.split(":") if p]
 
-    if ":subagent:" in sid:
-        head = sid.split(":subagent:", 1)[0]
-        return {
-            "session_kind": "subagent",
-            "is_subagent": True,
-            "depth_hint": 2,
-            "session_tree_key": head,
-            "root_session_hint": f"{head}:main",
-            "parent_session_hint": f"{head}:main",
-        }
-    if ":cron:" in sid:
-        head = sid.split(":cron:", 1)[0]
-        return {
-            "session_kind": "cron",
-            "is_subagent": False,
-            "depth_hint": 1,
-            "session_tree_key": head,
-            "root_session_hint": sid,
-            "parent_session_hint": "",
-        }
-    if sid.endswith(":main"):
-        return {
-            "session_kind": "main",
-            "is_subagent": False,
-            "depth_hint": 1,
-            "session_tree_key": sid.rsplit(":main", 1)[0],
-            "root_session_hint": sid,
-            "parent_session_hint": "",
-        }
+    base = raw
+    if len(parts) >= 2 and parts[0] == "agent":
+        base = f"{parts[0]}:{parts[1]}"
+
+    is_subagent = "subagent" in parts
+    if is_subagent:
+        kind = "subagent"
+    elif len(parts) >= 2 and parts[0] == "agent":
+        kind = "agent"
+    else:
+        kind = "session"
 
     return {
-        "session_kind": "other",
-        "is_subagent": False,
-        "depth_hint": 1,
-        "session_tree_key": sid,
-        "root_session_hint": sid,
-        "parent_session_hint": "",
+        "session_id": raw,
+        "session_tree_key": base,
+        "session_kind": kind,
+        "is_subagent": bool(is_subagent),
+        "depth_hint": max(1, len(parts) - 2) if len(parts) > 2 else 1,
     }
 
 
 def _dedupe_scope_key(
     session_id: str,
-    *,
-    intent_family: str = "",
-    task_phase: str = "",
+    intent_family: Optional[str] = None,
+    task_phase: Optional[str] = None,
 ) -> str:
-    """Build a scope key for cross-session dedupe filtering.
-
-    Modes:
-      - global: one shared scope for all sessions
-      - tree: scoped to agent tree (main + subagents)
-      - contextual: scoped to tree + phase + intent
-    """
+    lineage = _session_lineage(session_id)
+    tree = str(lineage.get("session_tree_key") or "")
     scope = str(GLOBAL_DEDUPE_SCOPE or "global").strip().lower()
-
     if scope == "tree":
-        lineage = _session_lineage(session_id)
-        key = str(lineage.get("session_tree_key") or "").strip()
-        return key or str(session_id or "")
+        return tree
     if scope == "contextual":
-        lineage = _session_lineage(session_id)
-        tree_key = str(lineage.get("session_tree_key") or "").strip() or str(session_id or "")
-        phase = str(task_phase or "").strip().lower() or "implementation"
-        intent = str(intent_family or "").strip().lower() or "emergent_other"
-        return f"{tree_key}:{phase}:{intent}"
-
+        phase = str(task_phase or "implementation").strip().lower() or "implementation"
+        intent = str(intent_family or "emergent_other").strip().lower() or "emergent_other"
+        return f"{tree}:{phase}:{intent}"
     return "global"
 
 
 def _diagnostics_envelope(
     *,
     session_id: str,
-    trace_id: Optional[str],
-    session_context_key: str = "",
-    scope: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    session_context_key: Optional[str] = None,
+    scope: str = "session",
     memory_bundle: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     bundle = memory_bundle if isinstance(memory_bundle, dict) else {}
     sources = bundle.get("sources") if isinstance(bundle.get("sources"), dict) else {}
+
     source_counts: Dict[str, int] = {}
-    for name, meta in sources.items():
-        if isinstance(meta, dict):
-            source_counts[str(name)] = int(meta.get("count", 0) or 0)
+    for name, payload in sources.items():
+        if isinstance(payload, dict):
+            source_counts[str(name)] = int(payload.get("count", 0) or 0)
 
-    missing_sources = bundle.get("missing_sources")
-    if not isinstance(missing_sources, list):
-        missing_sources = [name for name, count in source_counts.items() if count <= 0]
-
-    resolved_scope = str(scope or bundle.get("scope") or MEMORY_SCOPE_DEFAULT).strip() or "session"
-    lineage = _session_lineage(session_id)
-    envelope: Dict[str, Any] = {
-        "session_id": str(session_id or ""),
-        "trace_id": str(trace_id or ""),
-        "session_context_key": str(session_context_key or ""),
-        "scope": resolved_scope,
-        "source_counts": source_counts,
-        "missing_sources": missing_sources,
-        "session_kind": lineage.get("session_kind"),
-        "is_subagent": bool(lineage.get("is_subagent")),
-        "depth_hint": int(lineage.get("depth_hint") or 0),
-        "session_tree_key": str(lineage.get("session_tree_key") or ""),
-        "root_session_hint": str(lineage.get("root_session_hint") or ""),
-        "parent_session_hint": str(lineage.get("parent_session_hint") or ""),
-    }
-    if "memory_absent_declared" in bundle:
-        envelope["memory_absent_declared"] = bool(bundle.get("memory_absent_declared"))
-    return envelope
-
-
-def _advice_source_counts(advice_items: Optional[List[Any]]) -> Dict[str, int]:
-    counts: Dict[str, int] = {}
-    for item in advice_items or []:
-        try:
-            source = str(getattr(item, "source", "") or "").strip().lower()
-        except Exception:
-            source = ""
-        if not source:
-            continue
-        counts[source] = counts.get(source, 0) + 1
-    return counts
-
-
-def _authority_rank(authority: str) -> int:
-    return int(_AUTHORITY_RANK.get(str(authority or "").strip().lower(), -1))
-
-
-def _should_use_selective_ai_synth(*, gate_result: Any, remaining_ms: float) -> bool:
-    if not FORCE_PROGRAMMATIC_SYNTH:
-        return False
-    if not SELECTIVE_AI_SYNTH_ENABLED:
-        return False
-    if float(remaining_ms) < float(SELECTIVE_AI_MIN_REMAINING_MS):
-        return False
-    emitted = list(getattr(gate_result, "emitted", []) or [])
-    if not emitted:
-        return False
-    top_authority = str(getattr(emitted[0], "authority", "") or "").strip().lower()
-    min_auth = str(SELECTIVE_AI_MIN_AUTHORITY or "warning").strip().lower()
-    return _authority_rank(top_authority) >= _authority_rank(min_auth)
-
-
-def _record_advisory_gate_drop(
-    *,
-    stage: str,
-    reason: str,
-    tool_name: str,
-    intent_family: str,
-    task_plane: str,
-    route: str,
-    packet_id: Optional[str],
-    advice_items: Optional[List[Any]] = None,
-    extras: Optional[Dict[str, Any]] = None,
-) -> None:
-    sample = None
-    for item in advice_items or []:
-        txt = str(getattr(item, "text", "") or "").strip()
-        if txt:
-            sample = item
-            break
-    if sample is None and advice_items:
-        sample = advice_items[0]
-
-    sample_quality = getattr(sample, "advisory_quality", None) if sample is not None else None
-    sample_readiness = getattr(sample, "advisory_readiness", None) if sample is not None else None
-    sample_text = str(getattr(sample, "text", "") or "") if sample is not None else ""
-    if not sample_text and extras:
-        sample_text = str(extras.get("text") or "")
-
-    extra_payload: Dict[str, Any] = {
-        "stage": stage,
-        "tool_name": str(tool_name or ""),
-        "intent_family": str(intent_family or ""),
-        "task_plane": str(task_plane or ""),
-        "route": str(route or ""),
-        "packet_id": str(packet_id or ""),
-    }
-    if extras:
-        extra_payload.update({k: v for k, v in extras.items() if v is not None})
-
-    record_quarantine_item(
-        source="advisory_engine",
-        stage=stage,
-        reason=reason,
-        text=sample_text,
-        advisory_quality=sample_quality if isinstance(sample_quality, dict) else None,
-        advisory_readiness=sample_readiness,
-        meta=extra_payload,
-    )
-
-
-def _snapshot_gate_decisions(gate_result: Any) -> List[Dict[str, Any]]:
-    decisions = list(getattr(gate_result, "decisions", []) or [])
-    out: List[Dict[str, Any]] = []
-    for decision in decisions:
-        try:
-            out.append({
-                "advice_id": str(getattr(decision, "advice_id", "") or ""),
-                "authority": str(getattr(decision, "authority", "") or ""),
-                "emit": bool(getattr(decision, "emit", False)),
-                "score": float(getattr(decision, "adjusted_score", 0.0) or 0.0),
-                "reason": str(getattr(decision, "reason", "") or ""),
-                "original_score": float(getattr(decision, "original_score", 0.0) or 0.0),
-            })
-        except Exception:
-            continue
-    return out
-
-
-def _record_advisory_decision_ledger(
-    *,
-    stage: str,
-    outcome: str,
-    tool_name: str,
-    intent_family: str,
-    task_plane: str,
-    route: str,
-    packet_id: Optional[str],
-    advice_items: Optional[List[Any]],
-    gate_result: Optional[Any],
-    session_id: str,
-    trace_id: Optional[str] = None,
-    extras: Optional[Dict[str, Any]] = None,
-    suppressed_reasons: Optional[Dict[str, int]] = None,
-) -> None:
-    if not ADVISORY_DECISION_LEDGER_ENABLED:
-        return
-    try:
-        snapshot = _snapshot_gate_decisions(gate_result)
-        suppressed = []
-        emitted = []
-        for row in snapshot:
-            if row.get("emit"):
-                emitted.append(row)
-            else:
-                suppressed.append(row)
-
-        suppressed_summary: List[Dict[str, Any]] = []
-        reason_counts = dict(suppressed_reasons or {})
-        if not reason_counts and suppressed:
-            for row in suppressed:
-                reason = str(row.get("reason", "") or "unspecified").strip()
-                reason_counts[reason] = int(reason_counts.get(reason, 0) + 1)
-        for reason, count in sorted(reason_counts.items(), key=lambda kv: kv[1], reverse=True):
-            suppressed_summary.append({"reason": str(reason), "count": int(count)})
-        selected_ids = [str(row.get("advice_id", "") or "").strip() for row in emitted]
-        suppressed_ids = [str(row.get("advice_id", "") or "").strip() for row in suppressed]
-        route_clean = str(route or "").strip()
-
-        entry: Dict[str, Any] = {
-            "ts": time.time(),
-            "stage": str(stage or "").strip(),
-            "outcome": str(outcome or "").strip(),
-            "session_id": str(session_id or ""),
-            "trace_id": str(trace_id or ""),
-            "tool": str(tool_name or ""),
-            "intent_family": str(intent_family or ""),
-            "task_plane": str(task_plane or ""),
-            "route": route_clean,
-            "packet_id": str(packet_id or ""),
-            "selected_count": int(len(selected_ids)),
-            "suppressed_count": int(len(suppressed_ids)),
-            "selected_ids": selected_ids[:12],
-            "suppressed_ids": suppressed_ids[:12],
-            "suppressed_reasons": suppressed_summary[:12],
-            "decision_count": len(snapshot),
-        }
-        if extras:
-            entry.update({k: v for k, v in extras.items() if v is not None})
-
-        if isinstance(advice_items, list):
-            entry["retrieved_count"] = len(advice_items)
-            entry["source_counts"] = _advice_source_counts(advice_items)
-        _append_jsonl_capped(
-            ADVISORY_DECISION_LEDGER_FILE,
-            entry,
-            max_lines=ADVISORY_DECISION_LEDGER_MAX,
-        )
-    except Exception as exc:
-        log_debug("advisory_engine", f"decision ledger write failed: {exc}", None)
-
-
-def _gate_suppression_metadata(gate_result: Any) -> Dict[str, Any]:
-    suppressed = list(getattr(gate_result, "suppressed", []) or [])
-    if not suppressed:
-        return {}
-    reason_counts: Dict[str, int] = {}
-    for decision in suppressed:
-        reason = str(getattr(decision, "reason", "") or "").strip() or "unspecified"
-        reason_counts[reason] = int(reason_counts.get(reason, 0) + 1)
-    ranked = sorted(reason_counts.items(), key=lambda kv: kv[1], reverse=True)
     return {
-        "gate_reason": str(ranked[0][0]),
-        "suppressed_count": int(len(suppressed)),
-        "suppressed_reasons": [
-            {"reason": str(reason), "count": int(count)}
-            for reason, count in ranked[:8]
-        ],
+        "session_id": str(session_id or ""),
+        "trace_id": str(trace_id or "").strip(),
+        "session_context_key": str(session_context_key or ""),
+        "scope": str(scope or "session"),
+        "memory_absent_declared": bool(bundle.get("memory_absent_declared", False)),
+        "source_counts": source_counts,
+        "missing_sources": [str(x) for x in list(bundle.get("missing_sources") or [])],
     }
-
-
-_NON_MEMORY_ADVICE_SOURCES = {"quick", "baseline", "prefetch"}
-
-
-def _infer_memory_absent_declared(source_counts: Dict[str, int]) -> bool:
-    """Heuristic: declare memory-absent when advice came only from deterministic/non-memory sources."""
-    if not source_counts:
-        return True
-    for name, count in (source_counts or {}).items():
-        if int(count or 0) <= 0:
-            continue
-        if str(name or "").strip().lower() not in _NON_MEMORY_ADVICE_SOURCES:
-            return False
-    return True
 
 
 def _default_action_command(tool_name: str, task_plane: str) -> str:
-    tool = str(tool_name or "").strip().lower()
-    plane = str(task_plane or "").strip().lower()
-    if tool in {"edit", "write", "notebookedit"}:
+    if str(tool_name or "").strip().lower() in {"edit", "write"}:
         return "python -m pytest -q"
-    if tool in {"read", "glob", "grep"}:
-        return 'rg -n "TODO|FIXME" .'
-    if tool == "bash":
-        return "python scripts/status_local.py"
-    if plane in {"build_delivery", "execution"}:
+    if str(task_plane or "").strip().lower() == "testing_validation":
         return "python -m pytest -q"
-    return "python scripts/status_local.py"
+    return "python -m pytest -q"
 
 
 def _has_actionable_command(text: str) -> bool:
-    body = str(text or "")
-    if not body.strip():
-        return False
-    if re.search(r"`[^`]{3,}`", body):
-        return True
-    lowered = body.lower()
-    if "next check:" in lowered or "next command:" in lowered:
-        return True
-    return False
+    sample = str(text or "")
+    return "`" in sample and any(tok in sample for tok in ("pytest", "python -m", "git ", "bash "))
 
 
 def _ensure_actionability(text: str, tool_name: str, task_plane: str) -> Dict[str, Any]:
-    original = str(text or "").strip()
-    if not original:
-        return {"text": "", "added": False, "command": ""}
+    out = str(text or "").strip()
     if not ACTIONABILITY_ENFORCE:
-        return {"text": original, "added": False, "command": ""}
-    if _has_actionable_command(original):
-        return {"text": original, "added": False, "command": ""}
-
+        return {"text": out, "added": False, "command": ""}
+    if _has_actionable_command(out):
+        return {"text": out, "added": False, "command": ""}
     command = _default_action_command(tool_name, task_plane)
-    suffix = f" Next check: `{command}`."
-    updated = f"{original}{suffix}"
-    return {"text": updated, "added": True, "command": command}
-
-
-def _action_first_format(text: str) -> str:
-    """Move the `Next check: ` command to the first line.
-
-    This keeps the same content but makes the action visible instantly, which
-    tends to improve follow-through.
-
-    If no `Next check: ...` is present, returns the input unchanged.
-    """
-    body = str(text or "").strip()
-    if not body:
-        return ""
-
-    # Already action-first.
-    if body.lower().startswith("next check:"):
-        return body
-
-    m = re.search(r"\bnext check:\s*`([^`]{3,})`\.?", body, flags=re.IGNORECASE)
-    if not m:
-        return body
-
-    cmd = str(m.group(1) or "").strip()
-    if not cmd:
-        return body
-
-    # Remove the inline clause and clean punctuation.
-    cleaned = re.sub(r"\s*\bnext check:\s*`[^`]{3,}`\.?\s*", " ", body, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-
-    return f"Next check: `{cmd}`.\n{cleaned}".strip()
+    if out:
+        out = f"{out} Next check: `{command}`."
+    else:
+        out = f"Next check: `{command}`."
+    return {"text": out, "added": True, "command": command}
 
 
 def _derive_delivery_badge(
-    events: List[Dict[str, Any]],
+    recent_events: List[Dict[str, Any]],
     *,
     now_ts: Optional[float] = None,
     stale_after_s: Optional[float] = None,
 ) -> Dict[str, Any]:
+    events = list(recent_events or [])
     now = float(now_ts if now_ts is not None else time.time())
     stale_s = float(stale_after_s if stale_after_s is not None else DELIVERY_STALE_SECONDS)
-    relevant_events = {
-        "emitted",
-        "fallback_emit",
-        "fallback_emit_failed",
-        "no_emit",
-        "no_advice",
-        "duplicate_suppressed",
-        "synth_empty",
-        "engine_error",
-        "post_tool_error",
-        "user_prompt_error",
-    }
-    latest: Optional[Dict[str, Any]] = None
+
+    last_emit = 0.0
+    last_mode = "none"
     for row in events:
-        if not isinstance(row, dict):
+        event = str(row.get("event") or "").strip().lower()
+        if event != "emitted":
             continue
-        if str(row.get("event") or "") not in relevant_events:
-            continue
-        ts = float(row.get("ts") or 0.0)
-        if latest is None or ts >= float(latest.get("ts") or 0.0):
-            latest = row
+        try:
+            ts = float(row.get("ts") or 0.0)
+        except Exception:
+            ts = 0.0
+        if ts >= last_emit:
+            last_emit = ts
+            last_mode = str(row.get("delivery_mode") or "live").strip().lower() or "live"
 
-    if latest is None:
-        return {"state": "stale", "reason": "no_delivery_events", "age_s": None, "event": None}
+    if last_emit <= 0:
+        return {"state": "idle", "age_s": None, "delivery_mode": "none"}
 
-    ts = float(latest.get("ts") or 0.0)
-    age_s = max(0.0, now - ts) if ts > 0 else None
-    if age_s is not None and age_s > stale_s:
-        return {
-            "state": "stale",
-            "reason": "last_event_too_old",
-            "age_s": round(age_s, 1),
-            "event": latest.get("event"),
-            "delivery_mode": latest.get("delivery_mode"),
-        }
-
-    event = str(latest.get("event") or "")
-    mode = str(latest.get("delivery_mode") or "")
-    if event == "emitted" and mode == "live":
-        state = "live"
-    elif event == "fallback_emit" or mode == "fallback":
-        state = "fallback"
-    else:
-        state = "blocked"
+    age_s = max(0.0, now - last_emit)
+    state = "live" if age_s <= stale_s else "stale"
     return {
         "state": state,
-        "reason": event,
-        "age_s": round(age_s, 1) if age_s is not None else None,
-        "event": event,
-        "delivery_mode": mode,
+        "age_s": round(age_s, 2),
+        "delivery_mode": last_mode,
+        "stale_after_s": float(stale_s),
+        "last_emit_ts": float(last_emit),
     }
-
-
-def _decision_ledger_status() -> Dict[str, Any]:
-    status: Dict[str, Any] = {
-        "enabled": bool(ADVISORY_DECISION_LEDGER_ENABLED),
-        "path": str(ADVISORY_DECISION_LEDGER_FILE),
-        "exists": bool(ADVISORY_DECISION_LEDGER_FILE.exists()),
-        "total_entries": 0,
-        "recent_count": 0,
-        "recent_emitted_count": 0,
-        "recent_emission_rate": 0.0,
-    }
-
-    if not status["exists"]:
-        return status
-
-    try:
-        lines = ADVISORY_DECISION_LEDGER_FILE.read_text(encoding="utf-8").splitlines()
-    except Exception:
-        return status
-
-    parsed: List[Dict[str, Any]] = []
-    status["total_entries"] = int(len(lines))
-    for line in lines[-120:]:
-        try:
-            row = json.loads(line)
-        except Exception:
-            continue
-        if isinstance(row, dict):
-            parsed.append(row)
-
-    status["recent_count"] = int(len(parsed))
-    status["recent_emitted_count"] = int(sum(1 for row in parsed if str(row.get("outcome", "")).strip().lower() == "emitted"))
-    if status["recent_count"]:
-        status["recent_emission_rate"] = round(status["recent_emitted_count"] / max(status["recent_count"], 1), 3)
-    return status
 
 
 def on_pre_tool(
@@ -1498,7 +426,6 @@ def on_pre_tool(
 
     start_ms = time.time() * 1000.0
     try:
-        # Compatibility shim: alpha runtime owns advisory execution.
         from .advisory_engine_alpha import on_pre_tool as _alpha_on_pre_tool
 
         return _alpha_on_pre_tool(
@@ -1602,14 +529,14 @@ def _log_engine_event(
             "ts": time.time(),
             "event": event,
             "tool": tool_name,
-            "retrieved": advice_count,
-            "emitted": emitted_count,
+            "retrieved": int(advice_count or 0),
+            "emitted": int(emitted_count or 0),
             "elapsed_ms": round(elapsed_ms, 1),
         }
-        if extra:
+        if isinstance(extra, dict):
             entry.update(extra)
-        with open(ENGINE_LOG, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
+        with ENGINE_LOG.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry) + "\n")
         _rotate_engine_log()
     except Exception as exc:
         log_debug("advisory_engine", f"engine log write failed: {exc}", None)
@@ -1619,7 +546,7 @@ def _rotate_engine_log() -> None:
     try:
         if not ENGINE_LOG.exists():
             return
-        lines = ENGINE_LOG.read_text(encoding="utf-8").splitlines()
+        lines = ENGINE_LOG.read_text(encoding="utf-8", errors="replace").splitlines()
         if len(lines) > ENGINE_LOG_MAX:
             keep = lines[-ENGINE_LOG_MAX:]
             ENGINE_LOG.write_text("\n".join(keep) + "\n", encoding="utf-8")
@@ -1630,7 +557,7 @@ def _rotate_engine_log() -> None:
 def get_engine_status() -> Dict[str, Any]:
     status = {
         "enabled": bool(ENGINE_ENABLED),
-        "max_ms": MAX_ENGINE_MS,
+        "max_ms": float(MAX_ENGINE_MS),
         "config": get_engine_config(),
         "compat_mode": "legacy_shim",
     }
@@ -1672,33 +599,28 @@ def get_engine_status() -> Dict[str, Any]:
     except Exception:
         status["prefetch_worker"] = {"error": "unavailable"}
 
-    status["decision_ledger"] = _decision_ledger_status()
-
     try:
+        rows: List[Dict[str, Any]] = []
         if ENGINE_LOG.exists():
-            lines = ENGINE_LOG.read_text(encoding="utf-8").splitlines()
-            parsed_tail: List[Dict[str, Any]] = []
+            lines = ENGINE_LOG.read_text(encoding="utf-8", errors="replace").splitlines()
+            status["total_events"] = len(lines)
             for line in lines[-100:]:
                 try:
                     row = json.loads(line)
                     if isinstance(row, dict):
-                        parsed_tail.append(row)
+                        rows.append(row)
                 except Exception:
                     continue
-            recent = parsed_tail[-10:]
-            status["recent_events"] = recent
-            status["total_events"] = len(lines)
-            emitted = sum(1 for row in parsed_tail if row.get("event") == "emitted")
-            total = len(parsed_tail)
-            status["emission_rate"] = round(emitted / max(total, 1), 3)
-            status["delivery_badge"] = _derive_delivery_badge(parsed_tail)
         else:
-            status["recent_events"] = []
             status["total_events"] = 0
-            status["emission_rate"] = 0.0
-            status["delivery_badge"] = _derive_delivery_badge([])
+
+        status["recent_events"] = rows[-10:]
+        emitted = sum(1 for row in rows if str(row.get("event") or "").strip().lower() == "emitted")
+        status["emission_rate"] = round(emitted / max(len(rows), 1), 3) if rows else 0.0
+        status["delivery_badge"] = _derive_delivery_badge(rows)
     except Exception:
+        status["recent_events"] = []
+        status["emission_rate"] = 0.0
         status["delivery_badge"] = _derive_delivery_badge([])
 
     return status
-
