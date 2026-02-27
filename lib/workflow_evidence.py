@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+from .config_authority import env_float, env_int, resolve_section
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,8 @@ WORKFLOW_REPORT_DIRS: Dict[str, Path] = {
     "codex": Path.home() / ".spark" / "workflow_reports" / "codex",
     "openclaw": Path.home() / ".openclaw" / "workspace" / "spark_reports" / "workflow",
 }
+TUNEABLES_FILE = Path.home() / ".spark" / "tuneables.json"
+BASELINE_TUNEABLES_FILE = Path(__file__).resolve().parent.parent / "config" / "tuneables.json"
 
 # ── Tuneable defaults (overridden from tuneables.json -> workflow_evidence) ──
 
@@ -37,38 +40,40 @@ MIN_TOOL_FAILURES_FOR_ADVISORY = 1  # at least 1 failure to be worth surfacing
 RECOVERY_BOOST = 0.20  # extra importance for recovered-tool patterns
 WORKFLOW_SOURCE_QUALITY = 0.82  # between replay (0.85) and self_awareness (0.80)
 
-# Allow env overrides for testing
-_env_max_age = os.environ.get("SPARK_WORKFLOW_EVIDENCE_MAX_AGE_S")
-if _env_max_age:
-    try:
-        MAX_AGE_S = max(60, int(_env_max_age))
-    except ValueError:
-        pass
-
 
 def load_tuneables() -> None:
-    """Reload tuneable values from config/tuneables.json -> workflow_evidence section."""
+    """Reload workflow evidence tuneables from config authority."""
     global MAX_SUMMARIES_PER_PROVIDER, MAX_AGE_S, MIN_TOOL_FAILURES_FOR_ADVISORY
     global RECOVERY_BOOST, WORKFLOW_SOURCE_QUALITY
     try:
-        cfg_path = Path(__file__).resolve().parent.parent / "config" / "tuneables.json"
-        if not cfg_path.exists():
+        cfg = resolve_section(
+            "workflow_evidence",
+            baseline_path=BASELINE_TUNEABLES_FILE,
+            runtime_path=TUNEABLES_FILE,
+            env_overrides={
+                "max_summaries_per_provider": env_int("SPARK_WORKFLOW_EVIDENCE_MAX_SUMMARIES"),
+                "max_age_s": env_int("SPARK_WORKFLOW_EVIDENCE_MAX_AGE_S"),
+                "min_tool_failures_for_advisory": env_int("SPARK_WORKFLOW_EVIDENCE_MIN_TOOL_FAILURES"),
+                "recovery_boost": env_float("SPARK_WORKFLOW_EVIDENCE_RECOVERY_BOOST"),
+                "source_quality": env_float("SPARK_WORKFLOW_EVIDENCE_SOURCE_QUALITY"),
+            },
+        ).data
+        if not isinstance(cfg, dict):
             return
-        with open(cfg_path, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-        we = cfg.get("workflow_evidence")
-        if not isinstance(we, dict):
-            return
-        if "max_summaries_per_provider" in we:
-            MAX_SUMMARIES_PER_PROVIDER = max(1, int(we["max_summaries_per_provider"]))
-        if "max_age_s" in we:
-            MAX_AGE_S = max(60, int(we["max_age_s"]))
-        if "min_tool_failures_for_advisory" in we:
-            MIN_TOOL_FAILURES_FOR_ADVISORY = max(0, int(we["min_tool_failures_for_advisory"]))
-        if "recovery_boost" in we:
-            RECOVERY_BOOST = max(0.0, min(0.5, float(we["recovery_boost"])))
-        if "source_quality" in we:
-            WORKFLOW_SOURCE_QUALITY = max(0.1, min(1.0, float(we["source_quality"])))
+        MAX_SUMMARIES_PER_PROVIDER = max(
+            1,
+            int(cfg.get("max_summaries_per_provider", MAX_SUMMARIES_PER_PROVIDER)),
+        )
+        MAX_AGE_S = max(60, int(cfg.get("max_age_s", MAX_AGE_S)))
+        MIN_TOOL_FAILURES_FOR_ADVISORY = max(
+            0,
+            int(cfg.get("min_tool_failures_for_advisory", MIN_TOOL_FAILURES_FOR_ADVISORY)),
+        )
+        RECOVERY_BOOST = max(0.0, min(0.5, float(cfg.get("recovery_boost", RECOVERY_BOOST))))
+        WORKFLOW_SOURCE_QUALITY = max(
+            0.1,
+            min(1.0, float(cfg.get("source_quality", WORKFLOW_SOURCE_QUALITY))),
+        )
     except Exception as exc:
         logger.debug("workflow_evidence load_tuneables: %s", exc)
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -213,3 +214,24 @@ def test_recovery_observatory_empty_page():
     # With no workflow dirs existing, should produce empty page gracefully
     content = generate_recovery_metrics()
     assert "Recovery Effectiveness" in content
+
+
+def test_load_tuneables_uses_config_authority(monkeypatch):
+    import lib.workflow_evidence as we
+
+    payload = {
+        "max_summaries_per_provider": 7,
+        "max_age_s": 900,
+        "min_tool_failures_for_advisory": 2,
+        "recovery_boost": 0.33,
+        "source_quality": 0.77,
+    }
+
+    monkeypatch.setattr(we, "resolve_section", lambda *a, **k: SimpleNamespace(data=payload))
+    we.load_tuneables()
+
+    assert we.MAX_SUMMARIES_PER_PROVIDER == 7
+    assert we.MAX_AGE_S == 900
+    assert we.MIN_TOOL_FAILURES_FOR_ADVISORY == 2
+    assert we.RECOVERY_BOOST == pytest.approx(0.33)
+    assert we.WORKFLOW_SOURCE_QUALITY == pytest.approx(0.77)

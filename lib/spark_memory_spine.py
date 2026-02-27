@@ -27,6 +27,11 @@ def db_path() -> Path:
     return _db_path()
 
 
+def legacy_cognitive_json_path() -> Path:
+    """Compatibility path used only for legacy JSON fallback/mirror lanes."""
+    return Path.home() / ".spark" / "cognitive_insights.json"
+
+
 def dual_write_enabled() -> bool:
     raw = os.getenv("SPARK_MEMORY_SPINE_DUAL_WRITE")
     if raw is None and os.getenv("PYTEST_CURRENT_TEST"):
@@ -282,7 +287,7 @@ def load_cognitive_insights_runtime_snapshot(
 
     if not runtime_json_fallback_enabled():
         return {}
-    fallback = json_fallback_path.expanduser() if json_fallback_path else (Path.home() / ".spark" / "cognitive_insights.json")
+    fallback = json_fallback_path.expanduser() if json_fallback_path else legacy_cognitive_json_path()
     if not fallback.exists():
         return {}
     try:
@@ -303,7 +308,7 @@ def runtime_snapshot_mtime(
             return float(db.stat().st_mtime)
         except Exception:
             pass
-    fallback = json_fallback_path.expanduser() if json_fallback_path else (Path.home() / ".spark" / "cognitive_insights.json")
+    fallback = json_fallback_path.expanduser() if json_fallback_path else legacy_cognitive_json_path()
     if fallback.exists():
         try:
             return float(fallback.stat().st_mtime)

@@ -409,7 +409,7 @@ def _gen_cognitive(d: dict, all_data: dict) -> str:
         s += "\n"
 
     s += _source_files("lib/cognitive_learner.py", [
-        "cognitive_insights.json",
+        "legacy cognitive snapshot",
         "cognitive_metrics.json",
     ])
     return s

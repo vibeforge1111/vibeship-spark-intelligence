@@ -186,9 +186,7 @@ def _export_cognitive(explore_dir: Path, limit: int) -> int:
     """Export cognitive insights as individual pages + index."""
     out = explore_dir / "cognitive"
     out.mkdir(parents=True, exist_ok=True)
-    ci = load_cognitive_insights_runtime_snapshot(
-        json_fallback_path=_SD / "cognitive_insights.json"
-    )
+    ci = load_cognitive_insights_runtime_snapshot()
     if not isinstance(ci, dict):
         return 0
 

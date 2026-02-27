@@ -31,10 +31,10 @@ from lib.metric_contract import (
     metric_contract_payload,
 )
 from lib.queue import EventType, read_recent_events
+from lib.spark_memory_spine import load_cognitive_insights_runtime_snapshot
 
 SPARK_DIR = Path.home() / ".spark"
 MEMORY_DB = SPARK_DIR / "memory_store.sqlite"
-COGNITIVE_FILE = SPARK_DIR / "cognitive_insights.json"
 SEMANTIC_LOG = SPARK_DIR / "logs" / "semantic_retrieval.jsonl"
 ADVISORY_ENGINE_LOG = SPARK_DIR / "advisory_engine.jsonl"
 MIND_OFFLINE_QUEUE = SPARK_DIR / "mind_offline_queue.jsonl"
@@ -118,13 +118,7 @@ def _is_noise_like(text: str) -> bool:
 
 
 def _context_stats() -> Dict[str, Any]:
-    if not COGNITIVE_FILE.exists():
-        return {"count": 0}
-    try:
-        obj = json.loads(COGNITIVE_FILE.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
-        return {"count": 0}
-
+    obj = load_cognitive_insights_runtime_snapshot()
     items: List[Dict[str, Any]] = []
     if isinstance(obj, dict):
         items = [v for v in obj.values() if isinstance(v, dict)]

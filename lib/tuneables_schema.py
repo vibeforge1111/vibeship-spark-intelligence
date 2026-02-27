@@ -519,6 +519,25 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         ),
     },
 
+    # ---- workflow_evidence ----
+    "workflow_evidence": {
+        "max_summaries_per_provider": TuneableSpec(
+            "int", 10, 1, 200, "Max workflow summary files read per provider",
+        ),
+        "max_age_s": TuneableSpec(
+            "int", 3600, 60, 604800, "Max workflow summary age (seconds) to include",
+        ),
+        "min_tool_failures_for_advisory": TuneableSpec(
+            "int", 1, 0, 50, "Minimum tool failures before emitting failure-rate workflow evidence",
+        ),
+        "recovery_boost": TuneableSpec(
+            "float", 0.20, 0.0, 0.5, "Confidence boost applied for recovery-pattern workflow evidence",
+        ),
+        "source_quality": TuneableSpec(
+            "float", 0.82, 0.1, 1.0, "Base source quality score used for workflow evidence weighting",
+        ),
+    },
+
     # ---- request_tracker ----
     "request_tracker": {
         "max_pending": TuneableSpec("int", 50, 10, 500, "Max pending requests tracked"),
@@ -855,6 +874,7 @@ SECTION_CONSUMERS: Dict[str, List[str]] = {
     "queue": ["lib/queue.py"],
     "memory_capture": ["lib/memory_capture.py"],
     "openclaw_tailer": ["adapters/openclaw_tailer.py"],
+    "workflow_evidence": ["lib/workflow_evidence.py"],
     "request_tracker": ["lib/pattern_detection/request_tracker.py"],
     "observatory": ["lib/observatory/config.py"],
     "feature_flags": ["lib/feature_flags.py", "lib/advisor.py", "lib/bridge_cycle.py",

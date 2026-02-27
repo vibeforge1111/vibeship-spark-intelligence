@@ -272,9 +272,7 @@ def read_meta_ralph(max_recent: int = 15) -> dict[str, Any]:
 
 def read_cognitive(max_recent: int = 15) -> dict[str, Any]:
     d: dict[str, Any] = {"stage": 6, "name": "Cognitive Learner"}
-    ci = load_cognitive_insights_runtime_snapshot(
-        json_fallback_path=_SD / "cognitive_insights.json"
-    )
+    ci = load_cognitive_insights_runtime_snapshot()
     if not isinstance(ci, dict):
         ci = {}
     d["total_insights"] = len(ci)
@@ -298,7 +296,7 @@ def read_cognitive(max_recent: int = 15) -> dict[str, Any]:
     # Sort by reliability desc, take top N
     top_reliability.sort(key=lambda x: (-x["reliability"], -x["validations"]))
     d["top_insights"] = top_reliability[:max_recent]
-    d["mtime"] = runtime_snapshot_mtime(json_fallback_path=_SD / "cognitive_insights.json")
+    d["mtime"] = runtime_snapshot_mtime()
     return d
 
 

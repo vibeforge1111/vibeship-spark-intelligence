@@ -634,7 +634,7 @@ def _format_context(
 ) -> str:
     lines = [
         "## Spark Bootstrap",
-        "Auto-loaded high-confidence learnings from ~/.spark/cognitive_insights.json",
+        "Auto-loaded high-confidence learnings from the legacy cognitive snapshot",
         f"Last updated: {datetime.now().isoformat(timespec='seconds')}",
         "",
     ]

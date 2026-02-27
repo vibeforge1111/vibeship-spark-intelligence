@@ -197,7 +197,7 @@ def generate_glossary() -> str:
         ("Bridge Cycle", "Background worker cycle (`lib/bridge_cycle.py`) that runs memory/pipeline/sync operations."),
         ("Category Cooldown Multiplier", "Scale factor that adjusts suppression windows for specific advisory categories."),
         ("Chip", "Domain-specific intelligence module that contributes retrieval candidates."),
-        ("Cognitive Insight", "Persisted learning item with reliability metadata in `~/.spark/cognitive_insights.json`."),
+        ("Cognitive Insight", "Persisted learning item with reliability metadata in the legacy cognitive snapshot file."),
         ("Deduplication", "Suppression of repeated advice via text/id signatures (session and global scope)."),
         ("EIDOS", "Episodic intelligence subsystem storing episodes/steps/distillations in `~/.spark/eidos.db`."),
         ("Emit Rate", "Share of advisory decisions that result in emitted guidance."),

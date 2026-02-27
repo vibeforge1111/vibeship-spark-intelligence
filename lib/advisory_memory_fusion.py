@@ -21,8 +21,6 @@ from .outcome_log import read_outcomes
 from .primitive_filter import is_primitive_text
 from .advisory_quarantine import record_quarantine_item
 from .spark_memory_spine import load_cognitive_insights_runtime_snapshot
-
-COGNITIVE_FILE = Path.home() / ".spark" / "cognitive_insights.json"
 CHIP_INSIGHTS_DIR = Path.home() / ".spark" / "chip_insights"
 CHIP_TELEMETRY_BLOCKLIST = {"spark-core", "bench_core"}
 CHIP_TELEMETRY_MARKERS = (
@@ -268,7 +266,7 @@ def _coerce_readiness(row: Dict[str, Any], confidence: float = 0.0) -> float:
 
 
 def _collect_cognitive(limit: int = 6) -> List[Dict[str, Any]]:
-    data = load_cognitive_insights_runtime_snapshot(json_fallback_path=COGNITIVE_FILE)
+    data = load_cognitive_insights_runtime_snapshot()
     if not data:
         return []
 

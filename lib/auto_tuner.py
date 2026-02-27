@@ -31,7 +31,6 @@ from .spark_memory_spine import load_cognitive_insights_runtime_snapshot
 SPARK_DIR = Path.home() / ".spark"
 TUNEABLES_PATH = SPARK_DIR / "tuneables.json"
 EFFECTIVENESS_PATH = SPARK_DIR / "advisor" / "effectiveness.json"
-COGNITIVE_INSIGHTS_PATH = SPARK_DIR / "cognitive_insights.json"
 META_RALPH_PATH = SPARK_DIR / "meta_ralph.json"
 EIDOS_DB_PATH = SPARK_DIR / "eidos.db"
 TUNE_LOG_PATH = SPARK_DIR / "auto_tune_log.jsonl"
@@ -317,9 +316,7 @@ class AutoTuner:
 
         # --- Cognitive insights ---
         try:
-            cog = load_cognitive_insights_runtime_snapshot(
-                json_fallback_path=COGNITIVE_INSIGHTS_PATH
-            )
+            cog = load_cognitive_insights_runtime_snapshot()
             insights = list(cog.values()) if isinstance(cog, dict) else []
             health.cognitive_growth = float(len(insights))
             validated = sum(
