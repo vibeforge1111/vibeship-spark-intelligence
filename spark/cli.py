@@ -2527,18 +2527,13 @@ def _print_advisory_preferences(preferences: dict) -> None:
 def _get_advisory_runtime_state() -> dict:
     """Best-effort runtime status for end-to-end advisory ON/OFF reporting."""
     status = None
-    # Alpha engine is authoritative. Legacy import remains as compatibility fallback.
+    # Alpha engine is authoritative.
     try:
         from lib.advisory_engine_alpha import get_alpha_status
 
         status = get_alpha_status()
     except Exception:
-        try:
-            from lib.advisory_engine import get_engine_status
-
-            status = get_engine_status()
-        except Exception:
-            return {"available": False}
+        return {"available": False}
 
     if not isinstance(status, dict):
         return {"available": False}

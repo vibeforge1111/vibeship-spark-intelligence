@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
+import time
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, Dict, List
@@ -180,12 +182,28 @@ def _read_meta_metrics() -> Dict[str, Any]:
 
 
 def _read_distillation_count() -> int:
+    db_path = Path.home() / ".spark" / "eidos.db"
     try:
         from lib.eidos import get_store
 
         return int((get_store().get_stats() or {}).get("distillations", 0) or 0)
     except Exception:
-        return 0
+        pass
+
+    # Fallback for transient lock/read failures: query SQLite directly with retries.
+    for _ in range(3):
+        try:
+            with sqlite3.connect(str(db_path), timeout=5.0) as conn:
+                row = conn.execute("SELECT COUNT(*) FROM distillations").fetchone()
+                return int((row[0] if row else 0) or 0)
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                time.sleep(0.15)
+                continue
+            break
+        except Exception:
+            break
+    return 0
 
 
 def _read_queue_depth() -> int:

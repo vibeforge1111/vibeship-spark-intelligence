@@ -112,7 +112,11 @@ def test_archive_and_purge_low_quality_distillations(tmp_path):
     store.save_distillation(keep)
     store.save_distillation(drop)
 
-    result = store.archive_and_purge_low_quality_distillations(unified_floor=0.35, dry_run=False)
+    result = store.archive_and_purge_low_quality_distillations(
+        unified_floor=0.35,
+        dry_run=False,
+        min_active_keep=1,
+    )
     assert result["archived"] >= 1
 
     with sqlite3.connect(str(db)) as conn:
@@ -147,6 +151,34 @@ def test_archive_purge_respects_stored_quality_and_refined_statement(tmp_path):
         archived_count = conn.execute("SELECT COUNT(*) FROM distillations_archive").fetchone()[0]
     assert active_count == 1
     assert archived_count == 0
+
+
+def test_archive_purge_keeps_min_active_pool(tmp_path):
+    db = tmp_path / "eidos.db"
+    store = EidosStore(str(db))
+
+    for idx in range(4):
+        store.save_distillation(
+            Distillation(
+                distillation_id="",
+                type=DistillationType.HEURISTIC,
+                statement=f"Try a different approach {idx}",
+            )
+        )
+
+    result = store.archive_and_purge_low_quality_distillations(
+        unified_floor=0.95,
+        dry_run=False,
+        min_active_keep=2,
+    )
+
+    with sqlite3.connect(str(db)) as conn:
+        active_count = conn.execute("SELECT COUNT(*) FROM distillations").fetchone()[0]
+        archived_count = conn.execute("SELECT COUNT(*) FROM distillations_archive").fetchone()[0]
+
+    assert result["kept_for_floor"] == 2
+    assert active_count == 2
+    assert archived_count == 2
 
 
 def test_advisor_uses_stored_eidos_quality_without_live_transform(monkeypatch, tmp_path):

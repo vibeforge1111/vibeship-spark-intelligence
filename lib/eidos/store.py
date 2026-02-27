@@ -996,6 +996,7 @@ class EidosStore:
         unified_floor: float = 0.35,
         dry_run: bool = False,
         max_preview: int = 20,
+        min_active_keep: int = 5,
     ) -> Dict[str, Any]:
         """Archive and purge distillations that fail advisory quality gates."""
         def _parse_quality(raw: Any) -> Dict[str, Any]:
@@ -1015,6 +1016,8 @@ class EidosStore:
         preview: List[Dict[str, Any]] = []
         purge_ids: List[str] = []
         archive_rows: List[Dict[str, Any]] = []
+        kept_for_floor: List[str] = []
+        candidates: List[Dict[str, Any]] = []
 
         with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
@@ -1046,18 +1049,58 @@ class EidosStore:
                 if not reason:
                     continue
 
-                purge_ids.append(row["distillation_id"])
                 archive_row = dict(row)
                 archive_row["archive_reason"] = reason
                 archive_row["advisory_quality"] = json.dumps(aq_data)
-                archive_rows.append(archive_row)
+                candidates.append(
+                    {
+                        "distillation_id": str(row["distillation_id"]),
+                        "reason": reason,
+                        "statement": candidate_text[:200],
+                        "suppressed": suppressed,
+                        "unified": unified,
+                        "confidence": float(row["confidence"] or 0.0),
+                        "archive_row": archive_row,
+                    }
+                )
 
+            # Keep a minimum active retrieval pool so pruning does not collapse
+            # distillations to zero and break downstream advisory quality loops.
+            min_keep = max(0, int(min_active_keep))
+            surviving_without_keep = scanned - len(candidates)
+            shortfall = max(0, min_keep - surviving_without_keep)
+            if shortfall > 0 and candidates:
+                ranked = sorted(
+                    candidates,
+                    key=lambda c: (
+                        1 if bool(c.get("suppressed")) else 0,
+                        -float(c.get("unified", 0.0) or 0.0),
+                        -float(c.get("confidence", 0.0) or 0.0),
+                    ),
+                )
+                keep_ids = {
+                    str(c.get("distillation_id"))
+                    for c in ranked[:shortfall]
+                    if str(c.get("distillation_id"))
+                }
+                if keep_ids:
+                    kept_for_floor = sorted(keep_ids)
+                    candidates = [
+                        c for c in candidates if str(c.get("distillation_id")) not in keep_ids
+                    ]
+
+            for c in candidates:
+                did = str(c.get("distillation_id") or "")
+                if not did:
+                    continue
+                purge_ids.append(did)
+                archive_rows.append(dict(c.get("archive_row") or {}))
                 if len(preview) < max_preview:
                     preview.append(
                         {
-                            "distillation_id": row["distillation_id"],
-                            "reason": reason,
-                            "statement": candidate_text[:200],
+                            "distillation_id": did,
+                            "reason": str(c.get("reason") or ""),
+                            "statement": str(c.get("statement") or ""),
                         }
                     )
 
@@ -1102,8 +1145,11 @@ class EidosStore:
         return {
             "scanned": scanned,
             "archived": len(purge_ids),
+            "kept_for_floor": len(kept_for_floor),
+            "kept_for_floor_ids": kept_for_floor[: max(0, min(len(kept_for_floor), max_preview))],
             "dry_run": dry_run,
             "unified_floor": unified_floor,
+            "min_active_keep": max(0, int(min_active_keep)),
             "preview": preview,
         }
 

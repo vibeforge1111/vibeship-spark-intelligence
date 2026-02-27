@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
+import lib.eidos as eidos_mod
 from lib.production_gates import (
     LoopMetrics,
     LoopThresholds,
+    _read_distillation_count,
     _load_loop_thresholds_from_tuneables,
     evaluate_gates,
     load_live_metrics,
@@ -163,6 +166,27 @@ def test_evaluate_gates_uses_custom_thresholds():
     )
     result = evaluate_gates(metrics, thresholds=thresholds)
     assert result["ready"] is True
+
+
+def test_read_distillation_count_falls_back_to_direct_sqlite(monkeypatch, tmp_path: Path):
+    spark_home = tmp_path / ".spark"
+    spark_home.mkdir(parents=True, exist_ok=True)
+    db = spark_home / "eidos.db"
+    with sqlite3.connect(str(db)) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS distillations (distillation_id TEXT PRIMARY KEY)")
+        conn.executemany(
+            "INSERT OR REPLACE INTO distillations(distillation_id) VALUES (?)",
+            [(f"d{i}",) for i in range(7)],
+        )
+        conn.commit()
+
+    def _boom():
+        raise RuntimeError("store unavailable")
+
+    monkeypatch.setattr(eidos_mod, "get_store", _boom)
+    monkeypatch.setattr("lib.production_gates.Path.home", staticmethod(lambda: tmp_path))
+
+    assert _read_distillation_count() == 7
 
 
 def test_load_live_metrics_uses_actionable_denominator(monkeypatch):
