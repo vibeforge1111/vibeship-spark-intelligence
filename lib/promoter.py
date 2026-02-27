@@ -148,6 +148,8 @@ _SAFETY_REGEXES = [re.compile(p, re.IGNORECASE) for p in SAFETY_BLOCK_PATTERNS]
 
 _RE_PROMOTED_SCORE = re.compile(r"\((\d+)% reliable,\s*(\d+)\s+validations?\)\s*$", re.IGNORECASE)
 _AUTO_PROMOTED_LINE = "*Auto-promoted insights from Spark*"
+_SPARK_LEARNINGS_START = "<!-- SPARK_LEARNINGS_START -->"
+_SPARK_LEARNINGS_END = "<!-- SPARK_LEARNINGS_END -->"
 
 
 def _normalize_text(text: str) -> str:
@@ -654,13 +656,41 @@ class Promoter:
         max_items = self._get_budget(file_path)
         curated = self._curate_lines(bullets, max_items)
 
-        new_block_lines = []
-        if preamble:
-            new_block_lines.extend(preamble)
-        if curated:
-            if new_block_lines and new_block_lines[-1].strip():
-                new_block_lines.append("")
-            new_block_lines.extend(curated)
+        marker_start_idx = next(
+            (idx for idx, raw in enumerate(block_lines) if _SPARK_LEARNINGS_START in str(raw)),
+            -1,
+        )
+        marker_end_idx = next(
+            (idx for idx, raw in enumerate(block_lines) if _SPARK_LEARNINGS_END in str(raw)),
+            -1,
+        )
+
+        if marker_start_idx >= 0 and marker_end_idx > marker_start_idx:
+            before = block_lines[: marker_start_idx + 1]
+            between = block_lines[marker_start_idx + 1 : marker_end_idx]
+            after = block_lines[marker_end_idx:]
+            marker_scaffold = [
+                raw
+                for raw in between
+                if (not str(raw).strip()) or str(raw).strip().startswith("<!--")
+            ]
+            marker_body = list(marker_scaffold)
+            if curated:
+                if marker_body and marker_body[-1].strip():
+                    marker_body.append("")
+                marker_body.extend(curated)
+            elif not marker_body:
+                marker_body = [""]
+            new_block_lines = before + marker_body + after
+        else:
+            new_block_lines = []
+            if preamble:
+                new_block_lines.extend(preamble)
+            if curated:
+                if new_block_lines and new_block_lines[-1].strip():
+                    new_block_lines.append("")
+                new_block_lines.extend(curated)
+
         new_block = "\n".join(new_block_lines)
         new_content = content[:block_start] + new_block + content[block_end:]
         file_path.write_text(_clean_text_for_write(new_content), encoding="utf-8")
