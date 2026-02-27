@@ -710,6 +710,28 @@ Branch: feat/spark-alpha
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `18`
 
+98. `2e04c8f` - `feat(alpha-start): add strict readiness runner and execution plan`
+- Added a single-command alpha start readiness pipeline (`scripts/alpha_start_readiness.py`) that executes:
+  - production gates
+  - replay evidence batch
+  - controlled delta smoke
+  - alpha core regression slice
+- Added report artifact generation for alpha-start runs:
+  - `benchmarks/out/alpha_start/alpha_start_readiness_<run_id>.json`
+  - `benchmarks/out/alpha_start/alpha_start_readiness_<run_id>.md`
+  - latest pointers (`*_latest.json`, `*_latest.md`)
+- Added helper tests for parser/csv logic (`tests/test_alpha_start_readiness_helpers.py`).
+- Added a new execution plan with explicit done/not-done audit contract and ordered phases (`docs/SPARK_ALPHA_START_EXECUTION_PLAN.md`).
+- Regression + gate evidence:
+  - `python -m py_compile scripts/alpha_start_readiness.py tests/test_alpha_start_readiness_helpers.py` -> pass
+  - `pytest tests/test_alpha_start_readiness_helpers.py -q` -> `3 passed`
+  - `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true`
+    - production gate: `READY (19/19 passed)`
+    - replay evidence: `alpha_win_rate=1.0`, `promotion_pass_rate=1.0`, `runs=4`
+    - controlled delta: pass
+    - pytest core slice: `242 passed`
+    - report: `benchmarks/out/alpha_start/alpha_start_readiness_20260227_144522.json`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -722,6 +744,10 @@ Branch: feat/spark-alpha
 
 ### Current measured state (latest run)
 
+- `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_144522`)
+- `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+- replay evidence batch (`seeds=42,77`; `episodes=8,20`) -> `alpha_win_rate=1.0`, `promotion_pass_rate=1.0`, `runs=4`
+- alpha core pytest slice in readiness run -> `242 passed`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `18`
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
