@@ -82,7 +82,7 @@ def _val_repr(val: Any) -> str:
 # Which sections have register_reload() calls in code
 KNOWN_RELOAD_SECTIONS = {
     "flow": ["lib/validate_and_store.py"],
-    "advisory_engine": ["lib/advisory_engine.py"],
+    "advisory_engine": ["lib/advisory_engine_alpha.py", "lib/advisory_engine.py (compat shim)"],
     "advisory_gate": ["lib/advisory_gate.py"],
     "advisory_packet_store": ["lib/advisory_packet_store.py"],
     "advisory_prefetch": ["lib/advisory_prefetch_worker.py"],

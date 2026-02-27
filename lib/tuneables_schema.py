@@ -845,7 +845,11 @@ SECTION_CONSUMERS: Dict[str, List[str]] = {
     "triggers": ["lib/advisor.py"],
     "promotion": ["lib/promoter.py", "lib/auto_promote.py"],
     "synthesizer": ["lib/advisory_synthesizer.py"],
-    "advisory_engine": ["lib/advisory_engine.py", "lib/advisory_emitter.py"],
+    "advisory_engine": [
+        "lib/advisory_engine_alpha.py",
+        "lib/advisory_engine.py (compat shim)",
+        "lib/advisory_emitter.py",
+    ],
     "advisory_gate": ["lib/advisory_gate.py", "lib/advisory_state.py"],
     "advisory_packet_store": ["lib/advisory_packet_store.py"],
     "advisory_prefetch": ["lib/advisory_prefetch_worker.py"],
