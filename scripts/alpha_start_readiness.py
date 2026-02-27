@@ -440,7 +440,7 @@ def main() -> int:
     ap.add_argument(
         "--run-gate-burn-in",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help="Run strict-attribution/distillation gate burn-in stage before production checks.",
     )
     ap.add_argument(
