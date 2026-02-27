@@ -638,27 +638,6 @@ def run_bridge_cycle(
             stats["errors"].append("content_learning")
             log_debug("bridge_worker", "content learning failed", e)
 
-        # --- Cognitive signal extraction (uses classified lists) ---
-        try:
-            from lib.cognitive_signals import extract_cognitive_signals
-            for ev in user_prompt_events:
-                payload = (ev.data or {}).get("payload") or {}
-                txt = str(payload.get("text") or "").strip()
-                if txt and len(txt) >= 10:
-                    ev_trace = (ev.data or {}).get("trace_id")
-                    ev_source = (ev.data or {}).get("source", "")
-                    extract_cognitive_signals(txt, ev.session_id, trace_id=ev_trace, source=ev_source)
-            for ev in edit_write_events:
-                ti = ev.tool_input or {}
-                content = ti.get("content") or ti.get("new_string") or ""
-                if content and len(content) > 50:
-                    ev_trace = (ev.data or {}).get("trace_id")
-                    ev_source = (ev.data or {}).get("source", "")
-                    extract_cognitive_signals(content, ev.session_id, trace_id=ev_trace, source=ev_source)
-        except Exception as e:
-            stats["errors"].append("cognitive_signals")
-            log_debug("bridge_worker", "cognitive signal extraction failed", e)
-
         # --- Wisdom promotion (upgrade high-confidence insights) ---
         try:
             wisdom_stats = cognitive.promote_to_wisdom()
