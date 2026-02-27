@@ -886,7 +886,9 @@ def run_bridge(args: argparse.Namespace) -> int:
     workflow_summary_min_interval_s = max(
         10, min(86400, int(args.workflow_summary_min_interval_s or WORKFLOW_SUMMARY_MIN_INTERVAL_S))
     )
+    telemetry_min_interval_s = max(1.0, float(args.telemetry_min_interval_s or 15.0))
     workflow_last_emit_ts: Dict[str, float] = {}
+    last_telemetry_emit_ts = 0.0
 
     _acquire_singleton_lock(lock_file, mode=mode)
     try:
@@ -930,6 +932,19 @@ def run_bridge(args: argparse.Namespace) -> int:
         while True:
             files = discover_session_files(sessions_root)
             for session_file in files:
+                now_ts = _now()
+                if (now_ts - last_telemetry_emit_ts) >= telemetry_min_interval_s:
+                    _write_telemetry_snapshot(
+                        telemetry_file=telemetry_file,
+                        mode=mode,
+                        runtime=runtime,
+                        active_files=len(files),
+                        observe_forwarding_enabled=observe_forwarding_enabled,
+                        shadow_mode_warning_emitted=shadow_mode_warning_emitted,
+                        environment=environment,
+                        shadow_in_production=shadow_in_production,
+                    )
+                    last_telemetry_emit_ts = now_ts
                 file_key = str(session_file)
                 try:
                     lines = session_file.read_text(encoding="utf-8").splitlines()
@@ -1010,6 +1025,7 @@ def run_bridge(args: argparse.Namespace) -> int:
                 environment=environment,
                 shadow_in_production=shadow_in_production,
             )
+            last_telemetry_emit_ts = _now()
 
             if args.once:
                 print(json.dumps({"mode": mode, "metrics": runtime.metrics.as_dict()}, indent=2))
@@ -1037,6 +1053,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--lock-file", default=str(DEFAULT_LOCK_FILE), help="Singleton lock file path")
     ap.add_argument("--poll", type=float, default=2.0, help="Poll interval in seconds")
     ap.add_argument("--max-per-tick", type=int, default=200, help="Max new lines per file per tick")
+    ap.add_argument("--telemetry-min-interval-s", type=float, default=15.0, help="Emit telemetry snapshots at least this often during long scans")
     ap.add_argument("--backfill", action="store_true", help="Start at offset 0 for new files")
     ap.add_argument("--once", action="store_true", help="Single pass and print summary JSON")
     ap.add_argument("--verbose", action="store_true", help="Print bridge activity")

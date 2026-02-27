@@ -299,6 +299,21 @@ def _scheduler_heartbeat_age() -> Optional[float]:
         return None
 
 
+def _looks_like_codex_bridge_process(cmd: str) -> bool:
+    text = str(cmd or "").strip()
+    if not text:
+        return False
+    norm = text.lower().replace("\\", "/")
+    if "codex_hook_bridge.py" not in norm:
+        return False
+    # Avoid false positives from introspection commands that include the string.
+    if "powershell" in norm or "python -c" in norm or " -command " in norm:
+        return False
+    abs_script = str((ROOT_DIR / "adapters" / "codex_hook_bridge.py")).lower().replace("\\", "/")
+    has_script_path = ("adapters/codex_hook_bridge.py" in norm) or (abs_script in norm)
+    return has_script_path and ("--mode" in norm)
+
+
 def _codex_bridge_telemetry_age() -> Optional[float]:
     if not CODEX_BRIDGE_TELEMETRY.exists():
         return None
@@ -502,6 +517,9 @@ def _service_cmds(
         codex_mode = "observe"
     codex_poll = str(os.environ.get("SPARK_CODEX_BRIDGE_POLL", "2") or "2").strip() or "2"
     codex_max_per_tick = str(os.environ.get("SPARK_CODEX_BRIDGE_MAX_PER_TICK", "200") or "200").strip() or "200"
+    codex_telemetry_min_interval_s = str(
+        os.environ.get("SPARK_CODEX_BRIDGE_TELEMETRY_MIN_INTERVAL_S", "10") or "10"
+    ).strip() or "10"
     codex_bridge_script = ROOT_DIR / "adapters" / "codex_hook_bridge.py"
 
     cmds = {
@@ -533,6 +551,8 @@ def _service_cmds(
                 codex_poll,
                 "--max-per-tick",
                 codex_max_per_tick,
+                "--telemetry-min-interval-s",
+                codex_telemetry_min_interval_s,
             ]
         else:
             cmds["codex_bridge"] = None
@@ -601,12 +621,15 @@ def service_status(bridge_stale_s: int = 90, include_pulse_probe: bool = True) -
     codex_telemetry_fresh = (
         codex_telemetry_age is not None and codex_telemetry_age <= bridge_stale_s * 2
     )
-    codex_bridge_process_running = (
-        _pid_matches(codex_bridge_pid, codex_bridge_keys, snapshot)
-        or _any_process_matches(codex_bridge_keys, snapshot)
-        or _pid_alive_fallback(codex_bridge_pid, snapshot)
-    )
-    codex_bridge_running = codex_bridge_process_running or codex_telemetry_fresh
+    codex_bridge_process_running = False
+    if codex_bridge_pid:
+        codex_bridge_process_running = (
+            _pid_matches(codex_bridge_pid, codex_bridge_keys, snapshot)
+            or _pid_alive_fallback(codex_bridge_pid, snapshot)
+        )
+    if not codex_bridge_process_running:
+        codex_bridge_process_running = any(_looks_like_codex_bridge_process(cmd) for _, cmd in snapshot)
+    codex_bridge_running = codex_bridge_process_running
 
     scheduler_process_running = (
         _pid_matches(scheduler_pid, scheduler_keys, snapshot)
@@ -704,7 +727,7 @@ def start_services(
         # For background loops, a fresh heartbeat file alone is not strong enough to
         # prove a live process (it can be stale-but-recent after a crash). Prefer
         # process detection to avoid skipping restarts.
-        if name in {"bridge_worker", "scheduler"}:
+        if name in {"bridge_worker", "scheduler", "codex_bridge"}:
             if current.get("process_running"):
                 results[name] = "already_running"
                 continue
@@ -859,7 +882,10 @@ def format_status_lines(status: dict[str, dict], bridge_stale_s: int = 90) -> li
             else "[spark] codex_bridge: STOPPED"
         )
     else:
-        codex_label = "RUNNING" if codex_age <= bridge_stale_s * 2 else "STALE"
+        if codex_bridge.get("running"):
+            codex_label = "RUNNING" if codex_age <= bridge_stale_s * 2 else "STALE"
+        else:
+            codex_label = "STOPPED"
         lines.append(f"[spark] codex_bridge: {codex_label} (last {int(codex_age)}s ago)")
     sched_hb = scheduler.get("heartbeat_age_s")
     if sched_hb is None:

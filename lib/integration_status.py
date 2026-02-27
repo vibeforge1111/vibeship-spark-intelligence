@@ -12,6 +12,7 @@ Usage:
 import json
 import os
 import time
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -29,6 +30,8 @@ RECENT_ADVICE = SPARK_DIR / "advisor" / f"recent_advice{JSONL_EXT}"
 EFFECTIVENESS = SPARK_DIR / "advisor" / "effectiveness.json"
 HOOK_SPOOL_FILE = SPARK_DIR / f"openclaw_hook_events{JSONL_EXT}"
 OPENCLAW_ADAPTER_STATE = SPARK_DIR / "adapters" / "openclaw-main.json"
+CODEX_BRIDGE_PID_FILE = SPARK_DIR / "pids" / "codex_bridge.pid"
+CODEX_BRIDGE_TELEMETRY_FILE = SPARK_DIR / "logs" / "codex_hook_bridge_telemetry.jsonl"
 CODEX_CONTEXT_FILE = Path("SPARK_CONTEXT_FOR_CODEX.md")
 CODEX_PAYLOAD_FILE = Path("SPARK_ADVISORY_PAYLOAD.json")
 
@@ -113,10 +116,32 @@ def _read_last_jsonl_row(path: Path) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _pid_alive(pid: Optional[int]) -> bool:
+    if not pid:
+        return False
+    if os.name == "nt":
+        try:
+            out = subprocess.check_output(
+                ["tasklist", "/FI", f"PID eq {pid}"],
+                text=True,
+                errors="ignore",
+            )
+            return str(pid) in out
+        except Exception:
+            return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except PermissionError:
+        return True
+    except Exception:
+        return False
+
+
 def check_hook_to_queue_flow(minutes: int = 20) -> Tuple[bool, str]:
     """Detect silent break: hook spool fresh while queue/event ingest is stale."""
     if not HOOK_SPOOL_FILE.exists():
-        return False, f"No hook spool file: {HOOK_SPOOL_FILE}"
+        return True, f"No hook spool file (optional): {HOOK_SPOOL_FILE}"
 
     cutoff = time.time() - (minutes * 60)
     hook_last = _read_last_jsonl_row(HOOK_SPOOL_FILE)
@@ -139,6 +164,13 @@ def check_hook_to_queue_flow(minutes: int = 20) -> Tuple[bool, str]:
             "Hook spool is fresh but queue ingest is stale "
             f"(hook_age={hook_age}s, queue_age={queue_age}s). "
             "Likely openclaw_tailer/ingest break."
+        )
+    if (not hook_is_fresh) and queue_is_fresh:
+        hook_age = int(max(0, time.time() - hook_ts))
+        queue_age = int(max(0, time.time() - queue_ts)) if queue_ts > 0 else -1
+        return True, (
+            f"queue healthy; hook spool stale/optional "
+            f"(hook_age={hook_age}s, queue_age={queue_age}s)"
         )
 
     lag_msg = ""
@@ -265,6 +297,40 @@ def _codex_sync_enabled() -> bool:
     return "codex" in targets
 
 
+def check_codex_hook_bridge(minutes: int = 30) -> Tuple[bool, str]:
+    pid: Optional[int] = None
+    if CODEX_BRIDGE_PID_FILE.exists():
+        try:
+            pid = int(CODEX_BRIDGE_PID_FILE.read_text(encoding="utf-8").strip())
+        except Exception:
+            return False, "Invalid codex_bridge pid file"
+        if not _pid_alive(pid):
+            return False, f"codex_bridge pid {pid} is not running"
+
+    row = _read_last_jsonl_row(CODEX_BRIDGE_TELEMETRY_FILE)
+    if row is None:
+        if pid is None:
+            return True, "Codex hook bridge not running (optional)"
+        return False, f"codex_bridge telemetry missing: {CODEX_BRIDGE_TELEMETRY_FILE}"
+
+    try:
+        ts = float(row.get("ts") or row.get("timestamp") or 0.0)
+    except Exception:
+        ts = 0.0
+    if ts <= 0:
+        return False, "codex_bridge telemetry has invalid timestamp"
+    age_s = max(0.0, time.time() - ts)
+    if age_s > float(minutes * 60):
+        return False, f"codex_bridge telemetry stale ({int(age_s)}s)"
+
+    mode = str(row.get("mode") or "unknown").strip().lower()
+    if mode != "observe":
+        return False, f"codex_bridge mode is {mode} (expected observe)"
+
+    pid_text = str(pid) if pid is not None else "n/a"
+    return True, f"codex_bridge mode=observe, telemetry_age={int(age_s)}s, pid={pid_text}"
+
+
 def check_codex_sync_outputs() -> Tuple[bool, str]:
     """Check Codex adapter sync artifacts in the current working project."""
     if not _codex_sync_enabled():
@@ -343,6 +409,7 @@ def get_full_status() -> Dict:
         ("Hook->Queue Flow", check_hook_to_queue_flow(20)),
         ("Advice Log", check_advice_log_growing()),
         ("Advisory Packet Store", check_advisory_packet_store()),
+        ("Codex Hook Bridge", check_codex_hook_bridge(30)),
         ("Codex Sync Outputs", check_codex_sync_outputs()),
         ("Effectiveness Tracking", check_effectiveness()),
     ]
@@ -444,6 +511,14 @@ def print_status():
     b) Ensure SPARK_SYNC_TARGETS includes `codex`
     c) Verify `SPARK_CONTEXT_FOR_CODEX.md` and `SPARK_ADVISORY_PAYLOAD.json` exist
     d) Confirm payload parses and includes `schema_version`
+""")
+                elif "Codex Hook Bridge" in check["check"]:
+                    print("""
+  - Codex bridge health check failed. Recommended checks:
+    a) Run `spark ensure` and confirm `codex_bridge` appears in `spark services --json`
+    b) Check `~/.spark/logs/codex_hook_bridge_telemetry.jsonl` is updating
+    c) Ensure bridge runs in observe mode (`SPARK_CODEX_BRIDGE_MODE=observe`)
+    d) Verify pid file exists: `~/.spark/pids/codex_bridge.pid`
 """)
 
     print("=" * 60 + "\n")

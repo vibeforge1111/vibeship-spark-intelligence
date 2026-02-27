@@ -173,6 +173,7 @@ def test_service_cmds_includes_codex_bridge_by_default(monkeypatch, tmp_path):
     monkeypatch.delenv("SPARK_CODEX_BRIDGE_MODE", raising=False)
     monkeypatch.delenv("SPARK_CODEX_BRIDGE_POLL", raising=False)
     monkeypatch.delenv("SPARK_CODEX_BRIDGE_MAX_PER_TICK", raising=False)
+    monkeypatch.delenv("SPARK_CODEX_BRIDGE_TELEMETRY_MIN_INTERVAL_S", raising=False)
 
     cmds = service_control._service_cmds(include_mind=False, include_pulse=False)
     codex = cmds.get("codex_bridge")
@@ -181,6 +182,7 @@ def test_service_cmds_includes_codex_bridge_by_default(monkeypatch, tmp_path):
     assert codex[codex.index("--mode") + 1] == "observe"
     assert codex[codex.index("--poll") + 1] == "2"
     assert codex[codex.index("--max-per-tick") + 1] == "200"
+    assert codex[codex.index("--telemetry-min-interval-s") + 1] == "10"
 
 
 def test_load_repo_env_parses_basic_env_file(tmp_path):
