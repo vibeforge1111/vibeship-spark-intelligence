@@ -19,6 +19,7 @@ Promotion criteria:
 """
 
 import json
+import importlib
 import logging
 import re
 from dataclasses import dataclass
@@ -26,7 +27,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .chip_merger import merge_chip_insights
 from .cognitive_learner import CognitiveCategory, CognitiveInsight, get_cognitive_learner
 from .config_authority import resolve_section
 from .noise_classifier import classify as classify_noise
@@ -35,6 +35,12 @@ from .noise_classifier import record_shadow as record_noise_shadow
 from .project_profile import load_profile
 
 log = logging.getLogger(__name__)
+
+
+def _merge_chip_insights(*args, **kwargs):
+    """Runtime import to reduce static coupling in the learning spine."""
+    mod = importlib.import_module("lib.chip_merger")
+    return mod.merge_chip_insights(*args, **kwargs)
 
 # ============= Configuration =============
 DEFAULT_PROMOTION_THRESHOLD = 0.80  # 80% reliability default (raised from 0.7 to reduce noise)
@@ -893,7 +899,7 @@ class Promoter:
         demotion_stats = {"checked": 0, "demoted": 0, "doc_removed": 0}
         if include_chip_merge and not dry_run:
             try:
-                chip_merge_stats = merge_chip_insights(
+                chip_merge_stats = _merge_chip_insights(
                     min_confidence=max(self.reliability_threshold, 0.7),
                     min_quality_score=0.7,
                     limit=50,
