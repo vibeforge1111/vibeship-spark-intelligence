@@ -266,6 +266,95 @@ def test_on_pre_tool_arena_trace_bypasses_global_dedupe(monkeypatch, tmp_path):
     assert emitted_calls["count"] == 1
 
 
+def test_question_like_helpers_detect_and_sanitize():
+    advice = SimpleNamespace(text="Verify contracts before changing payload shapes.")
+    assert alpha_engine._is_question_like_advice("What should we do now?") is True
+    assert alpha_engine._is_question_like_advice("Can you check this first") is True
+    assert alpha_engine._is_question_like_advice(advice.text) is False
+
+    text, mode = alpha_engine._sanitize_emission_text(
+        text="What should we do now?",
+        emitted_items=[advice],
+        tool_name="Edit",
+    )
+    assert mode == "fallback_item_text"
+    assert text == advice.text
+
+
+def test_on_pre_tool_rewrites_question_like_synth(monkeypatch, tmp_path):
+    _patch_state_and_store(monkeypatch, tmp_path)
+    import lib.advisor as advisor
+    import lib.advisory_synthesizer as synthesizer
+    import lib.emitter as emitter
+    import lib.meta_ralph as meta_ralph
+
+    advice = SimpleNamespace(
+        advice_id="aid-q-1",
+        text="Verify contracts before changing payload shapes.",
+        source="workflow",
+        confidence=0.9,
+        context_match=0.9,
+        insight_key="insight:verify-contracts",
+        category="context",
+        advisory_readiness=0.8,
+        advisory_quality={},
+    )
+    monkeypatch.setattr(advisor, "advise_on_tool", lambda *_a, **_k: [advice])
+    monkeypatch.setattr(advisor, "record_recent_delivery", lambda **_k: None)
+    monkeypatch.setattr(
+        advisory_gate,
+        "evaluate",
+        lambda advice_items, state, tool_name, tool_input, recent_global_emissions=None: advisory_gate.GateResult(
+            decisions=[
+                advisory_gate.GateDecision(
+                    advice_id="aid-q-1",
+                    authority=advisory_gate.AuthorityLevel.NOTE,
+                    emit=True,
+                    reason="ok",
+                    adjusted_score=0.9,
+                    original_score=0.9,
+                )
+            ],
+            emitted=[
+                advisory_gate.GateDecision(
+                    advice_id="aid-q-1",
+                    authority=advisory_gate.AuthorityLevel.NOTE,
+                    emit=True,
+                    reason="ok",
+                    adjusted_score=0.9,
+                    original_score=0.9,
+                )
+            ],
+            suppressed=[],
+            phase="implementation",
+            total_retrieved=len(advice_items),
+        ),
+    )
+    monkeypatch.setattr(advisory_gate, "get_tool_cooldown_s", lambda: 10)
+    monkeypatch.setattr(synthesizer, "synthesize", lambda *_a, **_k: "What should we do now?")
+    monkeypatch.setattr(meta_ralph, "get_meta_ralph", lambda: SimpleNamespace(track_retrieval=lambda *_a, **_k: None))
+
+    captured = {"text": ""}
+
+    def _emit(gate_result, synth_text, emitted_items, **_kwargs):
+        _ = gate_result
+        _ = emitted_items
+        captured["text"] = str(synth_text or "")
+        return True
+
+    monkeypatch.setattr(emitter, "emit_advisory", _emit)
+
+    out = alpha_engine.on_pre_tool(
+        "s-alpha-question-like",
+        "Edit",
+        {"file_path": "src/app.py"},
+        trace_id="trace-alpha-question-like",
+    )
+    assert "?" not in out
+    assert out == "Verify contracts before changing payload shapes."
+    assert captured["text"] == out
+
+
 def test_on_pre_tool_blocks_normalized_text_repeat(monkeypatch, tmp_path):
     _patch_state_and_store(monkeypatch, tmp_path)
     emitted_calls = _patch_pre_tool_runtime(monkeypatch)

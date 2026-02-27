@@ -133,3 +133,36 @@ def test_evaluate_promotion_gate_blocks_question_like_rate():
     assert gate["alpha_win_weighted"] is True
     assert gate["question_gate"] is False
     assert gate["promotion_gate_pass"] is False
+
+
+def test_question_like_examples_collects_preview_rows():
+    mod = _load_module()
+    rows = [
+        mod.EpisodeResult(
+            episode_id="ep-1",
+            trace_id="arena:t:1",
+            emitted=True,
+            text_preview="What should we do now?",
+            latency_ms=10.0,
+            utility_actionability=0.2,
+            harmful_emit=False,
+            question_like_emit=True,
+            trace_ok=True,
+            trace_event="emitted",
+        ),
+        mod.EpisodeResult(
+            episode_id="ep-2",
+            trace_id="arena:t:2",
+            emitted=True,
+            text_preview="Verify contracts before changing payload shapes.",
+            latency_ms=12.0,
+            utility_actionability=0.8,
+            harmful_emit=False,
+            question_like_emit=False,
+            trace_ok=True,
+            trace_event="emitted",
+        ),
+    ]
+    out = mod._question_like_examples(rows, limit=3)
+    assert len(out) == 1
+    assert out[0]["episode_id"] == "ep-1"

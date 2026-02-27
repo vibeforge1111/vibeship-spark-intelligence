@@ -42,6 +42,14 @@ ALPHA_LOG = Path.home() / ".spark" / f"advisory_engine_alpha{JSONL_EXT}"
 ALPHA_LOG_MAX_LINES = 2000
 ADVISORY_GLOBAL_DEDUPE_FILE = Path.home() / ".spark" / f"advisory_global_dedupe{JSONL_EXT}"
 ADVISORY_GLOBAL_DEDUPE_MAX_LINES = 5000
+_QUESTION_START_RE = re.compile(
+    r"^\s*(what|why|how|when|where|who|do|does|did|should|would|could|can|is|are|am|will)\b",
+    re.I,
+)
+_CONVERSATIONAL_RE = re.compile(
+    r"\b(can you|could you|would you|should we|do we|i('?| a)?m not sure|not sure about)\b",
+    re.I,
+)
 
 
 def _parse_bool(value: Any, default: bool) -> bool:
@@ -212,6 +220,41 @@ def _advice_text_sig(value: str) -> str:
     if not text:
         return ""
     return hashlib.sha1(text[:240].encode("utf-8", errors="ignore")).hexdigest()[:16]
+
+
+def _is_question_like_advice(text: str) -> bool:
+    sample = str(text or "").strip().lower()
+    if not sample:
+        return False
+    if sample.endswith("?"):
+        return True
+    if _QUESTION_START_RE.match(sample):
+        return True
+    if _CONVERSATIONAL_RE.search(sample) and len(sample.split()) <= 28:
+        return True
+    return False
+
+
+def _first_non_question_text(emitted_items: List[Any]) -> str:
+    for item in emitted_items or []:
+        candidate = str(getattr(item, "text", "") or "").strip()
+        if candidate and (not _is_question_like_advice(candidate)):
+            return candidate
+    return ""
+
+
+def _sanitize_emission_text(*, text: str, emitted_items: List[Any], tool_name: str) -> Tuple[str, str]:
+    sample = str(text or "").strip()
+    if not sample:
+        return "", "empty"
+    if not _is_question_like_advice(sample):
+        return sample, "as_is"
+    fallback = _first_non_question_text(emitted_items)
+    if fallback:
+        return fallback, "fallback_item_text"
+    tool = str(tool_name or "").strip() or "the next tool call"
+    rewritten = f"Run one concrete pre-flight check for {tool} and proceed with the safest next step."
+    return rewritten, "rewritten_from_question_like"
 
 
 def _safe_ts(value: Any) -> float:
@@ -551,7 +594,24 @@ def on_pre_tool(
             tool_name=tool_name,
             force_mode="programmatic" if ALPHA_PROGRAMMATIC_SYNTH_ONLY else None,
         )
-        effective_text = str(synth_text or getattr(emitted_items[0], "text", "") or "").strip()
+        raw_effective_text = str(synth_text or getattr(emitted_items[0], "text", "") or "").strip()
+        effective_text, sanitize_mode = _sanitize_emission_text(
+            text=raw_effective_text,
+            emitted_items=emitted_items,
+            tool_name=str(tool_name or ""),
+        )
+        if not effective_text:
+            save_state(state)
+            _log_alpha(
+                "question_like_blocked",
+                session_id=session_id,
+                tool_name=tool_name,
+                trace_id=resolved_trace_id,
+                emitted=False,
+                elapsed_ms=(time.time() - start) * 1000.0,
+            )
+            return None
+        synth_text = effective_text
         text_fingerprint = _hash_text(effective_text)
         global_text_sig = _advice_text_sig(effective_text)
         if _is_repeat_blocked(state, tool_name, text_fingerprint, context_fingerprint):
@@ -674,6 +734,7 @@ def on_pre_tool(
                 "emitted_count": len(emitted_items),
                 "task_phase": str(getattr(state, "task_phase", "") or ""),
                 "task_plane": str(getattr(state, "task_plane", "") or ""),
+                "sanitize_mode": str(sanitize_mode),
             },
         )
         return effective_text if effective_text else None

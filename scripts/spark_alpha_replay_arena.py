@@ -414,6 +414,23 @@ def _run_route(
     return results
 
 
+def _question_like_examples(results: List[EpisodeResult], *, limit: int = 5) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for row in results:
+        if not bool(getattr(row, "question_like_emit", False)):
+            continue
+        out.append(
+            {
+                "episode_id": str(row.episode_id),
+                "trace_id": str(row.trace_id),
+                "text_preview": str(row.text_preview or "")[:220],
+            }
+        )
+        if len(out) >= max(1, int(limit)):
+            break
+    return out
+
+
 def _render_markdown(report: Dict[str, Any]) -> str:
     winner = report.get("winner") or {}
     promo = report.get("promotion") or {}
@@ -443,11 +460,28 @@ def _render_markdown(report: Dict[str, Any]) -> str:
         "",
         f"- alpha_win_weighted: `{promo.get('alpha_win_weighted')}`",
         f"- question_gate: `{promo.get('question_gate')}`",
+        f"- alpha_question_like_emit_rate: `{promo.get('alpha_question_like_emit_rate', 0.0)}`",
         f"- promotion_gate_pass: `{promo.get('promotion_gate_pass')}`",
         f"- consecutive_pass_streak: `{promo.get('consecutive_pass_streak')}`",
         f"- min_consecutive_wins: `{promo.get('min_consecutive_wins')}`",
         f"- eligible_for_cutover: `{promo.get('eligible_for_cutover')}`",
     ]
+    examples = promo.get("question_like_examples") if isinstance(promo.get("question_like_examples"), dict) else {}
+    alpha_examples = examples.get("alpha") if isinstance(examples.get("alpha"), list) else []
+    if alpha_examples:
+        lines.extend(
+            [
+                "",
+                "## Question-Like Examples (Alpha)",
+                "",
+            ]
+        )
+        for row in alpha_examples[:5]:
+            if not isinstance(row, dict):
+                continue
+            lines.append(
+                f"- {row.get('episode_id')}: `{row.get('trace_id')}` -> {str(row.get('text_preview') or '')}"
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -608,6 +642,10 @@ def main() -> int:
             "question_gate": bool(question_gate),
             "promotion_gate_pass": bool(promotion_gate_pass),
             "alpha_question_like_emit_rate": float(alpha_card.question_like_emit_rate),
+            "question_like_examples": {
+                "alpha": _question_like_examples(alpha_results, limit=5),
+                "orchestrator": _question_like_examples(orchestrator_results, limit=5),
+            },
             "consecutive_pass_streak": int(streak),
             "min_consecutive_wins": int(args.min_consecutive_wins),
             "eligible_for_cutover": bool(eligible),
