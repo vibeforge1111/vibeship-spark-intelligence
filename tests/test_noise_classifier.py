@@ -41,4 +41,26 @@ def test_shadow_summary_counts_by_module():
 
 def test_enforce_enabled_defaults_true(monkeypatch):
     monkeypatch.delenv("SPARK_NOISE_CLASSIFIER_ENFORCE", raising=False)
+    monkeypatch.delenv("SPARK_NOISE_CLASSIFIER_ENFORCE_PROMOTION", raising=False)
+    monkeypatch.delenv("SPARK_NOISE_CLASSIFIER_ENFORCE_RETRIEVAL", raising=False)
+    monkeypatch.delenv("SPARK_NOISE_CLASSIFIER_FORCE_SHADOW", raising=False)
     assert enforce_enabled() is True
+
+
+def test_enforce_enabled_context_overrides(monkeypatch):
+    monkeypatch.setenv("SPARK_NOISE_CLASSIFIER_ENFORCE", "0")
+    monkeypatch.setenv("SPARK_NOISE_CLASSIFIER_ENFORCE_PROMOTION", "1")
+    monkeypatch.setenv("SPARK_NOISE_CLASSIFIER_ENFORCE_RETRIEVAL", "0")
+    assert enforce_enabled(context="promotion") is True
+    assert enforce_enabled(context="retrieval") is False
+    assert enforce_enabled(context="default") is False
+
+
+def test_force_shadow_disables_all_enforcement(monkeypatch):
+    monkeypatch.setenv("SPARK_NOISE_CLASSIFIER_ENFORCE", "1")
+    monkeypatch.setenv("SPARK_NOISE_CLASSIFIER_ENFORCE_PROMOTION", "1")
+    monkeypatch.setenv("SPARK_NOISE_CLASSIFIER_ENFORCE_RETRIEVAL", "1")
+    monkeypatch.setenv("SPARK_NOISE_CLASSIFIER_FORCE_SHADOW", "1")
+    assert enforce_enabled(context="promotion") is False
+    assert enforce_enabled(context="retrieval") is False
+    assert enforce_enabled() is False

@@ -1,7 +1,14 @@
 """Unified noise classifier with bounded shadow telemetry.
 
-Default behavior is enforce-on. Set SPARK_NOISE_CLASSIFIER_ENFORCE=0 to
-fall back to module-specific legacy filters.
+Default behavior is enforce-on. Rollout can be tuned per-path:
+- SPARK_NOISE_CLASSIFIER_ENFORCE_PROMOTION
+- SPARK_NOISE_CLASSIFIER_ENFORCE_RETRIEVAL
+
+Global fallback:
+- SPARK_NOISE_CLASSIFIER_ENFORCE
+
+Emergency rollback (forces shadow/legacy behavior everywhere):
+- SPARK_NOISE_CLASSIFIER_FORCE_SHADOW=1
 """
 
 from __future__ import annotations
@@ -56,9 +63,36 @@ _QUESTION_START_RE = re.compile(
 )
 
 
-def enforce_enabled() -> bool:
-    raw = str(os.getenv("SPARK_NOISE_CLASSIFIER_ENFORCE", "1")).strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+def _parse_env_bool(name: str) -> bool | None:
+    raw = str(os.getenv(name, "")).strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def enforce_enabled(*, context: str = "default") -> bool:
+    force_shadow = _parse_env_bool("SPARK_NOISE_CLASSIFIER_FORCE_SHADOW")
+    if force_shadow is True:
+        return False
+
+    normalized = str(context or "default").strip().lower()
+    scoped_key = ""
+    if normalized in {"promotion", "promoter"}:
+        scoped_key = "SPARK_NOISE_CLASSIFIER_ENFORCE_PROMOTION"
+    elif normalized in {"retrieval", "advisor_retrieval", "cognitive_retrieval"}:
+        scoped_key = "SPARK_NOISE_CLASSIFIER_ENFORCE_RETRIEVAL"
+
+    if scoped_key:
+        scoped = _parse_env_bool(scoped_key)
+        if scoped is not None:
+            return bool(scoped)
+
+    global_default = _parse_env_bool("SPARK_NOISE_CLASSIFIER_ENFORCE")
+    if global_default is not None:
+        return bool(global_default)
+    return True
 
 
 def classify(text: str | None, *, context: str = "generic") -> NoiseDecision:

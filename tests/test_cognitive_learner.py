@@ -125,7 +125,7 @@ class TestIsInjectionOrGarbage:
 
     def test_valid_insight_passes(self):
         assert _is_injection_or_garbage(
-            "Always validate authentication tokens before processing API requests"
+            "Validate JWT issuer and audience before accepting tokens in API middleware"
         ) is False
 
     def test_short_but_alpha_rich_passes(self):
@@ -715,7 +715,7 @@ class TestEdgeCases:
     def test_add_insight_accepts_valid(self, learner):
         result = learner.add_insight(
             CognitiveCategory.WISDOM,
-            "Always validate authentication tokens before processing API requests",
+            "Validate JWT issuer and audience before accepting tokens in API middleware",
             context="security hardening",
         )
         assert result is not None

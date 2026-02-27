@@ -61,3 +61,15 @@ def test_promoter_treats_user_question_as_operational(monkeypatch, tmp_path):
     result = is_operational_insight("What would be your best recommendation here?")
 
     assert result is True
+
+
+def test_promoter_context_override_enforces_when_global_disabled(monkeypatch, tmp_path):
+    shadow_log = tmp_path / "noise_shadow.jsonl"
+    monkeypatch.setattr(noise_classifier, "SHADOW_LOG", shadow_log)
+    monkeypatch.setenv("SPARK_NOISE_CLASSIFIER_ENFORCE", "0")
+    monkeypatch.setenv("SPARK_NOISE_CLASSIFIER_ENFORCE_PROMOTION", "1")
+
+    # Legacy path would allow markdown header; promotion-context override should enforce unified.
+    result = is_operational_insight("## Session History")
+
+    assert result is True

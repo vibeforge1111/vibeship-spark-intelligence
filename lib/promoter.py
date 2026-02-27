@@ -282,7 +282,7 @@ def is_operational_insight(insight_text: str) -> bool:
         legacy_is_noise=legacy,
         unified=unified,
     )
-    if noise_enforce_enabled():
+    if noise_enforce_enabled(context="promotion"):
         return bool(unified.is_noise)
     return legacy
 

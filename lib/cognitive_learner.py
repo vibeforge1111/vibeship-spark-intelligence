@@ -1518,7 +1518,7 @@ class CognitiveLearner:
 
         return False
 
-    def is_noise_insight(self, text: str) -> bool:
+    def is_noise_insight(self, text: str, *, phase: str = "retrieval") -> bool:
         """Public helper for filtering noise insights."""
         legacy = self._is_noise_insight(text)
         unified = classify_noise(text, context="cognitive_learner")
@@ -1528,7 +1528,8 @@ class CognitiveLearner:
             legacy_is_noise=legacy,
             unified=unified,
         )
-        if noise_enforce_enabled():
+        enforce_context = "retrieval" if str(phase or "").strip().lower() == "retrieval" else "default"
+        if noise_enforce_enabled(context=enforce_context):
             return bool(unified.is_noise)
         return legacy
 
@@ -1576,7 +1577,7 @@ class CognitiveLearner:
             ii_text = insight.insight or ""
             if ii_text.startswith("Cycle summary:"):
                 continue
-            if self.is_noise_insight(ii_text):
+            if self.is_noise_insight(ii_text, phase="retrieval"):
                 continue
             # LLM area: generic_demotion — skip generic platitudes during retrieval
             if self._llm_area_generic_demotion(ii_text, context_lower):
@@ -1727,7 +1728,7 @@ class CognitiveLearner:
         Returns None if insight is filtered as noise.
         """
         # FINAL GATE: Block noise patterns that somehow bypassed earlier filters
-        if self.is_noise_insight(insight):
+        if self.is_noise_insight(insight, phase="storage"):
             return None
 
         # Block cycle summaries - operational telemetry, not learning
@@ -1854,7 +1855,7 @@ class CognitiveLearner:
         previews: List[str] = []
 
         for key, insight in self.insights.items():
-            if not self.is_noise_insight(insight.insight):
+            if not self.is_noise_insight(insight.insight, phase="storage"):
                 continue
             to_remove.append(key)
             cat = insight.category.value
