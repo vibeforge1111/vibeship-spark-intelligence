@@ -819,6 +819,26 @@ Branch: feat/spark-alpha
   - `python scripts/alpha_gap_audit.py` -> `advisory_files=11`, `tuneable_keys=415`, `distillation_files=5`, `orchestrator_module_present=false`
   - `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=415`, `hits=7551`, `orphan_keys=0`, `scanned_files=504`
 
+104. `e280435` - `feat(alpha-wave2): add external-usage tuneables audit counters`
+- Improved `scripts/tuneables_usage_audit.py` to separate schema-self references from external usage by excluding `lib/tuneables_schema.py` in an explicit external scan lane.
+- Added new counters:
+  - `external_hits`
+  - `external_orphan_keys`
+  - `external_scanned_files`
+- This provides a measurable Wave-2 pruning target based on external usage instead of schema self-reference inflation.
+- Regression + evidence:
+  - `python -m py_compile scripts/tuneables_usage_audit.py` -> pass
+  - `pytest tests/test_tuneables_usage_audit_helpers.py -q` -> `2 passed`
+  - `python scripts/tuneables_usage_audit.py` ->
+    - `sections=40`
+    - `keys=415`
+    - `hits=7551`
+    - `orphan_keys=0`
+    - `external_hits=6976`
+    - `external_orphan_keys=91`
+    - `scanned_files=504`
+    - report: `benchmarks/out/alpha_start/tuneables_usage_audit_20260227_151854.json`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -836,7 +856,7 @@ Branch: feat/spark-alpha
 - replay evidence batch (`seeds=42,77`; `episodes=8,20`) -> `alpha_win_rate=1.0`, `promotion_pass_rate=1.0`, `runs=4`
 - alpha core pytest slice in readiness run -> `242 passed`
 - `python scripts/alpha_gap_audit.py` -> `advisory_files=11`, `tuneable_keys=415`, `lib_jsonl_refs=376`, `distillation_files=5`, `orchestrator_module_present=false`, `vibeforge_has_code_evolve_lane=false`
-- `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=415`, `hits=7551`, `orphan_keys=0`, `scanned_files=504`
+- `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=415`, `hits=7551`, `orphan_keys=0`, `external_hits=6976`, `external_orphan_keys=91`, `scanned_files=504`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `18`
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
