@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import lib.advisory_packet_store as store
-import lib.advisory_prefetch_worker as worker
+import lib.prefetch_worker as worker
 
 
 def _patch_store_paths(monkeypatch, tmp_path):

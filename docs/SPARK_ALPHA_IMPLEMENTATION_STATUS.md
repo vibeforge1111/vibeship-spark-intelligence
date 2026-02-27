@@ -503,9 +503,9 @@ Branch: feat/spark-alpha
 - Simplification impact: ~1k lines removed from dead advisory surface.
 
 78. `18ff784` - `refactor(alpha-pr10): inline deterministic prefetch planner into worker and remove split module`
-- Inlined deterministic prefetch planning (`plan_prefetch_jobs`) into `lib/advisory_prefetch_worker.py`.
+- Inlined deterministic prefetch planning (`plan_prefetch_jobs`) into `lib/prefetch_worker.py`.
 - Deleted `lib/advisory_prefetch_planner.py` (single-consumer split module).
-- Regression slice: `pytest tests/test_advisory_prefetch_worker.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `9 passed`.
+- Regression slice: `pytest tests/test_prefetch_worker.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `9 passed`.
 
 79. `3376cd6` - `refactor(alpha-pr10): fold packet feedback and llm reranker into packet_store and delete split modules`
 - Inlined packet feedback/outcome helpers into `lib/advisory_packet_store.py`.
@@ -513,7 +513,7 @@ Branch: feat/spark-alpha
 - Deleted split helper modules:
   - `lib/advisory_packet_feedback.py`
   - `lib/advisory_packet_llm_reranker.py`
-- Regression slice: `pytest tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_prefetch_worker.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `159 passed`.
+- Regression slice: `pytest tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_prefetch_worker.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `159 passed`.
 
 80. `e2eaf3f` - `refactor(alpha-pr09): retire packet lookup llm rerank knobs and simplify config/preference surface`
 - Retired packet lookup LLM rerank control surface from packet store config/status paths; relaxed lookup remains deterministic.
@@ -994,8 +994,8 @@ Branch: feat/spark-alpha
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 - `pytest tests/test_distillation_transformer.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisory_preferences.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py tests/test_rehydrate_alpha_baseline.py tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py -q` -> `277 passed`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true` (streak `4`)
-- `pytest tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_prefetch_worker.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `159 passed`
-- `python -m py_compile lib/advisory_packet_store.py lib/advisory_engine_alpha.py lib/advisory_orchestrator.py lib/advisory_prefetch_worker.py scripts/advisory_tag_outcome.py` -> pass
+- `pytest tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_prefetch_worker.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `159 passed`
+- `python -m py_compile lib/advisory_packet_store.py lib/advisory_engine_alpha.py lib/advisory_orchestrator.py lib/prefetch_worker.py scripts/advisory_tag_outcome.py` -> pass
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after packet-store consolidation and split-module deletions)
 - `pytest tests/test_intelligence_llm_preferences.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `157 passed`
 - `python -m py_compile lib/advisory_packet_store.py lib/intelligence_llm_preferences.py lib/observatory/advisory_reverse_engineering.py scripts/intelligence_llm_setup.py` -> pass
@@ -1044,6 +1044,23 @@ Notable metrics now:
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, streak `60`
 
+### Latest advisory collapse delta (2026-02-27, prefetch worker rename)
+
+- Renamed `lib/advisory_prefetch_worker.py` -> `lib/prefetch_worker.py`.
+- Updated alpha-runtime import path:
+  - `lib/advisory_engine_alpha.py` now imports `process_prefetch_queue` from `lib/prefetch_worker.py`.
+- Updated config observatory/consumer references:
+  - `lib/tuneables_schema.py`
+  - `lib/observatory/tuneables_deep_dive.py`
+- Updated test imports and retained green prefetch/advisory coverage:
+  - `tests/test_prefetch_worker.py`
+  - `tests/test_packet_prefetch_config_authority.py`
+- Validation:
+  - `pytest tests/test_prefetch_worker.py tests/test_packet_prefetch_config_authority.py tests/test_advisory_engine_alpha.py tests/test_tuneables_alignment.py -q` -> `9 passed`
+  - `python scripts/alpha_gap_audit.py` -> `advisory_files=7`, `tuneable_keys=286`, `distillation_files=3`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, streak `61`
+
 ### Latest compaction unification delta (2026-02-27, packet compaction lane)
 
 - Added packet compaction planner: `lib/packet_compaction.py` (action contract `update/delete/noop`)
@@ -1082,7 +1099,7 @@ Notable metrics now:
 
 These are still pending relative to the broader Simplification/Fast-Track goals:
 
-1. Advisory collapse wave 1 is exceeded (`advisory_files=8`), but final 3-module end-state is not yet implemented.
+1. Advisory collapse wave 1 is exceeded (`advisory_files=7`), but final 3-module end-state is not yet implemented.
 2. Storage consolidation to single SQLite-first memory/advisory store is partially implemented (cognitive memory is SQLite-canonical; advisory packet lookup is now SQLite-canonical with no runtime JSON lookup fallback mode).
 3. Memory compaction engine is partially implemented (ACT-R cognitive compaction + packet compaction preview/apply lane + sync-integrated bounded packet apply lane are in place); deeper unified policy across all advisory/memory stores is still pending.
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).

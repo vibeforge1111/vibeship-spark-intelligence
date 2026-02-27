@@ -79,7 +79,7 @@ PRESETS: Dict[str, Dict[str, Any]] = {
         ],
         "evolve_blocks": [
             "lib/advisory_engine_alpha.py",
-            "lib/advisory_prefetch_worker.py",
+            "lib/prefetch_worker.py",
             "config/tuneables.json",
         ],
         "max_cycles": 20,

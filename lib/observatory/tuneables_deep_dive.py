@@ -85,7 +85,7 @@ KNOWN_RELOAD_SECTIONS = {
     "advisory_engine": ["lib/advisory_engine_alpha.py"],
     "advisory_gate": ["lib/advisory_gate.py"],
     "advisory_packet_store": ["lib/advisory_packet_store.py"],
-    "advisory_prefetch": ["lib/advisory_prefetch_worker.py"],
+    "advisory_prefetch": ["lib/prefetch_worker.py"],
     "advisory_quality": ["lib/advisory_preferences.py"],
     "advisor": ["lib/advisor.py", "lib/advisory_preferences.py"],
     "auto_tuner": ["lib/advisor.py"],

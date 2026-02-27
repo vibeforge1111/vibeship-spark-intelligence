@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 import lib.advisory_packet_store as packet_store
-import lib.advisory_prefetch_worker as prefetch_worker
+import lib.prefetch_worker as prefetch_worker
 
 
 def test_packet_store_load_config_resolves_precedence(tmp_path):

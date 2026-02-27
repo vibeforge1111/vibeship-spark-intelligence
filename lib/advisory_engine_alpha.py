@@ -813,7 +813,7 @@ def on_user_prompt(
             )
             if ALPHA_INLINE_PREFETCH_ENABLED:
                 try:
-                    from .advisory_prefetch_worker import process_prefetch_queue
+                    from .prefetch_worker import process_prefetch_queue
 
                     process_prefetch_queue(
                         max_jobs=ALPHA_INLINE_PREFETCH_MAX_JOBS,
