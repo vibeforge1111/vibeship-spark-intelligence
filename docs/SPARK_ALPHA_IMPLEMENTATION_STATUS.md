@@ -489,6 +489,13 @@ Branch: feat/spark-alpha
 - Updated residual advisory reverse-engineering recommendation pointers from legacy `lib/advisory_engine.py` to alpha/orchestrator runtime hosts.
 - Keeps observatory “where to change” guidance aligned with current runtime ownership and avoids stale debugging directions.
 
+76. `02bf620` - `refactor(alpha-pr10): rewrite advisory_engine as compact compatibility module`
+- Replaced remaining legacy mega-surface in `lib/advisory_engine.py` with a compact compatibility module:
+  - keeps required helper APIs used by tests/tools (`_advice_to_rows*`, `_diagnostics_envelope`, `_ensure_actionability`, `_derive_delivery_badge`, lineage/dedupe helpers, config APIs, rejection telemetry)
+  - forwards runtime pre/post/prompt entrypoints to alpha runtime
+  - retains compat status/log telemetry surfaces
+- File size reduced from ~2436 lines to ~536 lines while preserving regression coverage.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -582,6 +589,9 @@ Branch: feat/spark-alpha
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 - `pytest tests/test_pr1_config_authority.py tests/test_tuneables_alignment.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py -q` -> `34 passed`
 - `python -m py_compile lib/observatory/advisory_reverse_engineering.py` -> pass
+- `pytest tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisory_preferences.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py tests/test_rehydrate_alpha_baseline.py tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py -q` -> `204 passed`
+- `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`
+- `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 
 Notable metrics now:
 - `context.p50`: 230

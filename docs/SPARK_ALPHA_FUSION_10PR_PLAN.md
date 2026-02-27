@@ -93,6 +93,7 @@ Completed commits:
 73. `fe9f2bb` PR-10 follow-up: collapsed legacy advisory_engine runtime entrypoints into thin alpha compatibility forwards (pre/post/prompt), removing ~1k lines from legacy hot path
 74. `6ffa803` PR-09 follow-up: updated advisory_engine tuneables consumer/reload host attribution to alpha-primary runtime in schema + observatory deep-dive metadata
 75. `de7a70c` PR-10 follow-up: corrected remaining advisory reverse-engineering “where” pointers to alpha/orchestrator runtime hosts
+76. `02bf620` PR-10 follow-up: rewrote `lib/advisory_engine.py` into compact compatibility module (helpers + config + delegate entrypoints), reducing file size from ~2436 to ~536 lines
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -129,6 +130,7 @@ Current measured state:
 26. Log-path centralization regression slice: `pytest tests/test_advisory_packet_store.py tests/test_advisory_day_trial.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py -q` -> `31 passed`; `pytest tests/test_rehydrate_alpha_baseline.py -q` -> `2 passed`
 27. Legacy entrypoint shim-collapse regression slice: `pytest tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `172 passed`; replay smoke (`--episodes 8 --seed 42`) winner `alpha` with promotion gate pass
 28. Tuneables consumer-map alignment regression slice: `pytest tests/test_pr1_config_authority.py tests/test_tuneables_alignment.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py -q` -> `34 passed`
+29. Advisory compat-module rewrite regression slice: broad advisory/runtime/config suite -> `204 passed`; replay smoke (`--episodes 8 --seed 42`) winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`; controlled-delta smoke passed
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial (cognitive SQLite-canonical + advisory packet SQLite spine integrated; JSON compatibility/fallback still present)
