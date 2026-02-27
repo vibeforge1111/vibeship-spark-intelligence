@@ -749,6 +749,21 @@ Branch: feat/spark-alpha
     - `vibeforge_has_code_evolve_lane=false`
     - report: `benchmarks/out/alpha_start/alpha_gap_audit_20260227_145053.json`
 
+100. `2797d8b` - `feat(alpha-start): add tuneables usage audit for config reduction waves`
+- Added `scripts/tuneables_usage_audit.py` to generate schema-key usage telemetry across `lib/scripts/hooks/tests`.
+- Added helper tests for key-usage detection logic (`tests/test_tuneables_usage_audit_helpers.py`).
+- Wired tuneables usage artifacts into the alpha-start execution plan (`docs/SPARK_ALPHA_START_EXECUTION_PLAN.md`).
+- Regression + evidence:
+  - `python -m py_compile scripts/tuneables_usage_audit.py tests/test_tuneables_usage_audit_helpers.py` -> pass
+  - `pytest tests/test_tuneables_usage_audit_helpers.py -q` -> `2 passed`
+  - `python scripts/tuneables_usage_audit.py` ->
+    - `sections=40`
+    - `keys=415`
+    - `hits=7551`
+    - `orphan_keys=0` (under current string-usage heuristic)
+    - `scanned_files=505`
+    - report: `benchmarks/out/alpha_start/tuneables_usage_audit_20260227_145330.json`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -766,6 +781,7 @@ Branch: feat/spark-alpha
 - replay evidence batch (`seeds=42,77`; `episodes=8,20`) -> `alpha_win_rate=1.0`, `promotion_pass_rate=1.0`, `runs=4`
 - alpha core pytest slice in readiness run -> `242 passed`
 - `python scripts/alpha_gap_audit.py` -> `advisory_files=14`, `tuneable_keys=415`, `lib_jsonl_refs=375`, `distillation_files=5`, `orchestrator_module_present=false`, `vibeforge_has_code_evolve_lane=false`
+- `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=415`, `hits=7551`, `orphan_keys=0`, `scanned_files=505`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `18`
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
