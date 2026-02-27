@@ -27,7 +27,7 @@ from lib.diagnostics import log_debug
 from lib.feature_flags import PREMIUM_TOOLS as _FF_PREMIUM
 from lib.feature_flags import chips_active as _ff_chips_active
 from lib.memory_capture import process_recent_memory_events
-from lib.noise_patterns import API_ERROR_STRINGS, GENERIC_ADVICE_STRINGS
+from lib.eidos_intake import ingest_eidos_update
 from lib.openclaw_paths import discover_openclaw_workspaces
 from lib.opportunity_scanner_adapter import scan_runtime_opportunities
 from lib.pattern_detection import process_pattern_events
@@ -841,10 +841,10 @@ def run_bridge_cycle(
                 if observations:
                     eidos_update = distill_eidos(observations)
                     if eidos_update:
-                        ok, reason = _is_valid_eidos_distillation(eidos_update)
-                        if ok:
+                        intake = _append_eidos_update(eidos_update)
+                        if intake.ok:
                             stats["eidos_distillation"] = eidos_update
-                            structured = _parse_structured_eidos(eidos_update)
+                            structured = intake.structured if isinstance(intake.structured, dict) else None
                             if isinstance(structured, dict):
                                 kept = [
                                     it for it in (structured.get("insights") or [])
@@ -858,12 +858,12 @@ def run_bridge_cycle(
                                         stats["eidos_priority_top"] = 0.0
                                     emo = top.get("emotional_signal") if isinstance(top.get("emotional_signal"), dict) else {}
                                     stats["eidos_emotion_top"] = str(emo.get("type") or "neutral")
-
-                            _append_eidos_update(eidos_update)
-                            log_debug("bridge_worker", "EIDOS distillation complete", None)
+                            if intake.duplicate:
+                                stats["eidos_distillation_note"] = "duplicate_skipped"
+                            log_debug("bridge_worker", f"EIDOS distillation complete ({intake.reason})", None)
                         else:
-                            stats["eidos_distillation_skipped"] = reason
-                            log_debug("bridge_worker", f"EIDOS distillation skipped ({reason})", None)
+                            stats["eidos_distillation_skipped"] = intake.reason
+                            log_debug("bridge_worker", f"EIDOS distillation skipped ({intake.reason})", None)
 
             # Periodic EIDOS pruning (every 50th cycle)
             if counter % 50 == 0:
@@ -1134,168 +1134,13 @@ def _write_llm_advisory(advisory: str) -> None:
         log_debug("bridge_worker", f"Failed to write advisory: {e}", None)
 
 
-_EIDOS_NOISE_PATTERNS = list(API_ERROR_STRINGS | GENERIC_ADVICE_STRINGS) + [
-    # EIDOS-specific tautologies not in shared set
-    "when repeated",
-    "without progress",
-]
-
-
-def _parse_structured_eidos(text: str) -> dict[str, Any] | None:
-    try:
-        obj = json.loads((text or "").strip())
-    except Exception:
-        return None
-    if not isinstance(obj, dict):
-        return None
-    insights = obj.get("insights")
-    if not isinstance(insights, list) or not insights:
-        return None
-    return obj
-
-
-def _is_valid_eidos_distillation(text: str) -> tuple[bool, str]:
-    t = (text or "").strip()
-    if len(t) < 24:
-        return False, "too_short"
-
-    low = t.lower()
-    for p in _EIDOS_NOISE_PATTERNS:
-        if p in low:
-            return False, f"noise:{p}"
-
-    structured = _parse_structured_eidos(t)
-    if structured is not None:
-        kept = [it for it in (structured.get("insights") or []) if isinstance(it, dict) and str(it.get("decision", "keep")).lower() == "keep"]
-        if not kept:
-            return False, "all_dropped"
-        return True, "ok_structured"
-
-    # Require either sentence-like shape or lightweight list structure.
-    if not any(ch in t for ch in (".", "\n", ":", ";")):
-        return False, "not_structured"
-
-    return True, "ok"
-
-
-def _append_eidos_update(update: str) -> None:
-    """Append EIDOS distillation to the EIDOS log."""
-    try:
-        ok, reason = _is_valid_eidos_distillation(update)
-        if not ok:
-            record_quarantine_item(
-                source="eidos",
-                stage="append_eidos_update",
-                reason=f"validator:{reason}",
-                text=update,
-            )
-            log_debug("bridge_worker", f"Skipped EIDOS distillation ({reason})", None)
-            return
-
-        # Run advisory quality transformer for deeper filtering
-        adv_quality_dict = {}
-        try:
-            from lib.distillation_transformer import transform_for_advisory
-            adv_q = transform_for_advisory(update, source="eidos")
-            adv_quality_dict = adv_q.to_dict()
-            if adv_q.suppressed:
-                record_quarantine_item(
-                    source="eidos",
-                    stage="append_eidos_update",
-                    reason=f"transformer_suppressed:{adv_q.suppression_reason}",
-                    text=update,
-                    advisory_quality=adv_quality_dict,
-                    advisory_readiness=adv_quality_dict.get("unified_score"),
-                )
-                log_debug("bridge_worker", f"EIDOS distillation suppressed by transformer ({adv_q.suppression_reason})", None)
-                return
-        except Exception:
-            pass  # Don't block EIDOS storage if transformer fails
-        advisory_readiness = float((adv_quality_dict or {}).get("unified_score") or 0.0)
-
-        eidos_file = Path.home() / ".spark" / "eidos_distillations.jsonl"
-        from datetime import datetime
-
-        structured = _parse_structured_eidos(update)
-        if structured is not None:
-            kept = []
-            for it in (structured.get("insights") or []):
-                if not isinstance(it, dict):
-                    continue
-                if str(it.get("decision", "keep")).lower() != "keep":
-                    continue
-                action = str(it.get("action") or "").strip()
-                # Reject short/empty actions and tautology patterns
-                if len(action) < 15:
-                    continue
-                action_low = action.lower()
-                if any(p in action_low for p in _EIDOS_NOISE_PATTERNS):
-                    continue
-                kept.append(it)
-            if not kept:
-                record_quarantine_item(
-                    source="eidos",
-                    stage="append_eidos_update",
-                    reason="no_keep_actions",
-                    text=update,
-                    advisory_quality=adv_quality_dict,
-                    advisory_readiness=advisory_readiness,
-                )
-                log_debug("bridge_worker", "All EIDOS insights filtered by quality gate", None)
-                return
-            summary_parts = []
-            for it in kept[:3]:
-                action = str(it.get("action") or "").strip()
-                context = str(it.get("usage_context") or "").strip()
-                if action:
-                    summary_parts.append(f"{action} ({context})" if context else action)
-            entry = {
-                "timestamp": datetime.now().isoformat(),
-                "schema": structured.get("schema") or "spark.eidos.v1",
-                "insights": kept[:3],
-                "distillation_summary": " | ".join(summary_parts)[:1200],
-                "refined_statement": adv_quality_dict.get("advisory_text") or " | ".join(summary_parts)[:1200],
-                "advisory_quality": adv_quality_dict,
-                "advisory_readiness": round(min(max(advisory_readiness, 0.0), 1.0), 4),
-            }
-        else:
-            entry = {
-                "timestamp": datetime.now().isoformat(),
-                "distillation": update,
-                "refined_statement": adv_quality_dict.get("advisory_text") or update,
-                "advisory_quality": adv_quality_dict,
-                "advisory_readiness": round(min(max(advisory_readiness, 0.0), 1.0), 4),
-            }
-
-        def _sig(item: dict) -> str:
-            txt = str(
-                item.get("refined_statement")
-                or item.get("distillation_summary")
-                or item.get("distillation")
-                or ""
-            ).strip().lower()
-            return " ".join(txt.split())
-
-        # Skip duplicate distillations emitted from repeated chip summaries.
-        new_sig = _sig(entry)
-        if new_sig and eidos_file.exists():
-            try:
-                tail = eidos_file.read_text(encoding="utf-8", errors="replace").splitlines()[-120:]
-                for line in reversed(tail):
-                    try:
-                        prev = json.loads(line)
-                    except Exception:
-                        continue
-                    if _sig(prev) == new_sig:
-                        log_debug("bridge_worker", "Skipped duplicate EIDOS distillation append", None)
-                        return
-            except Exception:
-                pass
-
-        with open(eidos_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
-    except Exception as e:
-        log_debug("bridge_worker", f"Failed to append EIDOS update: {e}", None)
+def _append_eidos_update(update: str):
+    """Append EIDOS distillation through canonical intake pipeline."""
+    return ingest_eidos_update(
+        update,
+        quarantine_stage="append_eidos_update",
+        quarantine_fn=record_quarantine_item,
+    )
 
 
 _GENERIC_ADVISORY_PHRASES = [
