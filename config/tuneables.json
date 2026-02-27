@@ -308,7 +308,21 @@
     "mode": "all",
     "adapters_enabled": [],
     "adapters_disabled": [],
-    "mind_limit": 2
+    "mind_limit": 2,
+    "compaction_enabled": true,
+    "compaction_cooldown_s": 21600,
+    "compaction_max_actions": 24,
+    "cognitive_actr_enabled": true,
+    "cognitive_actr_max_age_days": 180.0,
+    "cognitive_actr_min_activation": 0.2,
+    "cognitive_actr_max_deletes": 20,
+    "packet_compaction_enabled": true,
+    "packet_compaction_cooldown_s": 21600,
+    "packet_compaction_apply_limit": 12,
+    "packet_compaction_apply_updates": false,
+    "packet_compaction_stale_age_days": 7.0,
+    "packet_compaction_low_effectiveness": 0.25,
+    "packet_compaction_review_age_days": 2.0
   },
   "auto_tuner": {
     "enabled": true,

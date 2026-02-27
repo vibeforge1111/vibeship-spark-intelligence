@@ -244,3 +244,58 @@ def test_run_packet_compaction_applies_delete_and_update(monkeypatch):
     )
     assert cooldown["ran"] is False
     assert cooldown["reason"] == "cooldown"
+
+
+def test_periodic_compaction_shares_global_action_budget(monkeypatch):
+    class _DummyCognitive:
+        def dedupe_signals(self):
+            return {}
+
+        def dedupe_struggles(self):
+            return {}
+
+        def promote_to_wisdom(self):
+            return {"promoted": 0}
+
+    monkeypatch.setattr(
+        context_sync,
+        "_load_sync_unified_compaction_policy",
+        lambda: {
+            "enabled": True,
+            "cooldown_s": 300,
+            "max_actions": 6,
+            "cognitive": {
+                "enabled": True,
+                "max_age_days": 180.0,
+                "min_activation": 0.2,
+                "max_deletes": 20,
+            },
+            "packet": {
+                "enabled": True,
+                "cooldown_s": 300,
+                "apply_limit": 12,
+                "apply_updates": False,
+                "stale_age_days": 7.0,
+                "low_effectiveness": 0.25,
+                "review_age_days": 2.0,
+            },
+        },
+    )
+    monkeypatch.setattr(context_sync, "_load_compaction_state", lambda *_, **__: {})
+    monkeypatch.setattr(context_sync, "_save_compaction_state", lambda *_a, **_kw: None)
+
+    def _fake_actr(_cog, *, policy=None, budget_remaining=None):
+        assert int(budget_remaining or 0) == 6
+        return {"enabled": True, "ran": True, "deleted": 5, "actions_used": 5}
+
+    def _fake_packet(*, now_ts, state, policy=None, budget_remaining=None):
+        assert int(budget_remaining or 0) == 1
+        return {"enabled": True, "ran": True, "deleted": 1, "updated": 0, "actions_used": 1}
+
+    monkeypatch.setattr(context_sync, "_run_actr_compaction", _fake_actr)
+    monkeypatch.setattr(context_sync, "_run_packet_compaction", _fake_packet)
+
+    out = context_sync._run_periodic_compaction(_DummyCognitive())
+    assert out["ran"] is True
+    assert out["actions_used"] == 6
+    assert (out.get("policy") or {}).get("max_actions") == 6
