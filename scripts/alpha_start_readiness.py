@@ -18,6 +18,7 @@ DEFAULT_OUT_DIR = ROOT / "benchmarks" / "out" / "alpha_start"
 PRODUCTION_REPORT_SCRIPT = ROOT / "scripts" / "production_loop_report.py"
 REPLAY_EVIDENCE_SCRIPT = ROOT / "scripts" / "run_alpha_replay_evidence.py"
 DELTA_SCRIPT = ROOT / "scripts" / "advisory_controlled_delta.py"
+GAP_AUDIT_SCRIPT = ROOT / "scripts" / "alpha_gap_audit.py"
 
 DEFAULT_PYTEST_TARGETS = [
     "tests/test_spark_alpha_replay_arena.py",
@@ -148,6 +149,10 @@ def _render_markdown(report: Dict[str, Any]) -> str:
             "promotion_pass_rate",
             "alpha_win_rate",
             "winner",
+            "advisory_files",
+            "tuneable_keys",
+            "distillation_files",
+            "lib_jsonl_runtime_ext_refs",
             "report_json",
             "delta_out",
             "pytest_tail",
@@ -280,6 +285,53 @@ def _delta_stage(*, strict: bool, timeout_s: int, out_path: Path, rounds: int, l
     )
 
 
+def _gap_stage(
+    *,
+    strict: bool,
+    timeout_s: int,
+    max_advisory_files: int,
+    max_tuneable_keys: int,
+    max_distillation_files: int,
+    max_lib_jsonl_runtime_ext_refs: int,
+) -> StageResult:
+    cmd = [sys.executable, str(GAP_AUDIT_SCRIPT)]
+    res = _run_command(cmd, timeout_s=timeout_s)
+    details: Dict[str, Any] = {}
+    ok = res["returncode"] == 0
+    try:
+        payload = _parse_json_payload(str(res["stdout"]))
+        counts = payload.get("counts") or {}
+        details.update(
+            {
+                "advisory_files": int(counts.get("advisory_files", 0) or 0),
+                "tuneable_keys": int(counts.get("tuneable_keys", 0) or 0),
+                "distillation_files": int(counts.get("distillation_files", 0) or 0),
+                "lib_jsonl_runtime_ext_refs": int(counts.get("lib_jsonl_runtime_ext_refs", 0) or 0),
+                "report_json": str(payload.get("report_json") or ""),
+                "report_md": str(payload.get("report_md") or ""),
+            }
+        )
+    except Exception as exc:
+        details["parse_error"] = str(exc)
+
+    if strict:
+        ok = ok and int(details.get("advisory_files", 10**9)) <= int(max_advisory_files)
+        ok = ok and int(details.get("tuneable_keys", 10**9)) <= int(max_tuneable_keys)
+        ok = ok and int(details.get("distillation_files", 10**9)) <= int(max_distillation_files)
+        ok = ok and int(details.get("lib_jsonl_runtime_ext_refs", 10**9)) <= int(max_lib_jsonl_runtime_ext_refs)
+
+    return StageResult(
+        name="alpha_gap_audit",
+        ok=ok,
+        returncode=int(res["returncode"]),
+        duration_s=float(res["duration_s"]),
+        command=cmd,
+        stdout=str(res["stdout"]),
+        stderr=str(res["stderr"]),
+        details=details,
+    )
+
+
 def _pytest_stage(*, strict: bool, timeout_s: int, targets: List[str]) -> StageResult:
     cmd = [sys.executable, "-m", "pytest", *targets, "-q"]
     res = _run_command(cmd, timeout_s=timeout_s)
@@ -350,6 +402,30 @@ def main() -> int:
         default=1.0,
         help="Strict replay minimum alpha win rate [0..1].",
     )
+    ap.add_argument(
+        "--max-advisory-files",
+        type=int,
+        default=5,
+        help="Strict alpha-gap max advisory module files.",
+    )
+    ap.add_argument(
+        "--max-tuneable-keys",
+        type=int,
+        default=300,
+        help="Strict alpha-gap max tuneable keys.",
+    )
+    ap.add_argument(
+        "--max-distillation-files",
+        type=int,
+        default=3,
+        help="Strict alpha-gap max distillation file count.",
+    )
+    ap.add_argument(
+        "--max-lib-jsonl-runtime-ext-refs",
+        type=int,
+        default=200,
+        help="Strict alpha-gap max runtime lib external .jsonl references.",
+    )
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -382,6 +458,16 @@ def main() -> int:
             label=f"{args.delta_label}_{run_id}",
         )
     )
+    stages.append(
+        _gap_stage(
+            strict=bool(args.strict),
+            timeout_s=int(args.timeout_s),
+            max_advisory_files=int(args.max_advisory_files),
+            max_tuneable_keys=int(args.max_tuneable_keys),
+            max_distillation_files=int(args.max_distillation_files),
+            max_lib_jsonl_runtime_ext_refs=int(args.max_lib_jsonl_runtime_ext_refs),
+        )
+    )
     stages.append(_pytest_stage(strict=bool(args.strict), timeout_s=int(args.timeout_s), targets=pytest_targets))
 
     stage_dicts = [stage.as_dict() for stage in stages]
@@ -391,6 +477,11 @@ def main() -> int:
         "replay_out_dir": str(replay_out_dir),
         "delta_out": str(delta_out),
     }
+    gap_details = (stage_dicts[3].get("details") or {}) if len(stage_dicts) > 3 else {}
+    if gap_details.get("report_json"):
+        artifacts["alpha_gap_report_json"] = str(gap_details.get("report_json"))
+    if gap_details.get("report_md"):
+        artifacts["alpha_gap_report_md"] = str(gap_details.get("report_md"))
     replay_details = (stage_dicts[1].get("details") or {}) if len(stage_dicts) > 1 else {}
     if replay_details.get("report_json"):
         artifacts["replay_report_json"] = str(replay_details.get("report_json"))
@@ -411,6 +502,10 @@ def main() -> int:
             "delta_rounds": int(args.delta_rounds),
             "min_promotion_pass_rate": float(args.min_promotion_pass_rate),
             "min_alpha_win_rate": float(args.min_alpha_win_rate),
+            "max_advisory_files": int(args.max_advisory_files),
+            "max_tuneable_keys": int(args.max_tuneable_keys),
+            "max_distillation_files": int(args.max_distillation_files),
+            "max_lib_jsonl_runtime_ext_refs": int(args.max_lib_jsonl_runtime_ext_refs),
             "pytest_targets_count": int(len(pytest_targets)),
         },
     }
@@ -438,4 +533,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

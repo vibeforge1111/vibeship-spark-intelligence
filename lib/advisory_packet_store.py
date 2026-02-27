@@ -2843,6 +2843,10 @@ def invalidate_packet(packet_id: str, reason: str = "manual") -> bool:
         index["packet_meta"][packet_id]["invalidate_reason"] = reason[:200]
     _save_index(index)
     try:
+        _spine_upsert_packet(packet)
+    except Exception:
+        pass
+    try:
         if _obsidian_enabled():
             _export_packet_to_obsidian(packet, force=True)
     except Exception:

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from lib.advisory_packet_store import INDEX_FILE, PACKET_DIR, get_packet_store_config
+from lib.packet_spine import upsert_packet as upsert_packet_spine
 
 
 def _load_json(path: Path) -> Dict[str, Any]:
@@ -106,6 +107,7 @@ def apply_refresh(plan: Dict[str, Any]) -> Dict[str, Any]:
 
     updated = 0
     updated_packets = 0
+    synced_spine_rows = 0
     for item in candidates:
         packet_id = str(item.get("packet_id") or "")
         target = float(item.get("target_fresh_until_ts") or 0.0)
@@ -127,6 +129,30 @@ def apply_refresh(plan: Dict[str, Any]) -> Dict[str, Any]:
             packet["ttl_s"] = ttl_s
             packet_path.write_text(json.dumps(packet, indent=2, ensure_ascii=False), encoding="utf-8")
             updated_packets += 1
+        else:
+            packet = {
+                "packet_id": packet_id,
+                "project_key": str((row or {}).get("project_key") or ""),
+                "session_context_key": str((row or {}).get("session_context_key") or ""),
+                "tool_name": str((row or {}).get("tool_name") or ""),
+                "intent_family": str((row or {}).get("intent_family") or ""),
+                "task_plane": str((row or {}).get("task_plane") or ""),
+                "invalidated": bool((row or {}).get("invalidated")),
+                "fresh_until_ts": float(target),
+                "updated_ts": float((row or {}).get("updated_ts", 0.0) or 0.0),
+                "effectiveness_score": float((row or {}).get("effectiveness_score", 0.5) or 0.5),
+                "read_count": int((row or {}).get("read_count", 0) or 0),
+                "usage_count": int((row or {}).get("usage_count", 0) or 0),
+                "emit_count": int((row or {}).get("emit_count", 0) or 0),
+                "deliver_count": int((row or {}).get("deliver_count", 0) or 0),
+                "source_summary": list((row or {}).get("source_summary") or []),
+                "category_summary": list((row or {}).get("category_summary") or []),
+            }
+        try:
+            upsert_packet_spine(packet)
+            synced_spine_rows += 1
+        except Exception:
+            pass
 
     index_path.parent.mkdir(parents=True, exist_ok=True)
     index_path.write_text(json.dumps(index, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -135,6 +161,7 @@ def apply_refresh(plan: Dict[str, Any]) -> Dict[str, Any]:
         "applied": True,
         "updated_meta_rows": updated,
         "updated_packet_files": updated_packets,
+        "synced_spine_rows": synced_spine_rows,
         "backup": str(backup),
         "index_path": str(index_path),
     }

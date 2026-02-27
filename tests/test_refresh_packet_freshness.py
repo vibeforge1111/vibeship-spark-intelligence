@@ -39,7 +39,7 @@ def test_plan_refresh_selects_recent_stale_packets(tmp_path: Path):
     assert plan["candidates"][0]["packet_id"] == "p_recent"
 
 
-def test_apply_refresh_updates_index_and_packet_file(tmp_path: Path):
+def test_apply_refresh_updates_index_and_packet_file(monkeypatch, tmp_path: Path):
     now = time.time()
     index = tmp_path / "index.json"
     packet_dir = tmp_path / "packets"
@@ -61,12 +61,21 @@ def test_apply_refresh_updates_index_and_packet_file(tmp_path: Path):
         encoding="utf-8",
     )
 
+    calls = []
+
+    def _fake_upsert(payload):
+        calls.append(str((payload or {}).get("packet_id") or ""))
+
+    monkeypatch.setattr(refresh, "upsert_packet_spine", _fake_upsert)
+
     plan = refresh.plan_refresh(index_path=index, packet_dir=packet_dir, ttl_s=1800, max_age_s=7200)
     result = refresh.apply_refresh(plan)
 
     assert result["applied"] is True
     assert result["updated_meta_rows"] == 1
     assert result["updated_packet_files"] == 1
+    assert result["synced_spine_rows"] == 1
+    assert calls == ["p1"]
 
     new_index = json.loads(index.read_text(encoding="utf-8"))
     fresh_until = float(new_index["packet_meta"]["p1"]["fresh_until_ts"])
