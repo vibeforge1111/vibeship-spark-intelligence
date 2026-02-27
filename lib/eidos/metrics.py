@@ -13,6 +13,7 @@ Supporting Metrics:
 - Distillation Quality: Rules that proved useful when reused
 """
 
+import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,6 +80,13 @@ class WeeklyReport:
     new_playbooks: int
 
 
+def _sqlite_timeout_s() -> float:
+    try:
+        return max(0.5, float(os.getenv("SPARK_SQLITE_TIMEOUT_S", "5.0") or 5.0))
+    except Exception:
+        return 5.0
+
+
 class MetricsCalculator:
     """
     Calculate EIDOS intelligence metrics from the database.
@@ -95,7 +103,7 @@ class MetricsCalculator:
 
         (Episodes where reused memory led to success) / (Total completed episodes)
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             row = conn.execute("""
                 WITH episode_memory_usage AS (
                     SELECT
@@ -136,7 +144,7 @@ class MetricsCalculator:
         """
         Calculate REUSE RATE - % of steps that cited retrieved memory.
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             row = conn.execute("""
                 SELECT
                     COUNT(*) as total_steps,
@@ -166,7 +174,7 @@ class MetricsCalculator:
         """
         Calculate MEMORY EFFECTIVENESS - win rate with memory vs without.
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             # With memory
             with_row = conn.execute("""
                 SELECT
@@ -216,7 +224,7 @@ class MetricsCalculator:
         """
         Calculate LOOP SUPPRESSION - average retries before success.
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             row = conn.execute("""
                 SELECT
                     ROUND(AVG(retry_count), 1) as avg_retries,
@@ -243,7 +251,7 @@ class MetricsCalculator:
         """
         Calculate DISTILLATION QUALITY by type.
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             rows = conn.execute("""
                 SELECT
                     d.type,
@@ -279,7 +287,7 @@ class MetricsCalculator:
         """
         Generate WEEKLY INTELLIGENCE REPORT.
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             # Episodes this week
             ep_row = conn.execute("""
                 SELECT
@@ -392,3 +400,4 @@ def get_metrics_calculator(db_path: Optional[str] = None) -> MetricsCalculator:
     if _calculator is None or (db_path and _calculator.db_path != db_path):
         _calculator = MetricsCalculator(db_path)
     return _calculator
+

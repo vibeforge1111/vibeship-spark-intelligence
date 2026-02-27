@@ -35,6 +35,7 @@ META_RALPH_PATH = SPARK_DIR / "meta_ralph.json"
 EIDOS_DB_PATH = SPARK_DIR / "eidos.db"
 TUNE_LOG_PATH = SPARK_DIR / "auto_tune_log.jsonl"
 TUNEABLE_HISTORY_DIR = SPARK_DIR / "tuneable_history"
+SOURCE_EFFECTIVENESS_DECAY_SECONDS = 14 * 24 * 3600
 
 
 @dataclass
@@ -285,7 +286,22 @@ class AutoTuner:
     def get_effectiveness_data(self) -> Dict[str, Dict[str, int]]:
         """Read per-source effectiveness from the advisor."""
         data = _read_json(EFFECTIVENESS_PATH)
-        return data.get("by_source", {})
+        now = time.time()
+        out: Dict[str, Dict[str, int]] = {}
+        for source, stats in (data.get("by_source", {}) or {}).items():
+            if not isinstance(stats, dict):
+                continue
+            total = int(stats.get("total", 0) or 0)
+            helpful = int(stats.get("helpful", 0) or 0)
+            last_ts = float(stats.get("last_ts", 0.0) or 0.0)
+            if total > 0 and last_ts > 0:
+                age = max(0.0, now - last_ts)
+                decay = 0.5 ** (age / max(1.0, float(SOURCE_EFFECTIVENESS_DECAY_SECONDS)))
+                total = int(round(total * decay))
+                helpful = int(round(helpful * decay))
+            helpful = min(helpful, total)
+            out[str(source)] = {"total": max(0, total), "helpful": max(0, helpful)}
+        return out
 
     def measure_system_health(self) -> SystemHealth:
         """Read all data sources and compute comprehensive system health."""
@@ -300,7 +316,7 @@ class AutoTuner:
             health.total_followed / max(health.total_advice_given, 1)
         )
 
-        by_source = eff.get("by_source", {})
+        by_source = self.get_effectiveness_data()
         source_rates: Dict[str, float] = {}
         for src, stats in by_source.items():
             total = int(stats.get("total", 0))

@@ -1,4 +1,4 @@
-﻿"""
+"""
 EIDOS Store: SQLite Persistence Layer
 
 The canonical memory - simple, inspectable, debuggable.
@@ -59,6 +59,13 @@ def _safe_sql_identifier(name: str) -> Optional[str]:
     if not ident or _SQL_IDENTIFIER_RE.fullmatch(ident) is None:
         return None
     return ident
+
+
+def _sqlite_timeout_s() -> float:
+    try:
+        return max(0.5, float(os.getenv("SPARK_SQLITE_TIMEOUT_S", "5.0") or 5.0))
+    except Exception:
+        return 5.0
 
 
 def _quality_score(payload: Any) -> float:
@@ -141,7 +148,7 @@ class EidosStore:
 
     def _init_db(self):
         """Initialize database schema."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.executescript("""
                 -- Episodes
                 CREATE TABLE IF NOT EXISTS episodes (
@@ -306,7 +313,7 @@ class EidosStore:
 
     def save_episode(self, episode: Episode) -> str:
         """Save an episode to the database."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO episodes (
                     episode_id, goal, success_criteria, constraints,
@@ -335,7 +342,7 @@ class EidosStore:
 
     def get_episode(self, episode_id: str) -> Optional[Episode]:
         """Get an episode by ID."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM episodes WHERE episode_id = ?",
@@ -366,7 +373,7 @@ class EidosStore:
 
     def get_recent_episodes(self, limit: int = 10) -> List[Episode]:
         """Get most recent episodes."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT * FROM episodes ORDER BY start_ts DESC LIMIT ?",
@@ -402,7 +409,7 @@ class EidosStore:
         """Save a step to the database."""
         if not step.trace_id:
             step.trace_id = self._fallback_trace_id(step)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO steps (
                     step_id, episode_id, trace_id, intent, decision, alternatives, assumptions,
@@ -447,7 +454,7 @@ class EidosStore:
         evidence_map: Dict[str, str] = {}
         if evidence_db_path:
             try:
-                with sqlite3.connect(evidence_db_path) as conn:
+                with sqlite3.connect(evidence_db_path, timeout=_sqlite_timeout_s()) as conn:
                     for row in conn.execute(
                         "SELECT step_id, trace_id FROM evidence WHERE trace_id IS NOT NULL AND trace_id != ''"
                     ):
@@ -459,7 +466,7 @@ class EidosStore:
 
         updated = 0
         missing = 0
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             rows = conn.execute(
                 "SELECT step_id, episode_id, created_at FROM steps WHERE trace_id IS NULL OR trace_id = ''"
             ).fetchall()
@@ -484,7 +491,7 @@ class EidosStore:
 
     def get_step(self, step_id: str) -> Optional[Step]:
         """Get a step by ID."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM steps WHERE step_id = ?",
@@ -498,7 +505,7 @@ class EidosStore:
 
     def get_episode_steps(self, episode_id: str) -> List[Step]:
         """Get all steps for an episode."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT * FROM steps WHERE episode_id = ? ORDER BY created_at",
@@ -509,7 +516,7 @@ class EidosStore:
 
     def get_recent_steps(self, limit: int = 50) -> List[Step]:
         """Get most recent steps across all episodes."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT * FROM steps ORDER BY created_at DESC LIMIT ?",
@@ -557,7 +564,7 @@ class EidosStore:
         """Save a distillation to the database with duplicate-statement collapsing."""
         distillation = _hydrate_distillation_advisory_projection(distillation)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             target_norm = _normalize_distillation_statement(distillation.statement)
             existing = None
@@ -685,7 +692,7 @@ class EidosStore:
 
     def get_distillation(self, distillation_id: str) -> Optional[Distillation]:
         """Get a distillation by ID."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM distillations WHERE distillation_id = ?",
@@ -703,7 +710,7 @@ class EidosStore:
         limit: int = 20
     ) -> List[Distillation]:
         """Get distillations of a specific type."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT * FROM distillations
@@ -720,7 +727,7 @@ class EidosStore:
         limit: int = 20
     ) -> List[Distillation]:
         """Get distillations above confidence threshold."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT * FROM distillations
@@ -734,7 +741,7 @@ class EidosStore:
     def get_distillations_for_revalidation(self) -> List[Distillation]:
         """Get distillations due for revalidation."""
         now = time.time()
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT * FROM distillations
@@ -750,7 +757,7 @@ class EidosStore:
         limit: int = 20
     ) -> List[Distillation]:
         """Get distillations that match a trigger pattern."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             # Search in JSON triggers array
             rows = conn.execute(
@@ -768,7 +775,7 @@ class EidosStore:
         limit: int = 20
     ) -> List[Distillation]:
         """Get distillations for a specific domain."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT * FROM distillations
@@ -781,7 +788,7 @@ class EidosStore:
 
     def get_all_distillations(self, limit: int = 100) -> List[Distillation]:
         """Get all distillations ordered by confidence."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT * FROM distillations
@@ -793,7 +800,7 @@ class EidosStore:
 
     def record_distillation_retrieval(self, distillation_id: str):
         """Record that a distillation was retrieved."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.execute(
                 """UPDATE distillations
                    SET times_retrieved = times_retrieved + 1
@@ -811,7 +818,7 @@ class EidosStore:
         if not id_prefix or len(id_prefix) < 6:
             return None
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
                 row = conn.execute(
                     "SELECT distillation_id FROM distillations WHERE distillation_id LIKE ?",
                     (id_prefix + "%",)
@@ -828,7 +835,7 @@ class EidosStore:
         - Negative: confidence decays (accelerates with high contradiction rate)
         - Below 0.1 after 10+ uses: effectively dead, prunable
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             if helped:
                 conn.execute(
                     """UPDATE distillations
@@ -869,7 +876,7 @@ class EidosStore:
                     boost = min(0.05, headroom * 0.15)
                     new_conf = min(1.0, current_conf + boost)
                 else:
-                    # Decay confidence â€” faster when contradiction rate is high
+                    # Decay confidence — faster when contradiction rate is high
                     contra_rate = contra / max(total, 1)
                     if contra_rate > 0.8 and total >= 10:
                         new_conf = max(0.05, current_conf - 0.05)
@@ -936,7 +943,7 @@ class EidosStore:
         pruned = {"dead_playbooks": 0, "low_success": 0, "corrupted": 0}
         one_day_ago = time.time() - 86400
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             # 1. Dead playbooks
             cur = conn.execute(
                 "DELETE FROM distillations WHERE times_retrieved = 0 "
@@ -1009,7 +1016,7 @@ class EidosStore:
         purge_ids: List[str] = []
         archive_rows: List[Dict[str, Any]] = []
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("SELECT * FROM distillations").fetchall()
             scanned = len(rows)
@@ -1119,7 +1126,7 @@ class EidosStore:
         errors = 0
         details: List[Dict[str, Any]] = []
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("SELECT * FROM distillations").fetchall()
 
@@ -1191,7 +1198,7 @@ class EidosStore:
 
     def save_policy(self, policy: Policy) -> str:
         """Save a policy to the database."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO policies (
                     policy_id, statement, scope, priority, source, created_at
@@ -1209,7 +1216,7 @@ class EidosStore:
 
     def get_policy(self, policy_id: str) -> Optional[Policy]:
         """Get a policy by ID."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM policies WHERE policy_id = ?",
@@ -1227,7 +1234,7 @@ class EidosStore:
         limit: int = 50
     ) -> List[Policy]:
         """Get policies by scope."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT * FROM policies
@@ -1240,7 +1247,7 @@ class EidosStore:
 
     def get_all_policies(self) -> List[Policy]:
         """Get all policies ordered by priority."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT * FROM policies ORDER BY priority DESC"
@@ -1263,7 +1270,7 @@ class EidosStore:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get database statistics."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             episode_count = conn.execute("SELECT COUNT(*) FROM episodes").fetchone()[0]
             step_count = conn.execute("SELECT COUNT(*) FROM steps").fetchone()[0]
             distillation_count = conn.execute("SELECT COUNT(*) FROM distillations").fetchone()[0]
@@ -1312,7 +1319,7 @@ class EidosStore:
         removed_ids: List[str] = []
         preview: List[str] = []
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             rows = conn.execute(
                 "SELECT distillation_id, statement FROM distillations"
             ).fetchall()
@@ -1354,4 +1361,5 @@ def purge_telemetry_distillations(dry_run: bool = False, max_preview: int = 20) 
     """Purge telemetry/primitive distillations from the EIDOS store."""
     store = get_store()
     return store.purge_telemetry_distillations(dry_run=dry_run, max_preview=max_preview)
+
 

@@ -19,6 +19,7 @@ Retention Policy:
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import time
@@ -61,6 +62,13 @@ def _safe_sql_identifier(name: str) -> Optional[str]:
     if not ident or _SQL_IDENTIFIER_RE.fullmatch(ident) is None:
         return None
     return ident
+
+
+def _sqlite_timeout_s() -> float:
+    try:
+        return max(0.5, float(os.getenv("SPARK_SQLITE_TIMEOUT_S", "5.0") or 5.0))
+    except Exception:
+        return 5.0
 
 
 @dataclass
@@ -158,7 +166,7 @@ class EvidenceStore:
 
     def _init_db(self):
         """Initialize database schema."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             # First, create table WITHOUT trace_id index (for compatibility with old DBs)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS evidence (
@@ -218,7 +226,7 @@ class EvidenceStore:
         try:
             from .store import get_store
             store = get_store()
-            with sqlite3.connect(store.db_path) as conn:
+            with sqlite3.connect(store.db_path, timeout=_sqlite_timeout_s()) as conn:
                 row = conn.execute(
                     "SELECT trace_id FROM steps WHERE step_id = ?",
                     (step_id,),
@@ -251,7 +259,7 @@ class EvidenceStore:
             compressed = True
             byte_size = len(compressed_bytes)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO evidence (
                     evidence_id, step_id, trace_id, type, tool_name,
@@ -288,7 +296,7 @@ class EvidenceStore:
         step_map: Dict[str, str] = {}
         if steps_db_path:
             try:
-                with sqlite3.connect(steps_db_path) as conn:
+                with sqlite3.connect(steps_db_path, timeout=_sqlite_timeout_s()) as conn:
                     for row in conn.execute(
                         "SELECT step_id, trace_id FROM steps WHERE trace_id IS NOT NULL AND trace_id != ''"
                     ):
@@ -300,7 +308,7 @@ class EvidenceStore:
 
         updated = 0
         missing = 0
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             rows = conn.execute(
                 "SELECT evidence_id, step_id FROM evidence WHERE trace_id IS NULL OR trace_id = ''"
             ).fetchall()
@@ -324,7 +332,7 @@ class EvidenceStore:
 
     def get(self, evidence_id: str) -> Optional[Evidence]:
         """Get evidence by ID."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM evidence WHERE evidence_id = ?",
@@ -338,7 +346,7 @@ class EvidenceStore:
 
     def get_for_step(self, step_id: str) -> List[Evidence]:
         """Get all evidence for a step."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT * FROM evidence WHERE step_id = ? ORDER BY created_at",
@@ -353,7 +361,7 @@ class EvidenceStore:
         limit: int = 50
     ) -> List[Evidence]:
         """Get recent evidence of a specific type."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT * FROM evidence
@@ -396,7 +404,7 @@ class EvidenceStore:
 
     def flag_permanent(self, evidence_id: str, reason: str = "user_flagged"):
         """Mark evidence as permanent (no expiry)."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.execute("""
                 UPDATE evidence
                 SET expires_at = NULL,
@@ -412,7 +420,7 @@ class EvidenceStore:
         reason: str = ""
     ):
         """Extend retention period for evidence."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.execute("""
                 UPDATE evidence
                 SET expires_at = COALESCE(expires_at, strftime('%s', 'now')) + ?,
@@ -424,7 +432,7 @@ class EvidenceStore:
     def cleanup_expired(self) -> int:
         """Remove expired evidence. Returns count of deleted items."""
         now = time.time()
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             cursor = conn.execute("""
                 DELETE FROM evidence
                 WHERE expires_at IS NOT NULL
@@ -435,7 +443,7 @@ class EvidenceStore:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get storage statistics."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             total = conn.execute("SELECT COUNT(*) FROM evidence").fetchone()[0]
             total_bytes = conn.execute(
                 "SELECT COALESCE(SUM(byte_size), 0) FROM evidence"
@@ -522,3 +530,4 @@ def get_evidence_store(db_path: Optional[str] = None) -> EvidenceStore:
     if _evidence_store is None or (db_path and _evidence_store.db_path != db_path):
         _evidence_store = EvidenceStore(db_path)
     return _evidence_store
+

@@ -19,6 +19,7 @@ Deferred Validation Reasons:
 - deferred:async_process (4h max)
 """
 
+import os
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -69,6 +70,13 @@ DEFERRAL_LIMITS = {
 
 # Default max deferral
 DEFAULT_MAX_DEFERRAL = 24 * 3600  # 24 hours
+
+
+def _sqlite_timeout_s() -> float:
+    try:
+        return max(0.5, float(os.getenv("SPARK_SQLITE_TIMEOUT_S", "5.0") or 5.0))
+    except Exception:
+        return 5.0
 
 
 @dataclass
@@ -178,7 +186,7 @@ class DeferredValidationTracker:
 
     def _init_db(self):
         """Initialize deferred validations table."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS deferred_validations (
                     step_id TEXT PRIMARY KEY,
@@ -220,7 +228,7 @@ class DeferredValidationTracker:
             max_wait_seconds=max_wait
         )
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO deferred_validations
                 (step_id, reason, deferred_at, max_wait_seconds)
@@ -237,7 +245,7 @@ class DeferredValidationTracker:
     ) -> bool:
         """Mark a deferred validation as resolved."""
         now = time.time()
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             cursor = conn.execute("""
                 UPDATE deferred_validations
                 SET resolved = 1,
@@ -250,7 +258,7 @@ class DeferredValidationTracker:
 
     def get_overdue(self) -> List[DeferredValidation]:
         """Get all overdue deferred validations."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("""
                 SELECT * FROM deferred_validations
@@ -262,7 +270,7 @@ class DeferredValidationTracker:
 
     def get_pending(self) -> List[DeferredValidation]:
         """Get all pending (not yet overdue) deferred validations."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("""
                 SELECT * FROM deferred_validations
@@ -274,7 +282,7 @@ class DeferredValidationTracker:
 
     def mark_reminder_sent(self, step_id: str):
         """Mark that a reminder was sent for this deferral."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             conn.execute("""
                 UPDATE deferred_validations
                 SET reminder_sent = 1
@@ -297,7 +305,7 @@ class DeferredValidationTracker:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get deferred validation statistics."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=_sqlite_timeout_s()) as conn:
             total = conn.execute(
                 "SELECT COUNT(*) FROM deferred_validations"
             ).fetchone()[0]
@@ -345,3 +353,4 @@ def get_deferred_tracker(db_path: Optional[str] = None) -> DeferredValidationTra
     if _tracker is None or (db_path and _tracker.db_path != db_path):
         _tracker = DeferredValidationTracker(db_path)
     return _tracker
+

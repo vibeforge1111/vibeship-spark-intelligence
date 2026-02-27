@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lib.noise_classifier import NoiseDecision, classify, summarize_shadow_disagreements
+from lib.noise_classifier import NoiseDecision, classify, enforce_enabled, summarize_shadow_disagreements
 
 
 def test_classify_flags_operational_sequences():
@@ -37,3 +37,8 @@ def test_shadow_summary_counts_by_module():
     summary = summarize_shadow_disagreements(rows)
     assert summary["meta_ralph._is_primitive"] == 2
     assert summary["cognitive_learner._is_noise_insight"] == 1
+
+
+def test_enforce_enabled_defaults_true(monkeypatch):
+    monkeypatch.delenv("SPARK_NOISE_CLASSIFIER_ENFORCE", raising=False)
+    assert enforce_enabled() is True

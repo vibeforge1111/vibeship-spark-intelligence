@@ -62,7 +62,8 @@ def runtime_json_fallback_enabled() -> bool:
 def _connect() -> sqlite3.Connection:
     path = _db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    timeout_s = float(os.getenv("SPARK_SQLITE_TIMEOUT_S", "5.0") or 5.0)
+    conn = sqlite3.connect(path, timeout=max(0.5, timeout_s))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn

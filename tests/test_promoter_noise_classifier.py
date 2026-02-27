@@ -6,10 +6,10 @@ import lib.noise_classifier as noise_classifier
 from lib.promoter import is_operational_insight
 
 
-def test_promoter_operational_shadow_default_uses_legacy(monkeypatch, tmp_path):
+def test_promoter_operational_shadow_mode_uses_legacy_when_enforce_disabled(monkeypatch, tmp_path):
     shadow_log = tmp_path / "noise_shadow.jsonl"
     monkeypatch.setattr(noise_classifier, "SHADOW_LOG", shadow_log)
-    monkeypatch.delenv("SPARK_NOISE_CLASSIFIER_ENFORCE", raising=False)
+    monkeypatch.setenv("SPARK_NOISE_CLASSIFIER_ENFORCE", "0")
 
     # Legacy promoter filter allows this; unified marks it as markdown telemetry.
     result = is_operational_insight("## Session History")
@@ -32,10 +32,20 @@ def test_promoter_operational_enforce_uses_unified(monkeypatch, tmp_path):
     assert result is True
 
 
-def test_promoter_operational_agreement_does_not_log(monkeypatch, tmp_path):
+def test_promoter_operational_default_enforces_unified(monkeypatch, tmp_path):
     shadow_log = tmp_path / "noise_shadow.jsonl"
     monkeypatch.setattr(noise_classifier, "SHADOW_LOG", shadow_log)
     monkeypatch.delenv("SPARK_NOISE_CLASSIFIER_ENFORCE", raising=False)
+
+    result = is_operational_insight("## Session History")
+
+    assert result is True
+
+
+def test_promoter_operational_agreement_does_not_log(monkeypatch, tmp_path):
+    shadow_log = tmp_path / "noise_shadow.jsonl"
+    monkeypatch.setattr(noise_classifier, "SHADOW_LOG", shadow_log)
+    monkeypatch.setenv("SPARK_NOISE_CLASSIFIER_ENFORCE", "0")
 
     result = is_operational_insight("Sequence 'Bash -> Edit -> Read' worked well")
 
@@ -46,7 +56,7 @@ def test_promoter_operational_agreement_does_not_log(monkeypatch, tmp_path):
 def test_promoter_treats_user_question_as_operational(monkeypatch, tmp_path):
     shadow_log = tmp_path / "noise_shadow.jsonl"
     monkeypatch.setattr(noise_classifier, "SHADOW_LOG", shadow_log)
-    monkeypatch.delenv("SPARK_NOISE_CLASSIFIER_ENFORCE", raising=False)
+    monkeypatch.setenv("SPARK_NOISE_CLASSIFIER_ENFORCE", "0")
 
     result = is_operational_insight("What would be your best recommendation here?")
 

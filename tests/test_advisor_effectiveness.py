@@ -55,6 +55,26 @@ def test_effectiveness_normalization_clamps_invalid_counters(monkeypatch, tmp_pa
     assert advisor.effectiveness["by_source"]["cognitive"]["helpful"] == 1
 
 
+def test_source_effectiveness_stale_rows_decay_to_zero(monkeypatch, tmp_path):
+    _patch_advisor_paths(monkeypatch, tmp_path)
+    stale_ts = time.time() - (advisor_mod.SOURCE_EFFECTIVENESS_STALE_SECONDS + 3600)
+    advisor_mod.EFFECTIVENESS_FILE.write_text(
+        json.dumps(
+            {
+                "by_source": {
+                    "cognitive": {"total": 50, "helpful": 25, "last_ts": stale_ts},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    advisor = advisor_mod.SparkAdvisor()
+    bucket = advisor.effectiveness["by_source"]["cognitive"]
+    assert bucket["total"] == 0
+    assert bucket["helpful"] == 0
+
+
 def test_report_action_outcome_dedupes_followed_counts(monkeypatch, tmp_path):
     _patch_advisor_paths(monkeypatch, tmp_path)
     advisor = advisor_mod.SparkAdvisor()
@@ -80,6 +100,7 @@ def test_report_action_outcome_dedupes_followed_counts(monkeypatch, tmp_path):
     advisor.report_action_outcome("Edit", success=True, advice_was_relevant=True)
     assert advisor.effectiveness["total_followed"] == 3
     assert advisor.effectiveness["total_helpful"] == 3
+    assert advisor.effectiveness["by_source"]["cognitive"]["last_ts"] > 0
 
     # Same advice IDs should not inflate aggregate counters on repeated reports.
     advisor.report_action_outcome("Edit", success=True, advice_was_relevant=True)

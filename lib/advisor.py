@@ -108,6 +108,8 @@ MIN_RANK_SCORE = 0.35
 CATEGORY_EFFECTIVENESS_MIN_SURFACE = 6
 CATEGORY_EFFECTIVENESS_DECAY_SECONDS = 14 * 24 * 3600
 CATEGORY_EFFECTIVENESS_STALE_SECONDS = 180 * 24 * 3600
+SOURCE_EFFECTIVENESS_DECAY_SECONDS = 14 * 24 * 3600
+SOURCE_EFFECTIVENESS_STALE_SECONDS = 180 * 24 * 3600
 AUTO_TUNER_SOURCE_BOOSTS: Dict[str, float] = {}
 MIND_MAX_STALE_SECONDS: float = 0.0
 MIND_STALE_ALLOW_IF_EMPTY: bool = True
@@ -1173,6 +1175,58 @@ class SparkAdvisor:
         bucket["quality_count"] = max(0, bucket["quality_count"])
         return bucket
 
+    @staticmethod
+    def _coerce_source_bucket(raw: Any) -> Dict[str, Any]:
+        """Normalize per-source effectiveness bucket into a stable schema."""
+        def _as_int(value: Any, default: int = 0) -> int:
+            try:
+                return max(0, int(value))
+            except Exception:
+                return default
+
+        def _as_float(value: Any, default: float = 0.0) -> float:
+            try:
+                return float(value)
+            except Exception:
+                return default
+
+        bucket = {
+            "total": 0,
+            "helpful": 0,
+            "last_ts": 0.0,
+        }
+        if isinstance(raw, dict):
+            bucket["total"] = _as_int(raw.get("total", 0))
+            bucket["helpful"] = _as_int(raw.get("helpful", 0))
+            bucket["last_ts"] = _as_float(raw.get("last_ts", 0.0))
+        elif isinstance(raw, (int, float)):
+            bucket["total"] = _as_int(raw, 0)
+        bucket["helpful"] = min(bucket["helpful"], bucket["total"])
+        return bucket
+
+    def _decayed_source_bucket(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """Decay stale source counters to avoid over-weighting old routing outcomes."""
+        bucket = dict(self._coerce_source_bucket(row))
+        last_ts = float(bucket.get("last_ts", 0.0) or 0.0)
+        if last_ts <= 0:
+            if bucket["total"] > 0:
+                bucket["last_ts"] = time.time()
+            return bucket
+
+        age = max(0.0, time.time() - last_ts)
+        stale_window = max(1.0, float(SOURCE_EFFECTIVENESS_STALE_SECONDS))
+        if age >= stale_window:
+            return {"total": 0, "helpful": 0, "last_ts": bucket.get("last_ts", 0.0)}
+
+        decay = 0.5 ** (age / max(1.0, float(SOURCE_EFFECTIVENESS_DECAY_SECONDS)))
+        if decay >= 0.999:
+            return bucket
+
+        bucket["total"] = max(0, int(round(float(bucket["total"]) * decay)))
+        bucket["helpful"] = max(0, int(round(float(bucket["helpful"]) * decay)))
+        bucket["helpful"] = min(bucket["helpful"], bucket["total"])
+        return bucket
+
     def _decayed_category_bucket(self, row: Dict[str, Any]) -> Dict[str, Any]:
         """Decay stale category counters to avoid over-weighting stale historical signal."""
         bucket = dict(self._coerce_category_bucket(row))
@@ -1253,13 +1307,14 @@ class SparkAdvisor:
         total_followed = min(total_followed, total_advice_given)
         total_helpful = min(total_helpful, total_followed)
 
-        by_source: Dict[str, Dict[str, int]] = {}
+        by_source: Dict[str, Dict[str, Any]] = {}
         for key, row in (src.get("by_source") or {}).items():
-            if not isinstance(row, dict):
-                continue
-            total = _as_int(row.get("total", 0))
-            helpful = min(_as_int(row.get("helpful", 0)), total)
-            by_source[str(key)] = {"total": total, "helpful": helpful}
+            bucket = self._decayed_source_bucket(row)
+            by_source[str(key)] = {
+                "total": int(bucket.get("total", 0) or 0),
+                "helpful": int(bucket.get("helpful", 0) or 0),
+                "last_ts": float(bucket.get("last_ts", 0.0) or 0.0),
+            }
 
         by_category = {}
         now = time.time()
@@ -1422,11 +1477,12 @@ class SparkAdvisor:
             # Merge by_source
             for src in set(list(disk_data.get("by_source", {}).keys()) +
                           list(mem_data.get("by_source", {}).keys())):
-                disk_src = disk_data.get("by_source", {}).get(src, {})
-                mem_src = mem_data.get("by_source", {}).get(src, {})
+                disk_src = self._decayed_source_bucket(disk_data.get("by_source", {}).get(src, {}))
+                mem_src = self._decayed_source_bucket(mem_data.get("by_source", {}).get(src, {}))
                 merged["by_source"][src] = {
-                    "total": max(disk_src.get("total", 0), mem_src.get("total", 0)),
-                    "helpful": max(disk_src.get("helpful", 0), mem_src.get("helpful", 0)),
+                    "total": max(int(disk_src.get("total", 0) or 0), int(mem_src.get("total", 0) or 0)),
+                    "helpful": max(int(disk_src.get("helpful", 0) or 0), int(mem_src.get("helpful", 0) or 0)),
+                    "last_ts": max(float(disk_src.get("last_ts", 0.0) or 0.0), float(mem_src.get("last_ts", 0.0) or 0.0)),
                 }
 
             # Merge per-category buckets conservatively (monotonic-safe fields).
@@ -5635,14 +5691,19 @@ Output only JSON with `order` as a list of 0-based indices (descending by releva
             if sources:
                 source = sources[0]  # Primary source
 
-        if source not in self.effectiveness.get("by_source", {}):
-            self.effectiveness.setdefault("by_source", {})[source] = {
-                "total": 0, "helpful": 0
-            }
-
-        self.effectiveness["by_source"][source]["total"] += 1
+        source_bucket = self._decayed_source_bucket(
+            self.effectiveness.setdefault("by_source", {}).get(source, {})
+        )
+        source_bucket["total"] += 1
         if success and advice_was_relevant:
-            self.effectiveness["by_source"][source]["helpful"] += 1
+            source_bucket["helpful"] += 1
+        source_bucket["helpful"] = min(int(source_bucket["helpful"]), int(source_bucket["total"]))
+        source_bucket["last_ts"] = time.time()
+        self.effectiveness["by_source"][source] = {
+            "total": int(source_bucket["total"]),
+            "helpful": int(source_bucket["helpful"]),
+            "last_ts": float(source_bucket["last_ts"]),
+        }
 
         self._save_effectiveness()
 

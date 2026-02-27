@@ -169,6 +169,7 @@ BRIDGE_MIND_SYNC_MIN_RELIABILITY = 0.35
 BRIDGE_MIND_SYNC_MAX_AGE_S = 14 * 24 * 3600
 BRIDGE_MIND_SYNC_DRAIN_QUEUE = True
 BRIDGE_MIND_SYNC_QUEUE_BUDGET = 2
+BRIDGE_LEGACY_CONTEXT_UPDATE_ENABLED = _env_bool("SPARK_BRIDGE_LEGACY_CONTEXT_UPDATE_ENABLED", False)
 # Keep alpha advisory as the single authoritative advisory output channel.
 BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED = _env_bool("SPARK_BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED", False)
 BRIDGE_LLM_EIDOS_SIDECAR_ENABLED = _env_bool("SPARK_BRIDGE_LLM_EIDOS_SIDECAR_ENABLED", False)
@@ -181,6 +182,7 @@ def _load_bridge_worker_config() -> None:
     global BRIDGE_MIND_SYNC_ENABLED, BRIDGE_MIND_SYNC_LIMIT
     global BRIDGE_MIND_SYNC_MIN_READINESS, BRIDGE_MIND_SYNC_MIN_RELIABILITY
     global BRIDGE_MIND_SYNC_MAX_AGE_S, BRIDGE_MIND_SYNC_DRAIN_QUEUE, BRIDGE_MIND_SYNC_QUEUE_BUDGET
+    global BRIDGE_LEGACY_CONTEXT_UPDATE_ENABLED
     global BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED, BRIDGE_LLM_EIDOS_SIDECAR_ENABLED
     try:
         from lib.config_authority import env_bool, env_float, env_int, resolve_section
@@ -195,6 +197,7 @@ def _load_bridge_worker_config() -> None:
                 "mind_sync_max_age_s": env_int("SPARK_BRIDGE_MIND_SYNC_MAX_AGE_S"),
                 "mind_sync_drain_queue": env_bool("SPARK_BRIDGE_MIND_SYNC_DRAIN_QUEUE"),
                 "mind_sync_queue_budget": env_int("SPARK_BRIDGE_MIND_SYNC_QUEUE_BUDGET"),
+                "legacy_context_update_enabled": env_bool("SPARK_BRIDGE_LEGACY_CONTEXT_UPDATE_ENABLED"),
                 "llm_advisory_sidecar_enabled": env_bool("SPARK_BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED"),
                 "llm_eidos_sidecar_enabled": env_bool("SPARK_BRIDGE_LLM_EIDOS_SIDECAR_ENABLED"),
                 "openclaw_notify": env_bool("SPARK_OPENCLAW_NOTIFY"),
@@ -216,6 +219,7 @@ def _apply_bridge_worker_cfg(cfg: Dict[str, Any]) -> None:
     global BRIDGE_MIND_SYNC_ENABLED, BRIDGE_MIND_SYNC_LIMIT
     global BRIDGE_MIND_SYNC_MIN_READINESS, BRIDGE_MIND_SYNC_MIN_RELIABILITY
     global BRIDGE_MIND_SYNC_MAX_AGE_S, BRIDGE_MIND_SYNC_DRAIN_QUEUE, BRIDGE_MIND_SYNC_QUEUE_BUDGET
+    global BRIDGE_LEGACY_CONTEXT_UPDATE_ENABLED
     global BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED, BRIDGE_LLM_EIDOS_SIDECAR_ENABLED
     if not isinstance(cfg, dict):
         return
@@ -241,6 +245,11 @@ def _apply_bridge_worker_cfg(cfg: Dict[str, Any]) -> None:
     if "mind_sync_queue_budget" in cfg:
         BRIDGE_MIND_SYNC_QUEUE_BUDGET = max(
             0, min(1000, int(cfg.get("mind_sync_queue_budget") or BRIDGE_MIND_SYNC_QUEUE_BUDGET))
+        )
+    if "legacy_context_update_enabled" in cfg:
+        BRIDGE_LEGACY_CONTEXT_UPDATE_ENABLED = _parse_bool(
+            cfg.get("legacy_context_update_enabled"),
+            BRIDGE_LEGACY_CONTEXT_UPDATE_ENABLED,
         )
     if "llm_advisory_sidecar_enabled" in cfg:
         BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED = _parse_bool(
@@ -421,13 +430,16 @@ def run_bridge_cycle(
         meta_ralph = None
 
     try:
-        # --- Context update ---
-        ok, _result, error = _run_step("context", update_spark_context, query=query)
-        if ok:
-            stats["context_updated"] = True
+        # --- Legacy context update (disabled by default; sync_context is authoritative) ---
+        if BRIDGE_LEGACY_CONTEXT_UPDATE_ENABLED:
+            ok, _result, error = _run_step("context", update_spark_context, query=query)
+            if ok:
+                stats["context_updated"] = True
+            else:
+                stats["errors"].append("context")
+                log_debug("bridge_worker", f"context update failed ({error})", None)
         else:
-            stats["errors"].append("context")
-            log_debug("bridge_worker", f"context update failed ({error})", None)
+            stats["context_legacy"] = {"enabled": False, "reason": "sync_context_authoritative"}
 
         # --- Feedback loop: ingest agent self-reports ---
         try:

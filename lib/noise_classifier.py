@@ -1,12 +1,11 @@
-"""Unified noise classifier with optional shadow telemetry.
+"""Unified noise classifier with bounded shadow telemetry.
 
-Default behavior is shadow-only. Existing module-specific filters remain
-authoritative unless SPARK_NOISE_CLASSIFIER_ENFORCE is enabled.
+Default behavior is enforce-on. Set SPARK_NOISE_CLASSIFIER_ENFORCE=0 to
+fall back to module-specific legacy filters.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import time
@@ -14,10 +13,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Tuple
 
+from .jsonl_utils import append_jsonl_capped as _append_jsonl_capped
 from .noise_patterns import is_common_noise, is_session_boilerplate
 from .primitive_filter import is_primitive_text
 
 SHADOW_LOG = Path.home() / ".spark" / "noise_classifier_shadow.jsonl"
+SHADOW_LOG_MAX_LINES = 20000
 
 
 @dataclass(frozen=True)
@@ -56,7 +57,7 @@ _QUESTION_START_RE = re.compile(
 
 
 def enforce_enabled() -> bool:
-    raw = str(os.getenv("SPARK_NOISE_CLASSIFIER_ENFORCE", "")).strip().lower()
+    raw = str(os.getenv("SPARK_NOISE_CLASSIFIER_ENFORCE", "1")).strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
@@ -112,7 +113,6 @@ def record_shadow(
     if bool(legacy_is_noise) == bool(unified.is_noise):
         return
     try:
-        SHADOW_LOG.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "ts": time.time(),
             "module": module,
@@ -123,8 +123,7 @@ def record_shadow(
         }
         if extra:
             payload["extra"] = dict(extra)
-        with SHADOW_LOG.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(payload) + "\n")
+        _append_jsonl_capped(SHADOW_LOG, payload, SHADOW_LOG_MAX_LINES, ensure_ascii=False)
     except Exception:
         pass
 

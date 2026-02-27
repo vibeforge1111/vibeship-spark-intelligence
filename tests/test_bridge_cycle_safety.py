@@ -53,8 +53,9 @@ def test_bridge_cycle_survives_context_failure():
     with patch("lib.bridge_cycle.read_recent_events", return_value=[]):
         with patch("lib.bridge_cycle.update_spark_context", side_effect=Exception("context boom")):
             with patch("lib.bridge_cycle.process_recent_memory_events", return_value={"auto_saved": 0, "suggested": 0}):
-                from lib.bridge_cycle import run_bridge_cycle
-                stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
+                with patch("lib.bridge_cycle.BRIDGE_LEGACY_CONTEXT_UPDATE_ENABLED", True):
+                    from lib.bridge_cycle import run_bridge_cycle
+                    stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
 
     # Should not crash — fail-open behavior
     assert isinstance(stats, dict)
@@ -183,3 +184,14 @@ def test_bridge_cycle_marks_llm_sidecars_disabled():
 
     assert stats.get("llm_advisory_sidecar", {}).get("enabled") is False
     assert stats.get("eidos_llm_sidecar", {}).get("enabled") is False
+
+
+def test_bridge_cycle_marks_legacy_context_disabled_by_default():
+    with patch("lib.bridge_cycle.read_recent_events", return_value=[]):
+        with patch("lib.bridge_cycle.process_recent_memory_events", return_value={"auto_saved": 0, "suggested": 0}):
+            with patch("lib.bridge_cycle.BRIDGE_LEGACY_CONTEXT_UPDATE_ENABLED", False):
+                from lib.bridge_cycle import run_bridge_cycle
+
+                stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
+
+    assert stats.get("context_legacy", {}).get("enabled") is False
