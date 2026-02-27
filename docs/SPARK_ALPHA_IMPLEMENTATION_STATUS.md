@@ -643,6 +643,12 @@ Branch: feat/spark-alpha
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `12`
 
+92. `132de3d` - `refactor(alpha-pr04): remove dead packet sqlite toggle constant`
+- Removed obsolete `PACKET_SQLITE_LOOKUP_ENABLED` module-level constant after lookup path lock to SQLite.
+- Keeps packet store runtime surface consistent with schema/config (no retired toggle symbols left in code).
+- Regression evidence:
+  - `pytest tests/test_advisory_packet_store.py -q` -> `19 passed`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
