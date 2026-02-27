@@ -155,7 +155,6 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "prefetch_queue_enabled": TuneableSpec("bool", False, None, None, "Enable prefetch queue"),
         "prefetch_inline_enabled": TuneableSpec("bool", True, None, None, "Enable inline prefetch"),
         "prefetch_inline_max_jobs": TuneableSpec("int", 1, 0, 10, "Max inline prefetch jobs"),
-        "delivery_stale_s": TuneableSpec("float", 600, 60, 86400, "Delivery staleness threshold (s)"),
         "advisory_text_repeat_cooldown_s": TuneableSpec("float", 300, 30, 86400,
             "Text repeat cooldown (s). Prevents identical text from re-emitting. "
             "See also: advisory_gate.advice_repeat_cooldown_s (same advice_id), "
@@ -163,15 +162,6 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "global_dedupe_cooldown_s": TuneableSpec("float", 600, 0, 86400,
             "Cross-session global dedupe cooldown (s). Prevents same insight across sessions. "
             "Distinct from text_repeat (exact text) and advice_repeat (same ID)"),
-        "global_dedupe_scope": TuneableSpec(
-            "str",
-            "global",
-            None,
-            None,
-            "Scope for global dedupe ('global', 'tree', or 'contextual').",
-            ["global", "tree", "contextual"],
-        ),
-        "actionability_enforce": TuneableSpec("bool", True, None, None, "Enforce actionability scoring"),
         "force_programmatic_synth": TuneableSpec("bool", False, None, None, "Force programmatic synthesis"),
         "selective_ai_synth_enabled": TuneableSpec("bool", True, None, None, "Enable selective AI synthesis"),
         "selective_ai_min_remaining_ms": TuneableSpec("float", 1800, 0, 20000, "Min ms remaining for AI synth"),
@@ -363,14 +353,6 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "source_effectiveness": TuneableSpec("dict", {}, None, None, "Computed effectiveness rates"),
         "tuning_log": TuneableSpec("list", [], None, None, "Recent tuning events (max 50)"),
         "max_changes_per_cycle": TuneableSpec("int", 4, 1, 20, "Max source adjustments per cycle"),
-        "apply_cross_section_recommendations": TuneableSpec(
-            "bool", False, None, None,
-            "Allow auto-tuner to write recommendations outside auto_tuner.source_boosts",
-        ),
-        "recommendation_sections_allowlist": TuneableSpec(
-            "list", [], None, None,
-            "Optional allowlist of sections auto-tuner may update when cross-section writes are enabled",
-        ),
     },
 
     # ---- chip_merge: chip deduplication ----
@@ -781,6 +763,20 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
 # Sections with internal _doc keys that should not trigger unknown-key warnings
 _DOC_KEY_SECTIONS: set = {"source_roles", "scheduler"}
 
+# Keys intentionally retired from active tuneables schema.
+# If present in runtime/user tuneables, they are silently dropped.
+_RETIRED_KEYS: Dict[str, set[str]] = {
+    "advisory_engine": {
+        "delivery_stale_s",
+        "global_dedupe_scope",
+        "actionability_enforce",
+    },
+    "auto_tuner": {
+        "apply_cross_section_recommendations",
+        "recommendation_sections_allowlist",
+    },
+}
+
 # Module consumer map (which module reads which section)
 SECTION_CONSUMERS: Dict[str, List[str]] = {
     "values": ["lib/pipeline.py", "lib/advisor.py", "lib/eidos/models.py"],
@@ -939,8 +935,11 @@ def validate_tuneables(
 
         # 3) Preserve unknown keys with warning
         allow_doc_keys = section_name in _DOC_KEY_SECTIONS
+        retired_keys = _RETIRED_KEYS.get(section_name, set())
         for key in raw_section:
             if key not in section_spec:
+                if key in retired_keys:
+                    continue
                 cleaned_section[key] = raw_section[key]
                 if key.startswith("_") or (allow_doc_keys and key == "_doc"):
                     continue  # Skip _doc, _comment etc.

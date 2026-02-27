@@ -97,11 +97,8 @@
     "prefetch_queue_enabled": false,
     "prefetch_inline_enabled": true,
     "prefetch_inline_max_jobs": 1,
-    "delivery_stale_s": 600,
     "advisory_text_repeat_cooldown_s": 300,
     "global_dedupe_cooldown_s": 240,
-    "global_dedupe_scope": "contextual",
-    "actionability_enforce": true,
     "force_programmatic_synth": false,
     "selective_ai_synth_enabled": true,
     "selective_ai_min_remaining_ms": 1800,
@@ -445,9 +442,7 @@
         "data_basis": "33,315 advisor outcomes across 15 sources"
       }
     ],
-    "max_changes_per_cycle": 4,
-    "apply_cross_section_recommendations": false,
-    "recommendation_sections_allowlist": []
+    "max_changes_per_cycle": 4
   },
   "updated_at": "2026-02-20T10:25:16+00:00",
   "chip_merge": {
