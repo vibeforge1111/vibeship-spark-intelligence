@@ -92,6 +92,7 @@ Completed commits:
 72. `23ed037` PR-10 follow-up: aligned observatory reverse-engineering/readability references with orchestrator+alpha runtime and added alpha log to baseline rehydrate target set
 73. `fe9f2bb` PR-10 follow-up: collapsed legacy advisory_engine runtime entrypoints into thin alpha compatibility forwards (pre/post/prompt), removing ~1k lines from legacy hot path
 74. `6ffa803` PR-09 follow-up: updated advisory_engine tuneables consumer/reload host attribution to alpha-primary runtime in schema + observatory deep-dive metadata
+75. `de7a70c` PR-10 follow-up: corrected remaining advisory reverse-engineering “where” pointers to alpha/orchestrator runtime hosts
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`

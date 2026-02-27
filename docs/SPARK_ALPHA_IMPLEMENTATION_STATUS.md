@@ -485,6 +485,10 @@ Branch: feat/spark-alpha
 - Updated observatory deep-dive known hot-reload host list for `advisory_engine` to alpha-primary runtime attribution.
 - Keeps config-authority/reporting outputs consistent with current runtime ownership.
 
+75. `de7a70c` - `refactor(alpha-pr10): fix residual observatory advisory-engine path references`
+- Updated residual advisory reverse-engineering recommendation pointers from legacy `lib/advisory_engine.py` to alpha/orchestrator runtime hosts.
+- Keeps observatory “where to change” guidance aligned with current runtime ownership and avoids stale debugging directions.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -577,6 +581,7 @@ Branch: feat/spark-alpha
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 - `pytest tests/test_pr1_config_authority.py tests/test_tuneables_alignment.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py -q` -> `34 passed`
+- `python -m py_compile lib/observatory/advisory_reverse_engineering.py` -> pass
 
 Notable metrics now:
 - `context.p50`: 230
