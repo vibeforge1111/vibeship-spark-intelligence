@@ -35,6 +35,13 @@
   - `tests/test_production_loop_gates.py` direct-SQLite fallback test.
   - `tests/test_distillation_advisory.py` min-active-pool purge test.
 
+### Wave 2 (Migration & Unification)
+- Replaced static `chip_merger -> cognitive_learner` import with runtime resolution in `lib/chip_merger.py` to reduce learning-spine coupling.
+- Replaced static `promoter -> chip_merger` import with runtime resolution in `lib/promoter.py`.
+- Added docs legacy-reference migration utility:
+  - `scripts/alpha_docs_legacy_ref_sweep.py`
+- Updated canonical config authority runtime mapping in `docs/CONFIG_AUTHORITY.md` to alpha engine path.
+
 ### Wave 4 (Observatory Expansion)
 - Added explicit readiness blocker dashboard.
 - Added strict attribution funnel visibility.
