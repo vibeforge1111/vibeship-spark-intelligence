@@ -856,6 +856,20 @@ Branch: feat/spark-alpha
   - `python scripts/alpha_gap_audit.py` -> `advisory_files=10`, `tuneable_keys=415`, `distillation_files=5`, `orchestrator_module_present=false`
   - `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=415`, `external_orphan_keys=91`, `scanned_files=504`
 
+106. `9d020a8` - `feat(alpha-wave3): add jsonl surface audit for store consolidation`
+- Added `scripts/jsonl_surface_audit.py` to measure JSONL usage density by file and top-level scope (`lib/scripts/hooks/tests`) for Wave-3 reduction targeting.
+- Added helper tests for JSONL-hit detection (`tests/test_jsonl_surface_audit_helpers.py`).
+- Regression + evidence:
+  - `python -m py_compile scripts/jsonl_surface_audit.py tests/test_jsonl_surface_audit_helpers.py` -> pass
+  - `pytest tests/test_jsonl_surface_audit_helpers.py -q` -> `2 passed`
+  - `python scripts/jsonl_surface_audit.py` ->
+    - `jsonl_hits=735`
+    - `files_with_jsonl_hits=136`
+    - `scopes_with_hits=4`
+    - report: `benchmarks/out/alpha_start/jsonl_surface_audit_20260227_152911.json`
+  - `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_152921`)
+  - `python scripts/alpha_gap_audit.py` -> `advisory_files=10`, `tuneable_keys=415`, `lib_jsonl_refs=376`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -868,12 +882,13 @@ Branch: feat/spark-alpha
 
 ### Current measured state (latest run)
 
-- `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_152237`)
+- `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_152921`)
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
 - replay evidence batch (`seeds=42,77`; `episodes=8,20`) -> `alpha_win_rate=1.0`, `promotion_pass_rate=1.0`, `runs=4`
 - alpha core pytest slice in readiness run -> `242 passed`
 - `python scripts/alpha_gap_audit.py` -> `advisory_files=10`, `tuneable_keys=415`, `lib_jsonl_refs=376`, `distillation_files=5`, `orchestrator_module_present=false`, `vibeforge_has_code_evolve_lane=false`
 - `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=415`, `hits=7551`, `orphan_keys=0`, `external_hits=6976`, `external_orphan_keys=91`, `scanned_files=504`
+- `python scripts/jsonl_surface_audit.py` -> `jsonl_hits=735`, `files_with_jsonl_hits=136`, `scopes_with_hits=4`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `18`
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
