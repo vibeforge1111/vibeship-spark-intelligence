@@ -168,6 +168,32 @@ def test_relaxed_lookup_prefers_higher_effectiveness(monkeypatch, tmp_path):
     assert chosen["packet_id"] == better_id
 
 
+def test_relaxed_lookup_skips_low_readiness_packets(monkeypatch, tmp_path):
+    _patch_store_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(store, "RELAXED_MIN_READINESS_SCORE", 0.95)
+
+    packet = store.build_packet(
+        project_key="proj",
+        session_context_key="ctx",
+        tool_name="Edit",
+        intent_family="auth_security",
+        task_plane="build_delivery",
+        advisory_text="Soon-expiring low-readiness packet.",
+        source_mode="prefetch",
+        lineage={"sources": ["prefetch"], "memory_absent_declared": False},
+        ttl_s=300,
+    )
+    store.save_packet(packet)
+
+    chosen = store.lookup_relaxed(
+        project_key="proj",
+        tool_name="Edit",
+        intent_family="auth_security",
+        task_plane="build_delivery",
+    )
+    assert chosen is None
+
+
 def test_implicit_feedback_updates_effectiveness_even_when_not_followed(monkeypatch, tmp_path):
     _patch_store_paths(monkeypatch, tmp_path)
     packet = store.build_packet(

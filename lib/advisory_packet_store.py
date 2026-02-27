@@ -54,6 +54,8 @@ RELAXED_WILDCARD_TOOL_BONUS = 0.5
 RELAXED_EFFECTIVENESS_WEIGHT = 2.0
 RELAXED_LOW_EFFECTIVENESS_THRESHOLD = 0.3
 RELAXED_LOW_EFFECTIVENESS_PENALTY = 0.5
+RELAXED_READINESS_WEIGHT = 1.5
+RELAXED_MIN_READINESS_SCORE = 0.25
 RELAXED_MIN_MATCH_DIMENSIONS = 1
 RELAXED_MIN_MATCH_SCORE = 3.0
 DEFAULT_PACKET_RELAXED_MAX_CANDIDATES = 6
@@ -2469,6 +2471,10 @@ def _candidate_match_score(
     score += effectiveness * RELAXED_EFFECTIVENESS_WEIGHT
     if effectiveness < RELAXED_LOW_EFFECTIVENESS_THRESHOLD:
         score -= RELAXED_LOW_EFFECTIVENESS_PENALTY
+    readiness = _packet_readiness_score(row, now_ts=now_value)
+    if readiness < RELAXED_MIN_READINESS_SCORE:
+        return None
+    score += readiness * RELAXED_READINESS_WEIGHT
     score += min(1.0, max(0.0, (float(row.get("updated_ts", 0.0)) / 1e10)))
     return score, float(row.get("updated_ts", 0.0))
 
@@ -2678,6 +2684,7 @@ def lookup_relaxed_candidates(
             "source_summary": _safe_list(row.get("source_summary"), max_items=20),
             "category_summary": _safe_list(row.get("category_summary"), max_items=20),
             "effectiveness_score": float(row.get("effectiveness_score", 0.5) or 0.5),
+            "readiness_score": float(_packet_readiness_score(row, now_ts=now_value)),
             "read_count": _meta_count(row, "read_count"),
             "usage_count": _meta_count(row, "usage_count", fallback_key="read_count"),
             "emit_count": _meta_count(row, "emit_count"),
