@@ -11,7 +11,7 @@ EIDOS Integration:
 - PostToolUseFailure: Complete Step with error, learn from failure
 
 The Vertical Loop:
-Action → Prediction → Outcome → Evaluation → Policy Update → Distillation → Mandatory Reuse
+Action -> Prediction -> Outcome -> Evaluation -> Policy Update -> Distillation -> Mandatory Reuse
 
 Usage in .claude/settings.json:
 {
@@ -40,7 +40,7 @@ from lib.cognitive_learner import get_cognitive_learner
 from lib.feedback import update_skill_effectiveness, update_self_awareness_reliability
 from lib.diagnostics import log_debug
 from lib.outcome_checkin import record_checkin_request
-# EIDOS Integration — resolve from config-authority
+# EIDOS Integration - resolve from config-authority
 try:
     from lib.config_authority import resolve_section, env_bool, env_int, env_float
     _hook_cfg = resolve_section(
@@ -98,6 +98,9 @@ OBSERVE_TELEMETRY_FILE = Path(
 )
 OBSERVE_TELEMETRY_ENABLED = str(
     os.environ.get("SPARK_OBSERVE_TELEMETRY", "1")
+).strip().lower() not in ("0", "false", "no", "off")
+CODEX_FAST_MODE_ENABLED = str(
+    os.environ.get("SPARK_CODEX_OBSERVE_FAST_MODE", "1")
 ).strip().lower() not in ("0", "false", "no", "off")
 _OUTCOME_CHECKIN_ENABLED = bool(_hook_cfg.get("outcome_checkin_enabled", False))
 _OUTCOME_CHECKIN_PROMPT = bool(_hook_cfg.get("outcome_checkin_prompt", False))
@@ -817,16 +820,16 @@ def check_for_surprise(session_id: str, tool_name: str, success: bool, error: st
 
 # ===== Main =====
 
-def main():
-    """Main hook entry point."""
-    try:
-        input_data = json.load(sys.stdin)
-    except (json.JSONDecodeError, Exception) as e:
-        log_debug("observe", "input JSON decode failed", e)
-        sys.exit(0)
-    
+def process_hook_payload(input_data: Dict[str, Any]) -> int:
+    """Process one hook payload and return an exit code."""
     session_id = input_data.get("session_id", "unknown")
     source_hint = _normalize_source(input_data.get("source") or input_data.get("app"))
+    bridge_fast_mode = bool(input_data.get("bridge_fast_mode"))
+    codex_fast_mode = bool(
+        CODEX_FAST_MODE_ENABLED
+        and bridge_fast_mode
+        and str(source_hint or "").strip().lower() == "codex"
+    )
     hook_event = input_data.get("hook_event_name", "unknown")
     tool_name = input_data.get("tool_name")
     tool_input = input_data.get("tool_input", {})
@@ -841,38 +844,39 @@ def main():
         trace_id = _make_trace_id(session_id, tool_name, hook_event, time.time())
         prediction = make_prediction(tool_name, tool_input)
 
-        # Advisory Engine: retrieve → gate → synthesize → emit to stdout
-        # This replaces the old fire-and-forget advisor call.
-        # The engine handles retrieval, filtering, synthesis, and emission.
-        try:
-            from lib.advisory_engine_alpha import on_pre_tool
-            emitted_text = on_pre_tool(
-                session_id=session_id,
-                tool_name=tool_name,
-                tool_input=tool_input,
-                trace_id=trace_id,
-            )
-            if emitted_text:
-                log_debug("observe", f"Advisory engine emitted for {tool_name}: {len(emitted_text)} chars", None)
-                # Record advice for implicit outcome tracking
-                try:
-                    from lib.implicit_outcome_tracker import get_implicit_tracker
-                    get_implicit_tracker().record_advice(
-                        tool_name=tool_name,
-                        advice_texts=[emitted_text[:500]],
-                        tool_input=tool_input,
-                    )
-                except Exception:
-                    pass
-            elapsed_ms = (time.time() * 1000.0) - pretool_start_ms
-            if elapsed_ms > PRETOOL_BUDGET_MS:
-                log_debug("observe", f"OBS_PRETOOL_BUDGET_EXCEEDED:{tool_name}:{elapsed_ms:.1f}ms>{PRETOOL_BUDGET_MS:.0f}ms", None)
-        except Exception as e:
-            log_debug("observe", "advisory alpha pre-tool failed", e)
+        # Advisory Engine: retrieve -> gate -> synthesize -> emit to stdout.
+        # Codex bridge fast mode skips this synchronous lane to keep hook
+        # forwarding latency bounded in adapter-driven workflows.
+        if not codex_fast_mode:
+            try:
+                from lib.advisory_engine_alpha import on_pre_tool
+                emitted_text = on_pre_tool(
+                    session_id=session_id,
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                    trace_id=trace_id,
+                )
+                if emitted_text:
+                    log_debug("observe", f"Advisory engine emitted for {tool_name}: {len(emitted_text)} chars", None)
+                    # Record advice for implicit outcome tracking
+                    try:
+                        from lib.implicit_outcome_tracker import get_implicit_tracker
+                        get_implicit_tracker().record_advice(
+                            tool_name=tool_name,
+                            advice_texts=[emitted_text[:500]],
+                            tool_input=tool_input,
+                        )
+                    except Exception:
+                        pass
+                elapsed_ms = (time.time() * 1000.0) - pretool_start_ms
+                if elapsed_ms > PRETOOL_BUDGET_MS:
+                    log_debug("observe", f"OBS_PRETOOL_BUDGET_EXCEEDED:{tool_name}:{elapsed_ms:.1f}ms>{PRETOOL_BUDGET_MS:.0f}ms", None)
+            except Exception as e:
+                log_debug("observe", "advisory alpha pre-tool failed", e)
         save_prediction(session_id, tool_name, prediction)
 
         # EIDOS: Create step and check control plane
-        if EIDOS_AVAILABLE:
+        if EIDOS_AVAILABLE and not codex_fast_mode:
             try:
                 step, decision = create_step_before_action(
                     session_id=session_id,
@@ -893,38 +897,41 @@ def main():
                     # Optional enforcement: if the host supports aborting tool execution on non-zero exit.
                     if EIDOS_ENFORCE_BLOCK:
                         sys.stderr.write("[EIDOS] Enforcement enabled (SPARK_EIDOS_ENFORCE_BLOCK=1). Exiting non-zero.\n")
-                        raise SystemExit(2)
+                        return 2
             except Exception as e:
                 log_debug("observe", "EIDOS pre-action failed", e)
     
     # ===== PostToolUse: Check for surprise + Track outcome + Advisory feedback + EIDOS =====
     if event_type == EventType.POST_TOOL and tool_name:
         trace_id = _resolve_post_trace_id(session_id, tool_name, trace_id)
-        check_for_surprise(session_id, tool_name, success=True)
-        learn_from_success(tool_name, tool_input, {})
+        if not codex_fast_mode:
+            check_for_surprise(session_id, tool_name, success=True)
+            learn_from_success(tool_name, tool_input, {})
 
         # Implicit outcome tracking: record success
-        try:
-            from lib.implicit_outcome_tracker import get_implicit_tracker
-            get_implicit_tracker().record_outcome(tool_name=tool_name, success=True, tool_input=tool_input)
-        except Exception:
-            pass
+        if not codex_fast_mode:
+            try:
+                from lib.implicit_outcome_tracker import get_implicit_tracker
+                get_implicit_tracker().record_outcome(tool_name=tool_name, success=True, tool_input=tool_input)
+            except Exception:
+                pass
 
         # Advisory Engine: record outcome for implicit feedback loop
-        try:
-            from lib.advisory_engine_alpha import on_post_tool
-            on_post_tool(
-                session_id=session_id,
-                tool_name=tool_name,
-                success=True,
-                tool_input=tool_input,
-                trace_id=trace_id,
-            )
-        except Exception as e:
-            log_debug("observe", "advisory engine post-tool failed", e)
+        if not codex_fast_mode:
+            try:
+                from lib.advisory_engine_alpha import on_post_tool
+                on_post_tool(
+                    session_id=session_id,
+                    tool_name=tool_name,
+                    success=True,
+                    tool_input=tool_input,
+                    trace_id=trace_id,
+                )
+            except Exception as e:
+                log_debug("observe", "advisory engine post-tool failed", e)
 
         # EIDOS: Complete step with success
-        if EIDOS_AVAILABLE:
+        if EIDOS_AVAILABLE and not codex_fast_mode:
             try:
                 result = input_data.get("tool_result", "")
                 if isinstance(result, dict):
@@ -947,51 +954,54 @@ def main():
         # Recovery detection: if this tool previously FAILED in this session
         # and now succeeds, the advice that was surfaced likely helped.
         # This is a high-confidence positive signal.
-        try:
-            from lib.advisor import report_outcome
-            is_recovery = had_prior_failure(session_id, tool_name)
-            if is_recovery:
-                # Recovery pattern: fail -> advice surfaced -> succeed = advice helped
-                report_outcome(tool_name, success=True, advice_helped=True, trace_id=trace_id)
-                log_debug("observe", f"RECOVERY detected for {tool_name} - marking advice as helpful", None)
-            else:
-                # Normal success: don't auto-attribute to advice
-                report_outcome(tool_name, success=True, advice_helped=False, trace_id=trace_id)
-        except Exception as e:
-            log_debug("observe", "outcome tracking failed", e)
+        if not codex_fast_mode:
+            try:
+                from lib.advisor import report_outcome
+                is_recovery = had_prior_failure(session_id, tool_name)
+                if is_recovery:
+                    # Recovery pattern: fail -> advice surfaced -> succeed = advice helped
+                    report_outcome(tool_name, success=True, advice_helped=True, trace_id=trace_id)
+                    log_debug("observe", f"RECOVERY detected for {tool_name} - marking advice as helpful", None)
+                else:
+                    # Normal success: don't auto-attribute to advice
+                    report_outcome(tool_name, success=True, advice_helped=False, trace_id=trace_id)
+            except Exception as e:
+                log_debug("observe", "outcome tracking failed", e)
 
         # Cognitive signal extraction from Write/Edit content moved to
         # bridge_cycle (background) to keep the hook fast.
 
-        try:
-            update_self_awareness_reliability(tool_name, success=True)
-            query = tool_name
-            if isinstance(tool_input, dict):
-                for k in ("command", "path", "file_path", "filePath"):
-                    v = tool_input.get(k)
-                    if isinstance(v, str) and v:
-                        query = f"{query} {v[:120]}"
-                        break
-            update_skill_effectiveness(query, success=True, limit=2)
-        except Exception:
-            pass
+        if not codex_fast_mode:
+            try:
+                update_self_awareness_reliability(tool_name, success=True)
+                query = tool_name
+                if isinstance(tool_input, dict):
+                    for k in ("command", "path", "file_path", "filePath"):
+                        v = tool_input.get(k)
+                        if isinstance(v, str) and v:
+                            query = f"{query} {v[:120]}"
+                            break
+                update_skill_effectiveness(query, success=True, limit=2)
+            except Exception:
+                pass
     
     # ===== PostToolUseFailure: Check for surprise + Track outcome + Advisory feedback + learn + EIDOS =====
     if event_type == EventType.POST_TOOL_FAILURE and tool_name:
         trace_id = _resolve_post_trace_id(session_id, tool_name, trace_id)
         # Advisory Engine: record failure outcome for implicit feedback
-        try:
-            from lib.advisory_engine_alpha import on_post_tool
-            on_post_tool(
-                session_id=session_id,
-                tool_name=tool_name,
-                success=False,
-                tool_input=tool_input,
-                trace_id=trace_id,
-                error=str(input_data.get("tool_error") or input_data.get("error") or "")[:300],
-            )
-        except Exception as e:
-            log_debug("observe", "advisory engine post-failure failed", e)
+        if not codex_fast_mode:
+            try:
+                from lib.advisory_engine_alpha import on_post_tool
+                on_post_tool(
+                    session_id=session_id,
+                    tool_name=tool_name,
+                    success=False,
+                    tool_input=tool_input,
+                    trace_id=trace_id,
+                    error=str(input_data.get("tool_error") or input_data.get("error") or "")[:300],
+                )
+            except Exception as e:
+                log_debug("observe", "advisory engine post-failure failed", e)
 
         error = (
             input_data.get("tool_error") or
@@ -999,18 +1009,20 @@ def main():
             input_data.get("tool_result") or
             ""
         )
-        check_for_surprise(session_id, tool_name, success=False, error=str(error))
-        learn_from_failure(tool_name, error, tool_input)
+        if not codex_fast_mode:
+            check_for_surprise(session_id, tool_name, success=False, error=str(error))
+            learn_from_failure(tool_name, error, tool_input)
 
         # Implicit outcome tracking: record failure
-        try:
-            from lib.implicit_outcome_tracker import get_implicit_tracker
-            get_implicit_tracker().record_outcome(
-                tool_name=tool_name, success=False,
-                tool_input=tool_input, error_text=str(error)[:200],
-            )
-        except Exception:
-            pass
+        if not codex_fast_mode:
+            try:
+                from lib.implicit_outcome_tracker import get_implicit_tracker
+                get_implicit_tracker().record_outcome(
+                    tool_name=tool_name, success=False,
+                    tool_input=tool_input, error_text=str(error)[:200],
+                )
+            except Exception:
+                pass
 
         # Record failure for recovery detection (used by PostToolUse handler)
         record_session_failure(session_id, tool_name)
@@ -1018,35 +1030,36 @@ def main():
         # Track failure outcome in Advisor (flows to Meta-Ralph).
         # When advice WAS surfaced for this tool and the tool STILL failed,
         # that's a genuine negative signal: the advice wasn't sufficient.
-        try:
-            from lib.advisor import report_outcome, get_advisor
-            advisor = get_advisor()
-            recent_advice = advisor._get_recent_advice_entry(
-                tool_name,
-                trace_id=trace_id,
-                allow_task_fallback=False,
-            )
-            if recent_advice and recent_advice.get("advice_ids"):
-                # Advice existed but tool still failed = advice was not helpful
-                report_outcome(tool_name, success=False, advice_helped=False, trace_id=trace_id)
-                # Also record explicit negative feedback for each advice item
-                for aid in recent_advice.get("advice_ids", [])[:5]:
-                    advisor.report_outcome(
-                        aid,
-                        was_followed=True,
-                        was_helpful=False,
-                        notes=f"Tool {tool_name} failed despite advice: {str(error)[:100]}",
-                        trace_id=trace_id,
-                    )
-                log_debug("observe", f"NEGATIVE outcome: {tool_name} failed with advice present ({len(recent_advice.get('advice_ids', []))} items)", None)
-            else:
-                # No advice was given, just track the failure normally
-                report_outcome(tool_name, success=False, advice_helped=False, trace_id=trace_id)
-        except Exception as e:
-            log_debug("observe", "failure outcome tracking failed", e)
+        if not codex_fast_mode:
+            try:
+                from lib.advisor import report_outcome, get_advisor
+                advisor = get_advisor()
+                recent_advice = advisor._get_recent_advice_entry(
+                    tool_name,
+                    trace_id=trace_id,
+                    allow_task_fallback=False,
+                )
+                if recent_advice and recent_advice.get("advice_ids"):
+                    # Advice existed but tool still failed = advice was not helpful
+                    report_outcome(tool_name, success=False, advice_helped=False, trace_id=trace_id)
+                    # Also record explicit negative feedback for each advice item
+                    for aid in recent_advice.get("advice_ids", [])[:5]:
+                        advisor.report_outcome(
+                            aid,
+                            was_followed=True,
+                            was_helpful=False,
+                            notes=f"Tool {tool_name} failed despite advice: {str(error)[:100]}",
+                            trace_id=trace_id,
+                        )
+                    log_debug("observe", f"NEGATIVE outcome: {tool_name} failed with advice present ({len(recent_advice.get('advice_ids', []))} items)", None)
+                else:
+                    # No advice was given, just track the failure normally
+                    report_outcome(tool_name, success=False, advice_helped=False, trace_id=trace_id)
+            except Exception as e:
+                log_debug("observe", "failure outcome tracking failed", e)
 
         # EIDOS: Complete step with failure
-        if EIDOS_AVAILABLE:
+        if EIDOS_AVAILABLE and not codex_fast_mode:
             try:
                 step = complete_step_after_action(
                     session_id=session_id,
@@ -1059,18 +1072,19 @@ def main():
             except Exception as e:
                 log_debug("observe", "EIDOS post-failure failed", e)
 
-        try:
-            update_self_awareness_reliability(tool_name, success=False)
-            query = tool_name
-            if isinstance(tool_input, dict):
-                for k in ("command", "path", "file_path", "filePath"):
-                    v = tool_input.get(k)
-                    if isinstance(v, str) and v:
-                        query = f"{query} {v[:120]}"
-                        break
-            update_skill_effectiveness(query, success=False, limit=2)
-        except Exception:
-            pass
+        if not codex_fast_mode:
+            try:
+                update_self_awareness_reliability(tool_name, success=False)
+                query = tool_name
+                if isinstance(tool_input, dict):
+                    for k in ("command", "path", "file_path", "filePath"):
+                        v = tool_input.get(k)
+                        if isinstance(v, str) and v:
+                            query = f"{query} {v[:120]}"
+                            break
+                update_skill_effectiveness(query, success=False, limit=2)
+            except Exception:
+                pass
 
     # Keep a rolling per-session workflow summary state for later report emission.
     if hook_event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
@@ -1320,8 +1334,26 @@ def main():
         except Exception as e:
             log_debug("observe", "auto-promotion failed", e)
 
-    sys.exit(0)
+    return 0
+
+
+def main():
+    """Main hook entry point."""
+    try:
+        input_data = json.load(sys.stdin)
+    except (json.JSONDecodeError, Exception) as e:
+        log_debug("observe", "input JSON decode failed", e)
+        sys.exit(0)
+
+    try:
+        exit_code = int(process_hook_payload(input_data))
+    except Exception as e:
+        log_debug("observe", "process_hook_payload failed", e)
+        exit_code = 0
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
     main()
+
+

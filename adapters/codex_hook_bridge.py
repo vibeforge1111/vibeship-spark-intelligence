@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -22,7 +23,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 STATE_DIR = Path.home() / ".spark" / "adapters"
@@ -33,6 +34,8 @@ DEFAULT_CODEX_SESSIONS_ROOT = Path.home() / ".codex" / "sessions"
 DEFAULT_OBSERVE_PATH = Path(__file__).resolve().parent.parent / "hooks" / "observe.py"
 DEFAULT_WORKFLOW_REPORT_DIR = Path.home() / ".spark" / "workflow_reports" / "codex"
 TOOL_RESULT_REF_DIR = Path.home() / ".spark" / "workflow_refs" / "codex_tool_results"
+_OBSERVE_HANDLER_PATH: Optional[str] = None
+_OBSERVE_HANDLER_FN: Optional[Callable[[Dict[str, Any]], int]] = None
 
 
 def _env_int(name: str, default: int, lo: int, hi: int) -> int:
@@ -416,12 +419,61 @@ def _parse_exit_code_from_output(output: str) -> Optional[int]:
     return None
 
 
+def _looks_like_exec_chunk_wrapper(output: str) -> bool:
+    text = str(output or "")
+    if not text:
+        return False
+    return all(
+        marker in text
+        for marker in ("Chunk ID:", "Wall time:", "Output:")
+    )
+
+
+def _infer_exit_code_from_function_output(output: str) -> Optional[int]:
+    """Infer success/failure for function_call_output rows without explicit exit code.
+
+    Codex function_call_output often wraps tool output chunks that are successful
+    but omit an explicit `Process exited with code ...` marker.
+    """
+    text = str(output or "")
+    if not text:
+        return None
+
+    lowered = text.lower()
+    if "aborted by user" in lowered:
+        return 130
+    if "timed out" in lowered:
+        return 124
+    if lowered.startswith("error:"):
+        return 1
+    if "process running with session id" in lowered:
+        return 0
+    if _looks_like_exec_chunk_wrapper(text):
+        return 0
+    if "success. updated the following files:" in lowered:
+        return 0
+    return None
+
+
+def _parse_int_like(value: Any) -> Optional[int]:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return int(text)
+    except Exception:
+        return None
+
+
 def _parse_custom_tool_output(payload_output: Any) -> tuple[str, Optional[int]]:
     if isinstance(payload_output, dict):
         text = str(payload_output.get("output") or "")
         metadata = payload_output.get("metadata") if isinstance(payload_output.get("metadata"), dict) else {}
-        exit_code = metadata.get("exit_code")
-        return text, int(exit_code) if isinstance(exit_code, int) else None
+        return text, _parse_int_like(metadata.get("exit_code"))
 
     if not isinstance(payload_output, str):
         return str(payload_output), None
@@ -435,9 +487,9 @@ def _parse_custom_tool_output(payload_output: Any) -> tuple[str, Optional[int]]:
     if isinstance(parsed, dict):
         text = str(parsed.get("output") or raw)
         metadata = parsed.get("metadata") if isinstance(parsed.get("metadata"), dict) else {}
-        exit_code = metadata.get("exit_code")
-        if isinstance(exit_code, int):
-            return text, exit_code
+        parsed_exit = _parse_int_like(metadata.get("exit_code"))
+        if parsed_exit is not None:
+            return text, parsed_exit
         return text, _parse_exit_code_from_output(text)
     return raw, _parse_exit_code_from_output(raw)
 
@@ -727,6 +779,8 @@ def map_codex_row(
             if payload_type == "function_call_output":
                 output_text = str(payload.get("output") or "")
                 exit_code = _parse_exit_code_from_output(output_text)
+                if exit_code is None:
+                    exit_code = _infer_exit_code_from_function_output(output_text)
             else:
                 output_text, exit_code = _parse_custom_tool_output(payload.get("output"))
 
@@ -742,15 +796,21 @@ def map_codex_row(
             unknown_exit = False
 
             if exit_code is None:
-                unknown_exit = True
                 if runtime.unknown_exit_policy == "failure":
-                    is_failure = True
+                    exit_code = 1
                 elif runtime.unknown_exit_policy == "skip":
                     return []
                 else:
-                    is_failure = False
+                    # Treat missing code as known success in default policy to
+                    # avoid inflating unknown-exit telemetry for envelope-style
+                    # tool outputs that omit explicit process exit metadata.
+                    exit_code = 0
+
+            if exit_code is None:
+                unknown_exit = True
+                is_failure = False
             else:
-                is_failure = exit_code != 0
+                is_failure = int(exit_code) != 0
 
             if is_failure:
                 event = {
@@ -813,8 +873,61 @@ def map_codex_row(
     return events
 
 
-def _invoke_observe(observe_path: Path, event: Dict[str, Any], timeout_s: float = 8.0) -> tuple[bool, float, str]:
+def _load_observe_handler(observe_path: Path) -> Callable[[Dict[str, Any]], int]:
+    """Load hooks.observe.process_hook_payload from a specific file path."""
+    global _OBSERVE_HANDLER_PATH
+    global _OBSERVE_HANDLER_FN
+
+    canonical = str(observe_path.resolve())
+    if _OBSERVE_HANDLER_FN is not None and _OBSERVE_HANDLER_PATH == canonical:
+        return _OBSERVE_HANDLER_FN
+
+    spec = importlib.util.spec_from_file_location("_spark_codex_observe_hook", observe_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"failed to load observe hook from {observe_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    handler = getattr(module, "process_hook_payload", None)
+    if not callable(handler):
+        raise RuntimeError("observe hook missing process_hook_payload")
+
+    _OBSERVE_HANDLER_PATH = canonical
+    _OBSERVE_HANDLER_FN = handler
+    return handler
+
+
+def _invoke_observe(
+    observe_path: Path,
+    event: Dict[str, Any],
+    timeout_s: float = 8.0,
+    *,
+    prefer_inprocess: bool = True,
+) -> tuple[bool, float, str]:
     started = time.perf_counter()
+    if prefer_inprocess:
+        try:
+            handler = _load_observe_handler(observe_path)
+            rc = int(handler(event))
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            if rc == 0:
+                return True, elapsed_ms, ""
+            return False, elapsed_ms, f"rc={rc}"
+        except Exception as exc:
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            # Fall back to subprocess for safety when in-process load/invoke fails.
+            fallback_reason = f"inprocess_error:{type(exc).__name__}:{exc}"
+            try:
+                ok, elapsed_sub_ms, err = _invoke_observe(
+                    observe_path,
+                    event,
+                    timeout_s=timeout_s,
+                    prefer_inprocess=False,
+                )
+                merged_err = err if ok else f"{fallback_reason}; {err}"
+                return ok, max(elapsed_ms, elapsed_sub_ms), merged_err
+            except Exception:
+                return False, elapsed_ms, fallback_reason
+
     try:
         proc = subprocess.run(
             [sys.executable, str(observe_path)],
@@ -985,7 +1098,15 @@ def run_bridge(args: argparse.Namespace) -> int:
                     if mode == "observe":
                         for event in events:
                             runtime.metrics.observe_calls += 1
-                            ok, elapsed_ms, err = _invoke_observe(observe_path, event, timeout_s=float(args.observe_timeout_s))
+                            forward_event = dict(event)
+                            if bool(args.observe_fast_mode):
+                                forward_event["bridge_fast_mode"] = True
+                            ok, elapsed_ms, err = _invoke_observe(
+                                observe_path,
+                                forward_event,
+                                timeout_s=float(args.observe_timeout_s),
+                                prefer_inprocess=bool(args.observe_inprocess),
+                            )
                             runtime.metrics.observe_latency_ms.append(elapsed_ms)
                             if ok:
                                 runtime.metrics.observe_success += 1
@@ -1044,6 +1165,32 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--telemetry-file", default=str(DEFAULT_TELEMETRY_FILE), help="Telemetry JSONL output")
     ap.add_argument("--observe-path", default=str(DEFAULT_OBSERVE_PATH), help="Path to hooks/observe.py")
     ap.add_argument("--observe-timeout-s", type=float, default=8.0, help="observe.py timeout per event")
+    ap.set_defaults(observe_inprocess=_env_bool("SPARK_CODEX_OBSERVE_INPROCESS", True))
+    ap.add_argument(
+        "--observe-inprocess",
+        dest="observe_inprocess",
+        action="store_true",
+        help="Invoke hooks/observe.py in-process (faster, default)",
+    )
+    ap.add_argument(
+        "--no-observe-inprocess",
+        dest="observe_inprocess",
+        action="store_false",
+        help="Invoke hooks/observe.py via subprocess per event",
+    )
+    ap.set_defaults(observe_fast_mode=_env_bool("SPARK_CODEX_OBSERVE_FAST_MODE", True))
+    ap.add_argument(
+        "--observe-fast-mode",
+        dest="observe_fast_mode",
+        action="store_true",
+        help="Attach bridge_fast_mode marker to forwarded events (default)",
+    )
+    ap.add_argument(
+        "--no-observe-fast-mode",
+        dest="observe_fast_mode",
+        action="store_false",
+        help="Do not attach bridge_fast_mode marker to forwarded events",
+    )
     ap.add_argument("--unknown-exit-policy", default="success", choices=["success", "failure", "skip"], help="How to classify outputs when exit code is unknown")
     ap.add_argument("--workflow-report-dir", default=str(DEFAULT_WORKFLOW_REPORT_DIR), help="Directory for codex workflow summary reports")
     ap.add_argument("--workflow-summary-min-interval-s", type=int, default=WORKFLOW_SUMMARY_MIN_INTERVAL_S, help="Min seconds between workflow summary emissions per session")

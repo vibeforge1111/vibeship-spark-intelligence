@@ -98,6 +98,84 @@ def test_map_function_call_output_failure():
     assert "stderr" in evt["tool_error"]
 
 
+def test_map_function_call_output_infers_success_for_running_chunk():
+    runtime = bridge.BridgeRuntime()
+    session_id = "2026:02:26:session-running"
+
+    bridge.map_codex_row(
+        {
+            "timestamp": "2026-02-26T12:15:00.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "call_running",
+                "arguments": json.dumps({"cmd": "pytest -q"}),
+            },
+        },
+        session_id=session_id,
+        runtime=runtime,
+    )
+
+    events = bridge.map_codex_row(
+        {
+            "timestamp": "2026-02-26T12:15:01.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": "call_running",
+                "output": "Chunk ID: abcd\nWall time: 1.2 seconds\nProcess running with session ID 12345\nOutput:\n",
+            },
+        },
+        session_id=session_id,
+        runtime=runtime,
+    )
+    assert len(events) == 1
+    evt = events[0]
+    assert evt["hook_event_name"] == "PostToolUse"
+    assert "bridge_unknown_exit_code" not in evt
+    assert runtime.metrics.post_unknown_exit == 0
+
+
+def test_map_function_call_output_infers_aborted_user_failure():
+    runtime = bridge.BridgeRuntime()
+    session_id = "2026:02:26:session-abort"
+
+    bridge.map_codex_row(
+        {
+            "timestamp": "2026-02-26T12:16:00.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "call_abort",
+                "arguments": json.dumps({"cmd": "long-running"}),
+            },
+        },
+        session_id=session_id,
+        runtime=runtime,
+    )
+
+    events = bridge.map_codex_row(
+        {
+            "timestamp": "2026-02-26T12:16:01.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": "call_abort",
+                "output": "aborted by user after 24.4s",
+            },
+        },
+        session_id=session_id,
+        runtime=runtime,
+    )
+    assert len(events) == 1
+    evt = events[0]
+    assert evt["hook_event_name"] == "PostToolUseFailure"
+    assert "bridge_unknown_exit_code" not in evt
+    assert runtime.metrics.post_unknown_exit == 0
+
+
 def test_map_custom_tool_output_exit_code():
     runtime = bridge.BridgeRuntime()
     session_id = "2026:02:26:session-ghi"
@@ -133,6 +211,51 @@ def test_map_custom_tool_output_exit_code():
     evt = events[0]
     assert evt["hook_event_name"] == "PostToolUseFailure"
     assert evt["tool_name"] == "apply_patch"
+
+
+def test_map_custom_tool_output_exit_code_string():
+    runtime = bridge.BridgeRuntime()
+    session_id = "2026:02:26:session-ghi2"
+
+    bridge.map_codex_row(
+        {
+            "timestamp": "2026-02-26T12:21:00.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call",
+                "name": "apply_patch",
+                "call_id": "call_3s",
+                "input": "*** Begin Patch\n*** End Patch\n",
+            },
+        },
+        session_id=session_id,
+        runtime=runtime,
+    )
+    events = bridge.map_codex_row(
+        {
+            "timestamp": "2026-02-26T12:21:01.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call_output",
+                "call_id": "call_3s",
+                "output": json.dumps({"output": "ok", "metadata": {"exit_code": "0"}}),
+            },
+        },
+        session_id=session_id,
+        runtime=runtime,
+    )
+    assert len(events) == 1
+    evt = events[0]
+    assert evt["hook_event_name"] == "PostToolUse"
+    assert evt["tool_name"] == "apply_patch"
+
+
+def test_invoke_observe_prefers_inprocess(monkeypatch):
+    monkeypatch.setattr(bridge, "_load_observe_handler", lambda _p: (lambda _event: 0))
+    ok, elapsed_ms, err = bridge._invoke_observe(Path("hooks/observe.py"), {"hook_event_name": "PreToolUse"}, prefer_inprocess=True)
+    assert ok is True
+    assert elapsed_ms >= 0.0
+    assert err == ""
 
 
 def test_map_user_message_and_stop():
