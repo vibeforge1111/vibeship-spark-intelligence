@@ -448,22 +448,25 @@ def _check_advisory(result: DoctorResult):
         except Exception:
             pass
 
-    # Check advisory engine enabled
-    adv_enabled = os.environ.get("SPARK_ADVISORY_ENGINE", "1") != "0"
+    # Check advisory runtime enabled (alpha-primary; legacy env alias still honored).
+    adv_enabled = os.environ.get(
+        "SPARK_ADVISORY_ALPHA_ENABLED",
+        os.environ.get("SPARK_ADVISORY_ENGINE", "1"),
+    ) != "0"
     if adv_enabled:
         result.add(Check(
             id="advisory_engine",
             category="advisory",
             status="pass",
-            message="Advisory engine: enabled",
+            message="Advisory runtime: enabled (alpha)",
         ))
     else:
         result.add(Check(
             id="advisory_engine",
             category="advisory",
             status="warn",
-            message="Advisory engine: disabled (SPARK_ADVISORY_ENGINE=0)",
-            details="Set SPARK_ADVISORY_ENGINE=1 to enable pre-tool advice.",
+            message="Advisory runtime: disabled (SPARK_ADVISORY_ALPHA_ENABLED=0)",
+            details="Set SPARK_ADVISORY_ALPHA_ENABLED=1 to enable pre-tool advice.",
         ))
 
 
