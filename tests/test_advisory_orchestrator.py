@@ -1,5 +1,5 @@
 import lib.advisory_orchestrator as orch
-import pytest
+import lib.advisory_engine_alpha as alpha_engine
 
 
 def test_get_route_status_is_alpha_only():
@@ -8,16 +8,12 @@ def test_get_route_status_is_alpha_only():
     assert "decision_log" in status
 
 
-def test_on_pre_tool_dispatches_alpha(monkeypatch):
-    monkeypatch.setattr(orch, "_alpha_on_pre_tool", lambda *_a, **_k: "alpha_emitted")
-    out = orch.on_pre_tool("s1", "Read", {}, "t1")
-    assert out == "alpha_emitted"
+def test_orchestrator_exports_alpha_entrypoints():
+    assert orch.on_pre_tool is alpha_engine.on_pre_tool
+    assert orch.on_post_tool is alpha_engine.on_post_tool
+    assert orch.on_user_prompt is alpha_engine.on_user_prompt
 
 
-def test_on_pre_tool_alpha_error_does_not_fallback_to_engine(monkeypatch):
-    def _boom(*_a, **_k):
-        raise RuntimeError("alpha_fail")
-
-    monkeypatch.setattr(orch, "_alpha_on_pre_tool", _boom)
-    with pytest.raises(RuntimeError, match="alpha_fail"):
-        orch.on_pre_tool("s1", "Read", {}, "t1")
+def test_orchestrator_status_log_points_to_alpha_log():
+    status = orch.get_route_status()
+    assert str(status.get("decision_log") or "").endswith("advisory_engine_alpha.jsonl")
