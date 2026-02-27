@@ -732,6 +732,23 @@ Branch: feat/spark-alpha
     - pytest core slice: `242 passed`
     - report: `benchmarks/out/alpha_start/alpha_start_readiness_20260227_144522.json`
 
+99. `a805a92` - `feat(alpha-start): add machine-generated alpha gap audit counters`
+- Added `scripts/alpha_gap_audit.py` to emit objective alpha-gap counters and status flags into reproducible artifacts.
+- Added helper tests for the gap-audit utility (`tests/test_alpha_gap_audit_helpers.py`).
+- Wired the alpha-start execution plan to require gap-audit artifacts each cycle (`docs/SPARK_ALPHA_START_EXECUTION_PLAN.md`).
+- Regression + evidence:
+  - `python -m py_compile scripts/alpha_gap_audit.py tests/test_alpha_gap_audit_helpers.py` -> pass
+  - `pytest tests/test_alpha_gap_audit_helpers.py -q` -> `2 passed`
+  - `python scripts/alpha_gap_audit.py` ->
+    - `advisory_files=14`
+    - `tuneable_sections=40`
+    - `tuneable_keys=415`
+    - `lib_jsonl_refs=375`
+    - `distillation_files=5`
+    - `orchestrator_module_present=false`
+    - `vibeforge_has_code_evolve_lane=false`
+    - report: `benchmarks/out/alpha_start/alpha_gap_audit_20260227_145053.json`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -748,6 +765,7 @@ Branch: feat/spark-alpha
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
 - replay evidence batch (`seeds=42,77`; `episodes=8,20`) -> `alpha_win_rate=1.0`, `promotion_pass_rate=1.0`, `runs=4`
 - alpha core pytest slice in readiness run -> `242 passed`
+- `python scripts/alpha_gap_audit.py` -> `advisory_files=14`, `tuneable_keys=415`, `lib_jsonl_refs=375`, `distillation_files=5`, `orchestrator_module_present=false`, `vibeforge_has_code_evolve_lane=false`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `18`
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
