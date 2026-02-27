@@ -1161,6 +1161,21 @@ Notable metrics now:
   - `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_self_review.py tests/test_carmack_kpi.py -q` -> `14 passed`
   - `python scripts/alpha_gap_audit.py` -> `advisory_files=4`, `tuneable_keys=286`, `distillation_files=3`
 
+### Latest config + observability pruning delta (2026-02-27, advisory engine key retirement)
+
+- Pruned stale advisory-engine tuneables not used by alpha runtime:
+  - removed from schema/config: `max_ms`, `selective_ai_synth_enabled`, `selective_ai_min_remaining_ms`, `selective_ai_min_authority`
+  - added to retired-key filter so legacy user tuneables are dropped silently instead of failing validation
+- Updated observatory surfaces to remove stale references to retired advisory-engine knobs.
+- Improved self-review reporting to separate benchmark noise from live quality:
+  - nonbench summary now excludes trace prefixes: `advisory-bench-`, `arena:`, `delta-`
+  - added regression test coverage for this exclusion behavior
+- Validation:
+  - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0`
+  - `pytest tests/test_advisory_self_review.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `21 passed`
+  - `python scripts/alpha_gap_audit.py` -> `advisory_files=4`, `tuneable_keys=282`, `distillation_files=3`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+
 ## Not done yet
 
 These are still pending relative to the broader Simplification/Fast-Track goals:
@@ -1169,7 +1184,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 2. Storage consolidation to single SQLite-first memory/advisory store is partially implemented (cognitive memory is SQLite-canonical; advisory packet lookup is now SQLite-canonical with no runtime JSON lookup fallback mode).
 3. Memory compaction engine is partially implemented (ACT-R cognitive compaction + packet compaction preview/apply lane + sync-integrated bounded packet apply lane are in place); deeper unified policy across all advisory/memory stores is still pending.
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).
-5. Config reduction wave target was met and then expanded for sync packet-compaction controls (`tuneable_keys=286`); deeper runtime simplification of high-noise sections is still pending.
+5. Config reduction wave target was met and then expanded for sync packet-compaction controls (`tuneable_keys=282`); deeper runtime simplification of high-noise sections is still pending.
 6. Distillation file-count collapse wave is now met (`distillation_files=3`); end-to-end flow-level unification beyond module surface is still pending.
 7. Broad file/function deletion pass is in progress (legacy advisory dual-path test suites + `advisory_memory_fusion.py` + `advisory_prefetch_planner.py` + `advisory_packet_feedback.py` + `advisory_packet_llm_reranker.py` removed); larger legacy advisory/runtime file deletions are still pending.
 8. Final migration playbook is now documented (`docs/SPARK_ALPHA_MIGRATION_PLAYBOOK.md`); execution and cutover evidence collection remains ongoing.

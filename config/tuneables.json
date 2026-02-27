@@ -91,7 +91,6 @@
   },
   "advisory_engine": {
     "enabled": true,
-    "max_ms": 4000,
     "include_mind": true,
     "prefetch_queue_enabled": false,
     "prefetch_inline_enabled": true,
@@ -99,9 +98,6 @@
     "advisory_text_repeat_cooldown_s": 300,
     "global_dedupe_cooldown_s": 240,
     "force_programmatic_synth": false,
-    "selective_ai_synth_enabled": true,
-    "selective_ai_min_remaining_ms": 1800,
-    "selective_ai_min_authority": "whisper",
     "emit_enabled": true,
     "emit_max_chars": 500,
     "emit_format": "inline"

@@ -509,7 +509,7 @@ def generate_advisory_reverse_engineering(data: Dict[int, Dict[str, Any]]) -> st
     packet = tune.get("packet") or {}
     lines.append(
         "| advisory_engine | "
-        f"include_mind={engine.get('include_mind')}, max_ms={engine.get('max_ms')}, "
+        f"include_mind={engine.get('include_mind')}, "
         f"global_dedupe_cooldown_s={engine.get('global_dedupe_cooldown_s')}, "
         f"force_programmatic_synth={engine.get('force_programmatic_synth')} |"
     )

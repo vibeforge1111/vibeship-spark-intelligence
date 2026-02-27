@@ -24,6 +24,11 @@ ALPHA_SUPPRESSION_EVENTS = {
     "dedupe_empty",
     "dedupe_gate_empty",
 }
+NONBENCH_TRACE_EXCLUDE_PREFIXES = [
+    "advisory-bench-",
+    "arena:",
+    "delta-",
+]
 
 
 def _to_ts(value: Any) -> float:
@@ -402,7 +407,7 @@ def generate_summary(window_hours: float) -> Dict[str, Any]:
             spark_dir / "advisor" / "recent_advice.jsonl",
             window_s=window_s,
             now_ts=now_ts,
-            exclude_trace_prefixes=["advisory-bench-"],
+            exclude_trace_prefixes=NONBENCH_TRACE_EXCLUDE_PREFIXES,
         ),
         "engine": summarize_engine(
             ADVISORY_ENGINE_LOG,

@@ -117,3 +117,36 @@ def test_summarize_engine_and_outcomes(tmp_path):
     assert out["trace_mismatch_count"] == 1
     assert out["strict_action_rate"] == 0.6667
     assert len(out["bad_records"]) == 1
+
+
+def test_generate_summary_nonbench_excludes_replay_and_delta(tmp_path, monkeypatch):
+    mod = _load_module()
+    now = time.time()
+    spark_dir = tmp_path / "spark"
+    advisor_dir = spark_dir / "advisor"
+    advisor_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"ts": now - 20, "trace_id": "arena:run-1", "sources": ["workflow"], "advice_texts": ["a1"]},
+        {"ts": now - 15, "trace_id": "delta-smoke-1", "sources": ["eidos"], "advice_texts": ["a2"]},
+        {"ts": now - 10, "trace_id": "live-trace-1", "sources": ["semantic"], "advice_texts": ["a3"]},
+    ]
+    (advisor_dir / "recent_advice.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n",
+        encoding="utf-8",
+    )
+
+    engine_log = spark_dir / "advisory_engine_alpha.jsonl"
+    engine_log.write_text("", encoding="utf-8")
+    (spark_dir / "meta_ralph").mkdir(parents=True, exist_ok=True)
+    (spark_dir / "meta_ralph" / "outcome_tracking.json").write_text(
+        json.dumps({"records": []}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(mod, "SPARK_DIR", spark_dir)
+    monkeypatch.setattr(mod, "ADVISORY_ENGINE_LOG", engine_log)
+
+    summary = mod.generate_summary(window_hours=1.0)
+    assert summary["recent_advice"]["rows"] == 3
+    assert summary["recent_advice_nonbench"]["rows"] == 1
+    assert summary["recent_advice_nonbench"]["excluded"] == 2

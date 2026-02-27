@@ -149,7 +149,6 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
     # ---- advisory_engine: engine behavior ----
     "advisory_engine": {
         "enabled": TuneableSpec("bool", True, None, None, "Enable the advisory engine"),
-        "max_ms": TuneableSpec("float", 4000, 250, 20000, "Max advisory engine time budget in ms"),
         "include_mind": TuneableSpec("bool", False, None, None, "Include Mind memory in advisory"),
         "prefetch_queue_enabled": TuneableSpec("bool", False, None, None, "Enable prefetch queue"),
         "prefetch_inline_enabled": TuneableSpec("bool", True, None, None, "Enable inline prefetch"),
@@ -162,10 +161,6 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
             "Cross-session global dedupe cooldown (s). Prevents same insight across sessions. "
             "Distinct from text_repeat (exact text) and advice_repeat (same ID)"),
         "force_programmatic_synth": TuneableSpec("bool", False, None, None, "Force programmatic synthesis"),
-        "selective_ai_synth_enabled": TuneableSpec("bool", True, None, None, "Enable selective AI synthesis"),
-        "selective_ai_min_remaining_ms": TuneableSpec("float", 1800, 0, 20000, "Min ms remaining for AI synth"),
-        "selective_ai_min_authority": TuneableSpec("str", "whisper", None, None, "Min authority for AI synth",
-                                                   ["silent", "whisper", "note", "warning", "block"]),
         "emit_enabled": TuneableSpec("bool", True, None, None, "Enable stdout advisory emission"),
         "emit_max_chars": TuneableSpec("int", 500, 50, 5000, "Max characters per emission"),
         "emit_format": TuneableSpec("str", "inline", None, None, "Emission format style",
@@ -617,6 +612,10 @@ _RETIRED_KEYS: Dict[str, set[str]] = {
         "delivery_stale_s",
         "global_dedupe_scope",
         "actionability_enforce",
+        "max_ms",
+        "selective_ai_synth_enabled",
+        "selective_ai_min_remaining_ms",
+        "selective_ai_min_authority",
     },
     "auto_tuner": {
         "apply_cross_section_recommendations",
