@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, advisory compat-module deletion + alpha-only runtime cleanup)
+Last updated: 2026-02-27 (local branch snapshot, sqlite-canonical packet lookup + advisory runtime cleanup)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -596,6 +596,16 @@ Branch: feat/spark-alpha
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `8`
 
+88. `db65f8d` - `feat(alpha-pr04): enforce sqlite-canonical packet lookups in runtime mode`
+- Updated advisory packet lookup behavior:
+  - when `PACKET_SQLITE_LOOKUP_ENABLED=true`, exact and relaxed lookups no longer fall back to JSON index/meta paths
+  - JSON lookup fallback path remains only for explicit non-sqlite mode (test/legacy compatibility lane)
+- Added regression coverage to enforce no-fallback behavior when sqlite lookup is enabled.
+- Regression + gate evidence:
+  - `pytest tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_production_loop_gates.py -q` -> `168 passed`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `9`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -718,7 +728,7 @@ Notable metrics now:
 These are still pending relative to the broader Simplification/Fast-Track goals:
 
 1. Full advisory collapse (17 modules -> compact 3-module architecture) is not implemented.
-2. Storage consolidation to single SQLite-first memory/advisory store is partially implemented (cognitive memory is SQLite-canonical; advisory packet metadata now has SQLite spine + default lookup integration with JSON fallback still retained).
+2. Storage consolidation to single SQLite-first memory/advisory store is partially implemented (cognitive memory is SQLite-canonical; advisory packet lookup is SQLite-canonical in runtime mode, with JSON lookup fallback retained only for explicit non-sqlite compatibility mode).
 3. Memory compaction engine is partially implemented (ACT-R style planner + preview/apply runner + bounded periodic ACT-R runtime compaction for cognitive insights are in place); broader integration across advisory stores is still pending.
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).
 5. Large config surface reduction (hard pruning to minimal knobs) is not implemented.
