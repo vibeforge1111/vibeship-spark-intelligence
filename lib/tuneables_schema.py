@@ -647,7 +647,7 @@ SECTION_CONSUMERS: Dict[str, List[str]] = {
     "auto_tuner": ["lib/auto_tuner.py"],
     "chip_merge": ["lib/chips/runtime.py", "lib/chip_merger.py"],
     "advisory_quality": ["lib/advisory_synthesizer.py"],
-    "advisory_preferences": ["lib/advisory_preferences.py"],
+    "advisory_preferences": ["lib/preferences.py"],
     "memory_emotion": ["lib/memory_store.py", "lib/memory_banks.py"],
     "memory_learning": ["lib/memory_store.py"],
     "memory_retrieval_guard": ["lib/memory_store.py"],

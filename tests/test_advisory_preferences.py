@@ -4,7 +4,7 @@ import json
 
 import lib.advisor as advisor_mod
 import lib.advisory_engine_alpha as advisory_alpha_mod
-import lib.advisory_preferences as prefs
+import lib.preferences as prefs
 import lib.advisory_synthesizer as advisory_synth_mod
 
 

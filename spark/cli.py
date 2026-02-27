@@ -91,7 +91,7 @@ from lib.memory_banks import store_memory, sync_insights_to_banks, get_bank_stat
 from lib.memory_store import purge_telemetry_memories
 from lib.eidos.store import purge_telemetry_distillations
 from lib.advisor import record_advice_feedback
-from lib.advisory_preferences import (
+from lib.preferences import (
     apply_preferences as apply_advisory_preferences,
     apply_quality_uplift as apply_advisory_quality_uplift,
     get_current_preferences as get_current_advisory_preferences,
