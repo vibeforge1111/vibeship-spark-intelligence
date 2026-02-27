@@ -1071,8 +1071,7 @@ def _dedupe_scope_key(
         intent = str(intent_family or "").strip().lower() or "emergent_other"
         return f"{tree_key}:{phase}:{intent}"
 
-    # LLM area: dedupe_optimize — refine dedupe key with semantic intent
-    return _llm_area_dedupe_optimize("global", session_id, intent_family, task_phase)
+    return "global"
 
 
 def _diagnostics_envelope(
@@ -2615,34 +2614,6 @@ def _llm_area_suppression_triage(suppressed: List[Dict[str, Any]]) -> List[Dict[
         return suppressed
     except Exception:
         return suppressed
-
-
-def _llm_area_dedupe_optimize(
-    base_key: str,
-    session_id: str,
-    intent_family: str,
-    task_phase: str,
-) -> str:
-    """LLM area: refine dedupe key with semantic intent analysis.
-
-    When disabled (default), returns base_key unchanged.
-    """
-    try:
-        from .llm_area_prompts import format_prompt
-        from .llm_dispatch import llm_area_call
-
-        prompt = format_prompt(
-            "dedupe_optimize",
-            base_key=base_key,
-            intent_family=intent_family or "unknown",
-            task_phase=task_phase or "unknown",
-        )
-        result = llm_area_call("dedupe_optimize", prompt, fallback=base_key)
-        if result.used_llm and result.text:
-            return result.text.strip()[:200]
-        return base_key
-    except Exception:
-        return base_key
 
 
 def _llm_area_implicit_feedback_interpret(
