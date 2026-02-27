@@ -409,6 +409,14 @@ Branch: feat/spark-alpha
 - Removed direct workload dependence on legacy `lib.advisory_engine` execution path.
 - Script summary now reports `advisory_route` status instead of legacy engine config dump.
 
+65. `ae424ee` - `refactor(alpha-pr07): align replay arena champion route to orchestrator`
+- Updated `scripts/spark_alpha_replay_arena.py` champion route from legacy-engine naming to `orchestrator`.
+- Replay now compares:
+  - champion: `lib.advisory_orchestrator.on_pre_tool`
+  - challenger: `lib.advisory_engine_alpha.on_pre_tool`
+- Updated replay output/report fields from `legacy_*` to `orchestrator_*`.
+- Updated replay evidence helper test expectations for winner labels.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -476,6 +484,9 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `171 passed`
 - `python -m py_compile scripts/advisory_controlled_delta.py` -> pass
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
+- `python -m py_compile scripts/spark_alpha_replay_arena.py scripts/run_alpha_replay_evidence.py` -> pass
+- `pytest tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py -q` -> `6 passed`
+- `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> pass
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after dedupe_optimize llm-area surface removal)
 - `pytest tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_vibeforge_helpers.py tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `76 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after suppression_triage llm-area surface removal)

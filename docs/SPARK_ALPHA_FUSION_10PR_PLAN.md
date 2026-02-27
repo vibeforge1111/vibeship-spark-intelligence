@@ -82,6 +82,7 @@ Completed commits:
 62. `7418601` PR-04 follow-up: added SQLite advisory packet spine and integrated exact/relaxed packet lookup with JSON fallback safety
 63. `cd630ae` PR-09 follow-up: removed legacy dual-path advisory engine test suites to reduce obsolete mock-heavy coverage surface
 64. `85bafb1` PR-10 follow-up: moved advisory controlled-delta workload execution to alpha orchestrator entrypoints
+65. `ae424ee` PR-07 follow-up: updated replay arena champion route to orchestrator and renamed legacy score fields accordingly
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -110,6 +111,7 @@ Current measured state:
 18. SQLite packet-spine integration slice: `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0`; `pytest tests/test_advisory_packet_store.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py` -> `155 passed`; `python -m py_compile lib/advisory_packet_spine.py lib/advisory_packet_store.py` -> pass
 19. Post-legacy-test deletion advisory slice: `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py` -> `171 passed`
 20. Controlled-delta alpha-route smoke: `python -m py_compile scripts/advisory_controlled_delta.py` -> pass; `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
+21. Replay alignment slice: `python -m py_compile scripts/spark_alpha_replay_arena.py scripts/run_alpha_replay_evidence.py` -> pass; `pytest tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py` -> `6 passed`; replay smoke run (`--episodes 8 --seed 42`) passed
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial (cognitive SQLite-canonical + advisory packet SQLite spine integrated; JSON compatibility/fallback still present)
