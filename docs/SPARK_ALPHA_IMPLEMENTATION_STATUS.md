@@ -669,6 +669,18 @@ Branch: feat/spark-alpha
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `14`
 
+95. `a8b3b2d` - `refactor(alpha-pr10): route hooks and delta workload directly to alpha engine`
+- Removed runtime dependency on orchestrator indirection in live hook and delta workload paths:
+  - `hooks/observe.py` now calls `lib.advisory_engine_alpha` handlers directly (`on_pre_tool`, `on_post_tool`, `on_user_prompt`)
+  - `scripts/advisory_controlled_delta.py` now runs directly against alpha handlers
+- Retained a stable route status payload in controlled-delta output (`mode=alpha`, `decision_log=advisory_engine_alpha.jsonl`) without orchestrator dependency.
+- Regression + gate evidence:
+  - `python -m py_compile hooks/observe.py scripts/advisory_controlled_delta.py` -> pass
+  - `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py tests/test_advisory_orchestrator.py -q` -> `165 passed`
+  - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `15`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
