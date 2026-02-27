@@ -18,8 +18,8 @@ This playbook defines the exact rollout path from mixed legacy/alpha surfaces to
 
 1. Set runtime route to alpha:
    - `SPARK_ADVISORY_ROUTE=alpha`
-2. Ensure alpha compat logging is enabled (default in non-pytest):
-   - `SPARK_ADVISORY_ALPHA_COMPAT_ENGINE_LOG=1`
+2. Verify alpha runtime log is active:
+   - `~/.spark/advisory_engine_alpha.jsonl`
 3. Run smoke workload:
    - `python scripts/advisory_controlled_delta.py --rounds 20 --label alpha_lock --out benchmarks/out/advisory_delta_alpha_lock.json`
 
@@ -41,10 +41,13 @@ Rollback B:
 
 ## Phase C: Legacy Surface Removal
 
-1. Remove legacy dual-path test/scripting surfaces (already done in alpha branch).
+1. Remove legacy advisory compatibility module and legacy-only tests (done in alpha branch):
+   - `lib/advisory_engine.py`
+   - `tests/test_advisory_engine_evidence.py`
+   - `tests/test_advisory_engine_lineage.py`
 2. Keep replay arena champion as orchestrator, challenger as alpha.
 3. Run alpha advisory regression slice:
-   - `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py -q`
+   - `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py -q`
 
 Rollback C:
 1. Restore deleted suites/scripts from prior commit tag if specific diagnostics are needed.

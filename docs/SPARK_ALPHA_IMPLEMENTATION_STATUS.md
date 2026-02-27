@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, alpha observability alignment + LLM-area/config pruning + packet-store readiness stabilization)
+Last updated: 2026-02-27 (local branch snapshot, advisory compat-module deletion + alpha-only runtime cleanup)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -575,6 +575,18 @@ Branch: feat/spark-alpha
 - Expanded refreshable stale grace horizon to 24h for daily-cycle stability in readiness/freshness gates.
 - Added regression coverage for refreshable stale packets with zero usage counters.
 - Regression slice: `pytest tests/test_advisory_packet_store.py tests/test_production_loop_gates.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `50 passed`.
+
+86. `86b20af` - `refactor(alpha-pr10): delete legacy advisory compat module and dead tests`
+- Deleted `lib/advisory_engine.py` compatibility runtime surface.
+- Deleted legacy advisory compat test suites:
+  - `tests/test_advisory_engine_evidence.py`
+  - `tests/test_advisory_engine_lineage.py`
+- Updated remaining ownership references to alpha-primary hosts:
+  - `lib/tuneables_schema.py`
+  - `lib/observatory/tuneables_deep_dive.py`
+  - `scripts/vibeforge.py` evolve presets
+  - alpha observatory/packet-store wording now references alpha log only
+- Regression slice: `pytest tests/test_vibeforge_helpers.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisory_preferences.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py tests/test_intelligence_llm_preferences.py tests/test_llm_dispatch.py tests/test_production_loop_gates.py tests/test_context_sync_policy.py tests/test_memory_compaction.py tests/test_memory_spine_sqlite.py tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py -q` -> `251 passed`.
 
 ### Runtime/data repairs applied in local Spark state
 
