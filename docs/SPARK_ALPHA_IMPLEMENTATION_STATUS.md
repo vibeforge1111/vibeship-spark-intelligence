@@ -660,6 +660,15 @@ Branch: feat/spark-alpha
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `13`
 
+94. `857f870` - `refactor(alpha-pr10): remove dead advisory route state and startup toggle`
+- Removed unused `SessionState.last_advisory_route` field from advisory session state.
+- Removed dead assignment to `last_advisory_route` in alpha pre-tool flow.
+- Removed obsolete startup env default for `SPARK_ADVISORY_ROUTE` now that routing is alpha-only.
+- Regression + gate evidence:
+  - `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_state.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `48 passed`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `14`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`

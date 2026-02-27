@@ -16,15 +16,14 @@ This playbook defines the exact rollout path from mixed legacy/alpha surfaces to
 
 ## Phase A: Runtime Lock
 
-1. Set runtime route to alpha:
-   - `SPARK_ADVISORY_ROUTE=alpha`
+1. Runtime routing is alpha-only (no route toggle).
 2. Verify alpha runtime log is active:
    - `~/.spark/advisory_engine_alpha.jsonl`
 3. Run smoke workload:
    - `python scripts/advisory_controlled_delta.py --rounds 20 --label alpha_lock --out benchmarks/out/advisory_delta_alpha_lock.json`
 
 Rollback A:
-1. Set `SPARK_ADVISORY_ROUTE=engine` and re-run smoke workload.
+1. Restore previous commit/tag and re-run smoke workload.
 
 ## Phase B: Storage Lock
 

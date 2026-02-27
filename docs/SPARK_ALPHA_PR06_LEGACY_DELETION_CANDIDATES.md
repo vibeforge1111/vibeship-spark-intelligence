@@ -34,4 +34,4 @@ Purpose: explicit legacy advisory-path candidates for PR-10 deletion sweep, tied
 
 ## Rollback Note
 
-If any deletion candidate causes regression, set `SPARK_ADVISORY_ROUTE=engine` and restore removed block(s) from rollback tag.
+If any deletion candidate causes regression, restore removed block(s) from rollback tag.
