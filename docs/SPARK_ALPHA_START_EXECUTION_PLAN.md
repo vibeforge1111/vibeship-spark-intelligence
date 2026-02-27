@@ -141,7 +141,7 @@ Tasks:
 1. Advisory collapse wave:
    - reduce advisory file count below `14` in bounded merge/deletion batches
 2. Tuneables reduction wave:
-   - reduce schema keys below `415` by removing unused/dead surfaces with usage evidence
+   - reduce schema keys below `415` by removing unused/dead surfaces with usage evidence from `scripts/tuneables_usage_audit.py`
 3. Store consolidation wave:
    - remove additional JSON/JSONL runtime dependencies where SQLite equivalents exist
 4. Compaction unification wave:
@@ -183,3 +183,5 @@ python scripts/alpha_start_readiness.py --emit-report --strict
 4. controlled-delta output referenced by the JSON report
 5. `benchmarks/out/alpha_start/alpha_gap_audit_latest.json`
 6. `benchmarks/out/alpha_start/alpha_gap_audit_latest.md`
+7. `benchmarks/out/alpha_start/tuneables_usage_audit_latest.json`
+8. `benchmarks/out/alpha_start/tuneables_usage_audit_latest.md`
