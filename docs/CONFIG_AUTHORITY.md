@@ -19,7 +19,7 @@ Notes:
 
 ## Current Adoption
 - `lib/bridge_cycle.py` (`bridge_worker.*`)
-- `lib/advisory_engine.py` (`advisory_engine.*`)
+- `lib/advisory_engine_alpha.py` (`advisory_engine.*`)
 - `lib/advisory_emitter.py` (`advisory_engine.emit_*`)
 - `lib/advisor.py` (`advisor.*`, `auto_tuner.*`, `retrieval.*`, `memory_emotion.*`, `values.advice_cache_ttl`)
 - `lib/advisory_gate.py` (`advisory_gate.*`, including agreement gate knobs)

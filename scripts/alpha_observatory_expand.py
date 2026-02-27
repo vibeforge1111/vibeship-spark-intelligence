@@ -55,7 +55,6 @@ def _find_legacy_doc_refs() -> List[Tuple[str, str]]:
     legacy_tokens = (
         "lib/advisory_engine.py",
         "lib/advisory_orchestrator.py",
-        "lib/advisory_packet_store.py",
     )
     refs: List[Tuple[str, str]] = []
     for p in ROOT.rglob("*.md"):

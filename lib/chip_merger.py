@@ -7,6 +7,7 @@ so they can be validated, promoted, and injected into context.
 """
 
 import json
+import importlib
 import os
 import re
 import sys
@@ -15,7 +16,6 @@ from pathlib import Path
 from typing import Dict, List, Any
 from datetime import datetime
 
-from lib.cognitive_learner import get_cognitive_learner, CognitiveCategory
 from lib.config_authority import resolve_section
 from lib.exposure_tracker import record_exposures
 from lib.queue import _tail_lines
@@ -96,33 +96,50 @@ NON_LEARNING_PATTERNS = (
 
 # Map chip domains to cognitive categories
 CHIP_TO_CATEGORY = {
-    "market-intel": CognitiveCategory.CONTEXT,
-    "game_dev": CognitiveCategory.REASONING,
-    "game-dev": CognitiveCategory.REASONING,
-    "marketing": CognitiveCategory.CONTEXT,
-    "vibecoding": CognitiveCategory.WISDOM,
-    "biz-ops": CognitiveCategory.CONTEXT,
-    "bench-core": CognitiveCategory.SELF_AWARENESS,
-    "bench_core": CognitiveCategory.SELF_AWARENESS,
-    "spark-core": CognitiveCategory.META_LEARNING,
+    "market-intel": "CONTEXT",
+    "game_dev": "REASONING",
+    "game-dev": "REASONING",
+    "marketing": "CONTEXT",
+    "vibecoding": "WISDOM",
+    "biz-ops": "CONTEXT",
+    "bench-core": "SELF_AWARENESS",
+    "bench_core": "SELF_AWARENESS",
+    "spark-core": "META_LEARNING",
 }
 
 DOMAIN_TO_CATEGORY = {
-    "coding": CognitiveCategory.REASONING,
-    "development": CognitiveCategory.REASONING,
-    "debugging": CognitiveCategory.REASONING,
-    "tools": CognitiveCategory.META_LEARNING,
-    "engineering": CognitiveCategory.REASONING,
-    "delivery": CognitiveCategory.WISDOM,
-    "reliability": CognitiveCategory.WISDOM,
-    "game_dev": CognitiveCategory.REASONING,
-    "game": CognitiveCategory.REASONING,
-    "marketing": CognitiveCategory.CONTEXT,
-    "growth": CognitiveCategory.CONTEXT,
-    "strategy": CognitiveCategory.CONTEXT,
-    "pricing": CognitiveCategory.CONTEXT,
-    "benchmarking": CognitiveCategory.SELF_AWARENESS,
+    "coding": "REASONING",
+    "development": "REASONING",
+    "debugging": "REASONING",
+    "tools": "META_LEARNING",
+    "engineering": "REASONING",
+    "delivery": "WISDOM",
+    "reliability": "WISDOM",
+    "game_dev": "REASONING",
+    "game": "REASONING",
+    "marketing": "CONTEXT",
+    "growth": "CONTEXT",
+    "strategy": "CONTEXT",
+    "pricing": "CONTEXT",
+    "benchmarking": "SELF_AWARENESS",
 }
+
+
+def _cognitive_module():
+    return importlib.import_module("lib.cognitive_learner")
+
+
+def get_cognitive_learner():
+    """Compatibility accessor kept for tests and low-coupling runtime import."""
+    return _cognitive_module().get_cognitive_learner()
+
+
+def _category(name: str):
+    enum = getattr(_cognitive_module(), "CognitiveCategory")
+    try:
+        return enum[str(name).strip().upper()]
+    except Exception:
+        return enum.CONTEXT
 
 
 def _load_merge_state() -> Dict[str, Any]:
@@ -443,13 +460,13 @@ def _is_learning_quality_ok(quality: Dict[str, Any], limits: Dict[str, float]) -
     )
 
 
-def _infer_category(chip_id: str, captured_data: Dict[str, Any], content: str) -> CognitiveCategory:
+def _infer_category(chip_id: str, captured_data: Dict[str, Any], content: str):
     """Infer cognitive category for chips with robust fallback."""
     if chip_id in CHIP_TO_CATEGORY:
-        return CHIP_TO_CATEGORY[chip_id]
+        return _category(CHIP_TO_CATEGORY[chip_id])
     canonical = chip_id.replace("_", "-")
     if canonical in CHIP_TO_CATEGORY:
-        return CHIP_TO_CATEGORY[canonical]
+        return _category(CHIP_TO_CATEGORY[canonical])
 
     # Try installed chip metadata (domains).
     try:
@@ -460,19 +477,19 @@ def _infer_category(chip_id: str, captured_data: Dict[str, Any], content: str) -
         for domain in chip.domains:
             key = str(domain).strip().lower().replace("-", "_")
             if key in DOMAIN_TO_CATEGORY:
-                return DOMAIN_TO_CATEGORY[key]
+                return _category(DOMAIN_TO_CATEGORY[key])
 
     # Heuristic fallback from content.
     text = f"{chip_id} {content or ''}".lower()
     if any(k in text for k in ("prefer", "should", "avoid", "never", "always", "lesson")):
-        return CognitiveCategory.WISDOM
+        return _category("WISDOM")
     if any(k in text for k in ("error", "failed", "fix", "issue", "debug")):
-        return CognitiveCategory.REASONING
+        return _category("REASONING")
     if any(k in text for k in ("user", "audience", "market", "customer", "campaign")):
-        return CognitiveCategory.CONTEXT
+        return _category("CONTEXT")
     if any(k in text for k in ("confidence", "benchmark", "method", "self")):
-        return CognitiveCategory.SELF_AWARENESS
-    return CognitiveCategory.CONTEXT
+        return _category("SELF_AWARENESS")
+    return _category("CONTEXT")
 
 
 def _tail_jsonl(path: Path, limit: int) -> List[Dict[str, Any]]:
