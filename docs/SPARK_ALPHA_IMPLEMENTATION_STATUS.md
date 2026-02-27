@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, runtime JSON retirement + workflow evidence schema/config authority alignment)
+Last updated: 2026-02-27 (local branch snapshot, alpha runtime decoupling + orchestrator-first observability alignment)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -431,6 +431,29 @@ Branch: feat/spark-alpha
   - explicit rollback per phase
   - post-merge watch protocol
 
+68. `c694d3a` - `refactor(alpha-pr10): move quality uplift runtime hot-apply to alpha config APIs`
+- Added alpha runtime config/status APIs in `lib/advisory_engine_alpha.py`:
+  - `apply_alpha_config(...)`
+  - `get_alpha_config()`
+  - `get_alpha_status()`
+- Added advisory-engine section hot-reload registration for alpha runtime config.
+- Rewired `lib/advisory_preferences.py` quality uplift hot-apply path to alpha runtime APIs (removed direct runtime dependency on `lib/advisory_engine`).
+- Updated preference tests to patch alpha config/status APIs.
+
+69. `b221640` - `refactor(alpha-pr10): align replay and observability to orchestrator-first alpha logs`
+- Updated replay arena internals to use orchestrator-first naming in runtime variables (removed residual `legacy_*` internal naming).
+- Updated advisory controlled-delta repo-mode targets to alpha/orchestrator files.
+- Updated observability/runtime consumers to prefer `~/.spark/advisory_engine_alpha.jsonl` with compat fallback:
+  - `scripts/advisory_day_trial.py`
+  - `scripts/advisory_self_review.py`
+  - `scripts/cross_surface_drift_checker.py`
+  - `scripts/memory_quality_observatory.py`
+  - `lib/carmack_kpi.py`
+
+70. `068203b` - `refactor(alpha-pr09): make doctor advisory runtime check alpha-first`
+- Updated doctor advisory runtime check to prefer `SPARK_ADVISORY_ALPHA_ENABLED` and only use `SPARK_ADVISORY_ENGINE` as legacy alias fallback.
+- Updated doctor pass/warn messages to reflect alpha-primary runtime semantics.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -514,6 +537,9 @@ Branch: feat/spark-alpha
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`
   - `benchmarks/out/replay_arena/spark_alpha_replay_scorecards_20260227_013933.json`
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_diff_20260227_013933.json`
+- `pytest tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_context_sync_policy.py tests/test_memory_compaction.py tests/test_memory_spine_sqlite.py tests/test_advisory_preferences.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py -q` -> `220 passed`
+- `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`
+- `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 
 Notable metrics now:
 - `context.p50`: 230

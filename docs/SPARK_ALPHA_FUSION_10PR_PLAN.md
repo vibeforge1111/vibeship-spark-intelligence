@@ -85,6 +85,9 @@ Completed commits:
 65. `ae424ee` PR-07 follow-up: updated replay arena champion route to orchestrator and renamed legacy score fields accordingly
 66. `68750f4` PR-06 follow-up: added alpha compat mirroring to `advisory_engine.jsonl` so legacy observability consumers remain stable during cutover
 67. `abeafae` docs follow-up: added executable migration playbook (`docs/SPARK_ALPHA_MIGRATION_PLAYBOOK.md`) with phase gates and rollback paths
+68. `c694d3a` PR-10 follow-up: moved quality-uplift runtime hot-apply/status path from legacy advisory_engine to alpha runtime config APIs
+69. `b221640` PR-10 follow-up: aligned replay/observability tooling to orchestrator-first alpha log defaults with compat fallback
+70. `068203b` PR-09 follow-up: switched doctor advisory runtime health check to alpha-first env semantics (legacy alias retained)
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -115,6 +118,9 @@ Current measured state:
 20. Controlled-delta alpha-route smoke: `python -m py_compile scripts/advisory_controlled_delta.py` -> pass; `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 21. Replay alignment slice: `python -m py_compile scripts/spark_alpha_replay_arena.py scripts/run_alpha_replay_evidence.py` -> pass; `pytest tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py` -> `6 passed`; replay smoke run (`--episodes 8 --seed 42`) passed
 22. Alpha compat-log slice: `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py` -> `169 passed`; `python -m py_compile lib/advisory_engine_alpha.py tests/test_advisory_engine_alpha.py` -> pass
+23. Alpha runtime decoupling + observability alignment slice: `pytest tests/test_advisory_preferences.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_tuneables_alignment.py` -> `16 passed`; `pytest tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py tests/test_advisory_day_trial.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py` -> `21 passed`
+24. Broad post-alignment regression slice: `pytest tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_context_sync_policy.py tests/test_memory_compaction.py tests/test_memory_spine_sqlite.py tests/test_advisory_preferences.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py -q` -> `220 passed`
+25. Live smoke evidence refresh: replay arena smoke (`--episodes 8 --seed 42`) winner `alpha` with promotion gate pass; controlled-delta alpha-route smoke (`--rounds 2`) passed and wrote `benchmarks/out/advisory_delta_smoke_alpha.json`
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial (cognitive SQLite-canonical + advisory packet SQLite spine integrated; JSON compatibility/fallback still present)
