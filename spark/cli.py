@@ -2526,15 +2526,36 @@ def _print_advisory_preferences(preferences: dict) -> None:
 
 def _get_advisory_runtime_state() -> dict:
     """Best-effort runtime status for end-to-end advisory ON/OFF reporting."""
+    status = None
+    # Alpha engine is authoritative. Legacy import remains as compatibility fallback.
     try:
-        from lib.advisory_engine import get_engine_status
+        from lib.advisory_engine_alpha import get_alpha_status
 
-        status = get_engine_status()
+        status = get_alpha_status()
     except Exception:
-        return {"available": False}
+        try:
+            from lib.advisory_engine import get_engine_status
+
+            status = get_engine_status()
+        except Exception:
+            return {"available": False}
 
     if not isinstance(status, dict):
         return {"available": False}
+    if "config" in status and "alpha_log" in status:
+        cfg = status.get("config") if isinstance(status.get("config"), dict) else {}
+        force_programmatic = bool(cfg.get("force_programmatic_synth", True))
+        return {
+            "available": True,
+            "engine_enabled": bool(status.get("enabled")),
+            "emitter_enabled": bool(status.get("enabled")),
+            "synth_tier": "Programmatic" if force_programmatic else "Auto",
+            "synth_ai_available": not force_programmatic,
+            "preferred_provider": "programmatic" if force_programmatic else "auto",
+            "providers": {},
+            "minimax_model": "",
+        }
+
     emitter = status.get("emitter") if isinstance(status.get("emitter"), dict) else {}
     synth = status.get("synthesizer") if isinstance(status.get("synthesizer"), dict) else {}
     return {

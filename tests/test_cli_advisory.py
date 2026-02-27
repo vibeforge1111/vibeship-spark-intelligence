@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import lib.advisory_engine_alpha as advisory_alpha_mod
 import spark.cli as spark_cli
 
 
@@ -256,3 +257,22 @@ def test_cmd_advisory_repair_uses_preference_repair(monkeypatch, capsys):
     assert calls["source"] == "spark_cli_repair"
     assert "before_drift: yes (2 overrides)" in out
     assert "after_drift: no (0 overrides)" in out
+
+
+def test_get_advisory_runtime_state_uses_alpha_engine(monkeypatch):
+    monkeypatch.setattr(
+        advisory_alpha_mod,
+        "get_alpha_status",
+        lambda: {
+            "enabled": True,
+            "config": {"force_programmatic_synth": True},
+            "alpha_log": "tmp/advisory_engine_alpha.jsonl",
+        },
+    )
+
+    state = spark_cli._get_advisory_runtime_state()
+
+    assert state["available"] is True
+    assert state["engine_enabled"] is True
+    assert state["emitter_enabled"] is True
+    assert state["synth_tier"] == "Programmatic"

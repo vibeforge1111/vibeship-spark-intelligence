@@ -22,6 +22,12 @@ def test_classify_allows_actionable_learning_text():
     assert decision.rule == "none"
 
 
+def test_classify_flags_short_question_fragment():
+    decision = classify("What should we do next?")
+    assert decision.is_noise is True
+    assert decision.rule in {"question_fragment", "conversational_fragment"}
+
+
 def test_shadow_summary_counts_by_module():
     rows = [
         {"module": "meta_ralph._is_primitive"},

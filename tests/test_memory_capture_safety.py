@@ -167,6 +167,12 @@ def test_none_input():
     assert breakdown == {}
 
 
+def test_question_prompt_scores_zero():
+    score, breakdown = importance_score("What should we do so that this works better?")
+    assert score == 0.0
+    assert "question_like" in breakdown
+
+
 # ── Emphasis signals ──────────────────────────────────────────────────
 
 def test_emphasis_must():

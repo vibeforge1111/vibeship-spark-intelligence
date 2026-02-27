@@ -117,6 +117,11 @@ OPERATIONAL_PATTERNS = [
 
 # Compile patterns for efficiency
 _OPERATIONAL_REGEXES = [re.compile(p, re.IGNORECASE) for p in OPERATIONAL_PATTERNS]
+_QUESTION_START_RE = re.compile(
+    r"^\s*(what|why|how|when|where|who)\b|"
+    r"^\s*(do|does|did|should|would|could|can|is|are|am)\s+(we|you|i|they|it|this|that)\b",
+    re.I,
+)
 
 # Safety block patterns (humanity-first guardrail)
 SAFETY_BLOCK_PATTERNS = [
@@ -204,6 +209,12 @@ def _is_operational_insight_legacy(insight_text: str) -> bool:
     text = (insight_text or "").strip().lower()
     if not text:
         return True  # Empty insights are operational (skip them)
+
+    # Guardrail: raw questions / conversational asks are not promotable insights.
+    if text.endswith("?") or _QUESTION_START_RE.match(text):
+        return True
+    if "im not sure" in text or "i'm not sure" in text:
+        return True
 
     # Check against operational patterns
     for regex in _OPERATIONAL_REGEXES:

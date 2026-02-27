@@ -124,6 +124,11 @@ _SEMANTIC_SUMMARY_RE = re.compile(
     r"threshold|confidence|quality|latency|impact|decision)\b",
     re.I,
 )
+_QUESTION_START_RE = re.compile(
+    r"^\s*(what|why|how|when|where|who)\b|"
+    r"^\s*(do|does|did|should|would|could|can|is|are|am)\s+(we|you|i|they|it|this|that)\b",
+    re.I,
+)
 
 
 def _is_noise_line(text: str) -> bool:
@@ -192,6 +197,20 @@ def _is_capture_noise(text: str) -> bool:
     if total_lines >= 4 and noise_lines / max(1, total_lines) >= 0.55 and signal_lines <= 1:
         return True
     if total_lines >= 8 and noise_lines >= 6:
+        return True
+    return False
+
+
+def _looks_like_user_question(text: str) -> bool:
+    sample = str(text or "").strip()
+    if not sample:
+        return False
+    if sample.endswith("?"):
+        return True
+    if _QUESTION_START_RE.match(sample):
+        return True
+    # conversational uncertainty prompts are generally not reusable insights
+    if re.search(r"\b(i('| a)?m not sure|not sure about|can you|could you|would you)\b", sample, re.I):
         return True
     return False
 
@@ -320,6 +339,8 @@ def _llm_area_novelty_score(text: str) -> float:
 def importance_score(text: str) -> Tuple[float, Dict[str, float]]:
     """Return (score 0..1, breakdown)."""
     t = _norm(text)
+    if _looks_like_user_question(text):
+        return 0.0, {"question_like": 1.0}
     breakdown: Dict[str, float] = {}
 
     def apply(phrases: Dict[str, float], bucket: str):
@@ -751,6 +772,8 @@ def process_recent_memory_events(limit: int = 50) -> Dict[str, Any]:
 
         txt = str(payload.get("text") or "").strip()
         if not txt:
+            continue
+        if _looks_like_user_question(txt):
             continue
         if _is_capture_noise(txt):
             continue

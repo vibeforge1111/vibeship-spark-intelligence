@@ -27,10 +27,37 @@ _DECISION_RE = re.compile(
     r"\b(decided to|chose to|switched to|opted for|corrected me|they want)\b",
     re.I,
 )
+_QUESTION_START_RE = re.compile(
+    r"^\s*(what|why|how|when|where|who)\b|"
+    r"^\s*(do|does|did|should|would|could|can|is|are|am)\s+(we|you|i|they|it|this|that)\b",
+    re.I,
+)
+
+
+def _question_like(text: str) -> bool:
+    sample = str(text or "").strip()
+    if not sample:
+        return False
+    if sample.endswith("?"):
+        return True
+    if _QUESTION_START_RE.match(sample):
+        return True
+    if "i'm not sure" in sample.lower() or "im not sure" in sample.lower():
+        return True
+    return False
 
 
 def score(text: str | None, context: Dict[str, object] | None = None) -> Dict[str, int]:
     sample = str(text or "").strip()
+    if _question_like(sample):
+        return {
+            "actionability": 0,
+            "novelty": 0,
+            "reasoning": 0,
+            "specificity": 0,
+            "outcome_linked": 0,
+            "ethics": 1,
+        }
     lower = sample.lower()
     ctx = context or {}
 

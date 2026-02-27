@@ -404,7 +404,7 @@ def _infer_user_emotion_trigger(text: str):
 
 
 def _call_advisory_on_user_prompt(session_id: str, prompt_text: str, trace_id: str | None = None) -> None:
-    from lib.advisory_engine import on_user_prompt
+    from lib.advisory_engine_alpha import on_user_prompt
 
     on_user_prompt(session_id, prompt_text, trace_id=trace_id)
 
@@ -415,7 +415,7 @@ def _call_advisory_on_pre_tool(
     tool_input: dict | None = None,
     trace_id: str | None = None,
 ):
-    from lib.advisory_engine import on_pre_tool
+    from lib.advisory_engine_alpha import on_pre_tool
 
     return on_pre_tool(session_id, tool_name, tool_input=tool_input or {}, trace_id=trace_id)
 
@@ -428,7 +428,7 @@ def _call_advisory_on_post_tool(
     trace_id: str | None = None,
     error: str | None = None,
 ) -> None:
-    from lib.advisory_engine import on_post_tool
+    from lib.advisory_engine_alpha import on_post_tool
 
     on_post_tool(
         session_id,

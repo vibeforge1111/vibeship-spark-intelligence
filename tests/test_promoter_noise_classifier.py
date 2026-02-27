@@ -41,3 +41,13 @@ def test_promoter_operational_agreement_does_not_log(monkeypatch, tmp_path):
 
     assert result is True
     assert not shadow_log.exists()
+
+
+def test_promoter_treats_user_question_as_operational(monkeypatch, tmp_path):
+    shadow_log = tmp_path / "noise_shadow.jsonl"
+    monkeypatch.setattr(noise_classifier, "SHADOW_LOG", shadow_log)
+    monkeypatch.delenv("SPARK_NOISE_CLASSIFIER_ENFORCE", raising=False)
+
+    result = is_operational_insight("What would be your best recommendation here?")
+
+    assert result is True

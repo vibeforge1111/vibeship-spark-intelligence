@@ -169,6 +169,9 @@ BRIDGE_MIND_SYNC_MIN_RELIABILITY = 0.35
 BRIDGE_MIND_SYNC_MAX_AGE_S = 14 * 24 * 3600
 BRIDGE_MIND_SYNC_DRAIN_QUEUE = True
 BRIDGE_MIND_SYNC_QUEUE_BUDGET = 2
+# Keep alpha advisory as the single authoritative advisory output channel.
+BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED = _env_bool("SPARK_BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED", False)
+BRIDGE_LLM_EIDOS_SIDECAR_ENABLED = _env_bool("SPARK_BRIDGE_LLM_EIDOS_SIDECAR_ENABLED", False)
 
 
 def _load_bridge_worker_config() -> None:
@@ -178,6 +181,7 @@ def _load_bridge_worker_config() -> None:
     global BRIDGE_MIND_SYNC_ENABLED, BRIDGE_MIND_SYNC_LIMIT
     global BRIDGE_MIND_SYNC_MIN_READINESS, BRIDGE_MIND_SYNC_MIN_RELIABILITY
     global BRIDGE_MIND_SYNC_MAX_AGE_S, BRIDGE_MIND_SYNC_DRAIN_QUEUE, BRIDGE_MIND_SYNC_QUEUE_BUDGET
+    global BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED, BRIDGE_LLM_EIDOS_SIDECAR_ENABLED
     try:
         from lib.config_authority import env_bool, env_float, env_int, resolve_section
 
@@ -191,6 +195,8 @@ def _load_bridge_worker_config() -> None:
                 "mind_sync_max_age_s": env_int("SPARK_BRIDGE_MIND_SYNC_MAX_AGE_S"),
                 "mind_sync_drain_queue": env_bool("SPARK_BRIDGE_MIND_SYNC_DRAIN_QUEUE"),
                 "mind_sync_queue_budget": env_int("SPARK_BRIDGE_MIND_SYNC_QUEUE_BUDGET"),
+                "llm_advisory_sidecar_enabled": env_bool("SPARK_BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED"),
+                "llm_eidos_sidecar_enabled": env_bool("SPARK_BRIDGE_LLM_EIDOS_SIDECAR_ENABLED"),
                 "openclaw_notify": env_bool("SPARK_OPENCLAW_NOTIFY"),
                 "step_timeout_s": env_float("SPARK_BRIDGE_STEP_TIMEOUT_S"),
                 "disable_timeouts": env_bool("SPARK_BRIDGE_DISABLE_TIMEOUTS"),
@@ -210,6 +216,7 @@ def _apply_bridge_worker_cfg(cfg: Dict[str, Any]) -> None:
     global BRIDGE_MIND_SYNC_ENABLED, BRIDGE_MIND_SYNC_LIMIT
     global BRIDGE_MIND_SYNC_MIN_READINESS, BRIDGE_MIND_SYNC_MIN_RELIABILITY
     global BRIDGE_MIND_SYNC_MAX_AGE_S, BRIDGE_MIND_SYNC_DRAIN_QUEUE, BRIDGE_MIND_SYNC_QUEUE_BUDGET
+    global BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED, BRIDGE_LLM_EIDOS_SIDECAR_ENABLED
     if not isinstance(cfg, dict):
         return
     if "mind_sync_enabled" in cfg:
@@ -234,6 +241,16 @@ def _apply_bridge_worker_cfg(cfg: Dict[str, Any]) -> None:
     if "mind_sync_queue_budget" in cfg:
         BRIDGE_MIND_SYNC_QUEUE_BUDGET = max(
             0, min(1000, int(cfg.get("mind_sync_queue_budget") or BRIDGE_MIND_SYNC_QUEUE_BUDGET))
+        )
+    if "llm_advisory_sidecar_enabled" in cfg:
+        BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED = _parse_bool(
+            cfg.get("llm_advisory_sidecar_enabled"),
+            BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED,
+        )
+    if "llm_eidos_sidecar_enabled" in cfg:
+        BRIDGE_LLM_EIDOS_SIDECAR_ENABLED = _parse_bool(
+            cfg.get("llm_eidos_sidecar_enabled"),
+            BRIDGE_LLM_EIDOS_SIDECAR_ENABLED,
         )
     if "openclaw_notify" in cfg:
         SPARK_OPENCLAW_NOTIFY = _parse_bool(cfg.get("openclaw_notify"), SPARK_OPENCLAW_NOTIFY)
@@ -721,7 +738,14 @@ def run_bridge_cycle(
         # --- Runtime hygiene ---
         ok, hygiene_stats, error = _run_step("runtime_hygiene", cleanup_runtime_artifacts)
         if ok:
-            stats["runtime_hygiene"] = hygiene_stats or {}
+            hygiene = hygiene_stats or {}
+            try:
+                from lib.runtime_session_state import cleanup_expired_states
+
+                hygiene["advisory_state_removed"] = int(cleanup_expired_states())
+            except Exception:
+                pass
+            stats["runtime_hygiene"] = hygiene
         else:
             stats["errors"].append("runtime_hygiene")
             log_debug("bridge_worker", f"runtime hygiene failed ({error})", None)
@@ -765,7 +789,10 @@ def run_bridge_cycle(
         insights_merged = (stats.get("chip_merge") or {}).get("merged", 0)
         content_learned = int(stats.get("content_learned", 0) or 0)
 
-        if patterns_found >= 5 or insights_merged >= 2 or content_learned >= 2:
+        if (
+            BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED
+            and (patterns_found >= 5 or insights_merged >= 2 or content_learned >= 2)
+        ):
             try:
                 from lib.llm import synthesize_advisory
 
@@ -804,24 +831,41 @@ def run_bridge_cycle(
             except Exception as e:
                 log_debug("bridge_worker", f"LLM advisory failed ({e})", None)
                 stats["errors"].append("llm_advisory")
+        else:
+            stats["llm_advisory_sidecar"] = {
+                "enabled": False,
+                "reason": "alpha_advisory_engine_authoritative",
+            }
 
         # EIDOS distillation (less frequent — every 10th cycle with patterns)
         try:
-            from lib.llm import distill_eidos
+            distill_eidos = None
+            if BRIDGE_LLM_EIDOS_SIDECAR_ENABLED:
+                from lib.llm import distill_eidos
             # Use a simple file counter
             _eidos_counter_file = Path.home() / ".spark" / "eidos_llm_counter.txt"
             counter = 0
-            if _eidos_counter_file.exists():
-                try:
-                    counter = int(_eidos_counter_file.read_text().strip())
-                except Exception:
-                    counter = 0
-            counter += 1
-            _eidos_counter_file.write_text(str(counter))
+            if BRIDGE_LLM_EIDOS_SIDECAR_ENABLED:
+                if _eidos_counter_file.exists():
+                    try:
+                        counter = int(_eidos_counter_file.read_text().strip())
+                    except Exception:
+                        counter = 0
+                counter += 1
+                _eidos_counter_file.write_text(str(counter))
+            else:
+                stats["eidos_llm_sidecar"] = {
+                    "enabled": False,
+                    "reason": "canonical_eidos_store_pipeline_authoritative",
+                }
 
             opp_stats = stats.get("opportunity_scanner") or {}
             opp_promotions = (opp_stats.get("promoted_candidates") or []) if isinstance(opp_stats, dict) else []
-            if counter % 5 == 0 and (patterns_found > 0 or opp_promotions or content_learned > 0):
+            if (
+                BRIDGE_LLM_EIDOS_SIDECAR_ENABLED
+                and counter % 5 == 0
+                and (patterns_found > 0 or opp_promotions or content_learned > 0)
+            ):
                 # Gather behavioral observations
                 observations = []
                 if stats.get("llm_advisory"):
@@ -866,7 +910,7 @@ def run_bridge_cycle(
                             log_debug("bridge_worker", f"EIDOS distillation skipped ({intake.reason})", None)
 
             # Periodic EIDOS pruning (every 50th cycle)
-            if counter % 50 == 0:
+            if BRIDGE_LLM_EIDOS_SIDECAR_ENABLED and counter % 50 == 0:
                 try:
                     from lib.eidos.store import get_store
                     pruned = get_store().prune_distillations()

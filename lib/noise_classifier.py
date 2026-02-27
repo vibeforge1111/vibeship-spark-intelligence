@@ -48,6 +48,11 @@ _TOOL_USAGE_RE = re.compile(r"\bheavy\s+\w+\s+usage\b|\busage\s*\(\d+\s*calls?\)
 _WORKFLOW_EXEC_RE = re.compile(r"^workflow execution\s+\d{1,2}/\d{1,2}/\d{4}", re.I)
 _TOOL_CHAIN_RE = re.compile(r"\b\w+\s*(?:->|→)\s*\w+\b", re.I)
 _SHORT_METRIC_RE = re.compile(r"^\d+%?\s+(success|failure|error)\b", re.I)
+_QUESTION_START_RE = re.compile(
+    r"^\s*(what|why|how|when|where|who)\b|"
+    r"^\s*(do|does|did|should|would|could|can|is|are|am)\s+(we|you|i|they|it|this|that)\b",
+    re.I,
+)
 
 
 def enforce_enabled() -> bool:
@@ -82,6 +87,10 @@ def classify(text: str | None, *, context: str = "generic") -> NoiseDecision:
         return NoiseDecision(True, "code_artifact")
     if _MARKDOWN_HEADER_RE.search(sample):
         return NoiseDecision(True, "markdown_header")
+    if "?" in sample and len(sample.split()) <= 25:
+        return NoiseDecision(True, "question_fragment")
+    if _QUESTION_START_RE.match(sample) and len(sample.split()) <= 18:
+        return NoiseDecision(True, "conversational_fragment")
     if len(sample) < 20:
         return NoiseDecision(True, "too_short")
     if any(lower.startswith(prefix) for prefix in _CONVERSATIONAL_STARTS):

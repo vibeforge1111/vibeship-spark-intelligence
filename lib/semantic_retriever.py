@@ -410,7 +410,18 @@ class SemanticIndex:
 
 class SemanticRetriever:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or _load_config()
+        loaded = config or _load_config()
+        # Runtime guardrail: TF-IDF similarities are lower-range than neural embeddings.
+        # Recalibrate only for default-loaded config to avoid overriding explicit test/runtime inputs.
+        if config is None:
+            backend = str(os.getenv("SPARK_EMBED_BACKEND", "tfidf")).strip().lower()
+            if backend in {"tfidf", "hash", "hashed"}:
+                loaded = dict(loaded)
+                loaded["min_similarity"] = min(float(loaded.get("min_similarity", 0.55)), 0.15)
+                loaded["min_fusion_score"] = min(float(loaded.get("min_fusion_score", 0.50)), 0.10)
+                loaded["rescue_min_similarity"] = min(float(loaded.get("rescue_min_similarity", 0.30)), 0.10)
+                loaded["rescue_min_fusion_score"] = min(float(loaded.get("rescue_min_fusion_score", 0.20)), 0.05)
+        self.config = loaded
         self.trigger_matcher = TriggerMatcher(self.config.get("trigger_rules_file"))
         self.index = SemanticIndex(cache_ttl_s=int(self.config.get("index_cache_ttl_seconds", 120)))
         self._index_warmed = False

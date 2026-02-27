@@ -54,3 +54,25 @@ def test_empty_result_rescue_can_be_disabled(monkeypatch):
 
     results = retriever.retrieve("auth token memory issue", _make_insights(), limit=3)
     assert results == []
+
+
+def test_tfidf_runtime_recalibrates_default_thresholds(monkeypatch):
+    monkeypatch.setenv("SPARK_EMBED_BACKEND", "tfidf")
+    monkeypatch.setattr(
+        semantic_retriever_module,
+        "_load_config",
+        lambda: {
+            **semantic_retriever_module.DEFAULT_CONFIG,
+            "min_similarity": 0.56,
+            "min_fusion_score": 0.50,
+            "rescue_min_similarity": 0.30,
+            "rescue_min_fusion_score": 0.20,
+        },
+    )
+
+    retriever = semantic_retriever_module.SemanticRetriever(config=None)
+
+    assert retriever.config["min_similarity"] <= 0.15
+    assert retriever.config["min_fusion_score"] <= 0.10
+    assert retriever.config["rescue_min_similarity"] <= 0.10
+    assert retriever.config["rescue_min_fusion_score"] <= 0.05
