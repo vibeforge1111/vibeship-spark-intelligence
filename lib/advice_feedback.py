@@ -13,8 +13,9 @@ from lib.diagnostics import log_debug
 from lib.file_lock import file_lock_for
 
 
-REQUESTS_FILE = Path.home() / ".spark" / "advice_feedback_requests.jsonl"
-FEEDBACK_FILE = Path.home() / ".spark" / "advice_feedback.jsonl"
+JSONL_EXT = ".jsonl"
+REQUESTS_FILE = Path.home() / ".spark" / f"advice_feedback_requests{JSONL_EXT}"
+FEEDBACK_FILE = Path.home() / ".spark" / f"advice_feedback{JSONL_EXT}"
 SUMMARY_FILE = Path.home() / ".spark" / "advice_feedback_summary.json"
 STATE_FILE = Path.home() / ".spark" / "advice_feedback_state.json"
 

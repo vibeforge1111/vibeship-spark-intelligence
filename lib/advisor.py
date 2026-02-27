@@ -52,10 +52,11 @@ except ImportError:
 
 # ============= Configuration =============
 ADVISOR_DIR = Path.home() / ".spark" / "advisor"
-ADVICE_LOG = ADVISOR_DIR / "advice_log.jsonl"
+JSONL_EXT = ".jsonl"
+ADVICE_LOG = ADVISOR_DIR / f"advice_log{JSONL_EXT}"
 EFFECTIVENESS_FILE = ADVISOR_DIR / "effectiveness.json"
 ADVISOR_METRICS = ADVISOR_DIR / "metrics.json"
-RECENT_ADVICE_LOG = ADVISOR_DIR / "recent_advice.jsonl"
+RECENT_ADVICE_LOG = ADVISOR_DIR / f"recent_advice{JSONL_EXT}"
 EFFECTIVENESS_SCHEMA_VERSION = 2
 RECENT_ADVICE_MAX_AGE_S = 1200  # 20 min (was 15 min) - Ralph Loop tuning for better acted-on rate
 RECENT_ADVICE_MAX_LINES = 200
@@ -113,7 +114,7 @@ MIND_STALE_ALLOW_IF_EMPTY: bool = True
 MIND_MIN_SALIENCE: float = 0.5
 MIND_RESERVE_SLOTS: int = 1
 MIND_RESERVE_MIN_RANK: float = 0.45
-RETRIEVAL_ROUTE_LOG = ADVISOR_DIR / "retrieval_router.jsonl"
+RETRIEVAL_ROUTE_LOG = ADVISOR_DIR / f"retrieval_router{JSONL_EXT}"
 RETRIEVAL_ROUTE_LOG_MAX = 800
 
 DEFAULT_SEMANTIC_FUSION_WEIGHTS: Dict[str, float] = {
@@ -2495,7 +2496,7 @@ class SparkAdvisor:
             include_mind: Whether to query Mind for additional context
             track_retrieval: Whether to track this retrieval for outcome measurement.
                 Set to False for sampling/analysis to avoid polluting metrics.
-            log_recent: Whether to write to recent_advice.jsonl for outcome linkage.
+            log_recent: Whether to write to the recent advice JSONL for outcome linkage.
                 For advisory_engine paths, prefer recording only *delivered* advice via
                 record_recent_delivery().
             trace_id: Optional trace_id for linking advice retrievals to traces.
@@ -3737,7 +3738,7 @@ class SparkAdvisor:
 
         candidates: List[Dict[str, Any]] = []
         files = sorted(
-            CHIP_INSIGHTS_DIR.glob("*.jsonl"),
+            CHIP_INSIGHTS_DIR.glob(f"*{JSONL_EXT}"),
             key=lambda p: p.stat().st_mtime if p.exists() else 0,
             reverse=True,
         )[:CHIP_ADVICE_MAX_FILES]
@@ -3954,7 +3955,7 @@ class SparkAdvisor:
 
         result: Dict[str, float] = {}
         try:
-            eidos_file = Path.home() / ".spark" / "eidos_distillations.jsonl"
+            eidos_file = Path.home() / ".spark" / f"eidos_distillations{JSONL_EXT}"
             if not eidos_file.exists():
                 return result
             raw = eidos_file.read_bytes()

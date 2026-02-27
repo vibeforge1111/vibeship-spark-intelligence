@@ -9,8 +9,9 @@ import json
 import time
 
 SPARK_DIR = Path.home() / ".spark"
-ADVISORY_LOG = SPARK_DIR / "advisory_engine_alpha.jsonl"
-ADVICE_FEEDBACK_REQUESTS = SPARK_DIR / "advice_feedback_requests.jsonl"
+JSONL_EXT = ".jsonl"
+ADVISORY_LOG = SPARK_DIR / f"advisory_engine_alpha{JSONL_EXT}"
+ADVICE_FEEDBACK_REQUESTS = SPARK_DIR / f"advice_feedback_requests{JSONL_EXT}"
 EFFECTIVENESS_FILE = SPARK_DIR / "advisor" / "effectiveness.json"
 SYNC_STATS_FILE = SPARK_DIR / "sync_stats.json"
 CHIP_MERGE_FILE = SPARK_DIR / "chip_merge_state.json"

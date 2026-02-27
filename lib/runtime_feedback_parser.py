@@ -8,7 +8,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-REQUESTS_FILE = Path.home() / ".spark" / "advice_feedback_requests.jsonl"
+JSONL_EXT = ".jsonl"
+REQUESTS_FILE = Path.home() / ".spark" / f"advice_feedback_requests{JSONL_EXT}"
 
 _BULLET_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)(.+?)\s*$")
 _CHECKBOX_RE = re.compile(r"^\s*-\s*\[[ xX]\]\s+(.+?)\s*$")
@@ -106,4 +107,3 @@ def load_advisories(*, request_file: Path = REQUESTS_FILE, limit_requests: int =
     advisories = parse_feedback_requests(request_file, limit=limit_requests)
     advisories.sort(key=lambda x: float(x.get("created_at") or 0.0))
     return advisories
-

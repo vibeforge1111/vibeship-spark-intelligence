@@ -28,23 +28,24 @@ from .config_authority import resolve_section
 
 PACKET_DIR = Path.home() / ".spark" / "advice_packets"
 INDEX_FILE = PACKET_DIR / "index.json"
-PREFETCH_QUEUE_FILE = PACKET_DIR / "prefetch_queue.jsonl"
+JSONL_EXT = ".jsonl"
+PREFETCH_QUEUE_FILE = PACKET_DIR / f"prefetch_queue{JSONL_EXT}"
 OBSIDIAN_EXPORT_DIR = PACKET_DIR / "obsidian"
 OBSIDIAN_PACKETS_DIR = OBSIDIAN_EXPORT_DIR / "packets"
 OBSIDIAN_INDEX_FILE = OBSIDIAN_PACKETS_DIR / "index.md"
-ADVISORY_DECISION_LEDGER_FILE = Path.home() / ".spark" / "advisory_decision_ledger.jsonl"
-ADVISORY_ENGINE_LOG_FILE = Path.home() / ".spark" / "advisory_engine_alpha.jsonl"
-ADVISORY_EMIT_FILE = Path.home() / ".spark" / "advisory_emit.jsonl"
-ADVISORY_LOW_AUTH_DEDUPE_FILE = Path.home() / ".spark" / "advisory_low_auth_dedupe.jsonl"
-ADVISORY_GLOBAL_DEDUPE_FILE = Path.home() / ".spark" / "advisory_global_dedupe.jsonl"
-ADVICE_FEEDBACK_REQUESTS_FILE = Path.home() / ".spark" / "advice_feedback_requests.jsonl"
-ADVICE_FEEDBACK_FILE = Path.home() / ".spark" / "advice_feedback.jsonl"
-ADVISORY_RETRIEVAL_ROUTE_LOG_FILE = Path.home() / ".spark" / "advisor" / "retrieval_router.jsonl"
-ADVISOR_ADVICE_LOG_FILE = Path.home() / ".spark" / "advisor" / "advice_log.jsonl"
-ADVISOR_RECENT_ADVICE_FILE = Path.home() / ".spark" / "advisor" / "recent_advice.jsonl"
-OUTCOMES_FILE = Path.home() / ".spark" / "outcomes.jsonl"
-OUTCOME_LINKS_FILE = Path.home() / ".spark" / "outcome_links.jsonl"
-IMPLICIT_FEEDBACK_FILE = Path.home() / ".spark" / "advisor" / "implicit_feedback.jsonl"
+ADVISORY_DECISION_LEDGER_FILE = Path.home() / ".spark" / f"advisory_decision_ledger{JSONL_EXT}"
+ADVISORY_ENGINE_LOG_FILE = Path.home() / ".spark" / f"advisory_engine_alpha{JSONL_EXT}"
+ADVISORY_EMIT_FILE = Path.home() / ".spark" / f"advisory_emit{JSONL_EXT}"
+ADVISORY_LOW_AUTH_DEDUPE_FILE = Path.home() / ".spark" / f"advisory_low_auth_dedupe{JSONL_EXT}"
+ADVISORY_GLOBAL_DEDUPE_FILE = Path.home() / ".spark" / f"advisory_global_dedupe{JSONL_EXT}"
+ADVICE_FEEDBACK_REQUESTS_FILE = Path.home() / ".spark" / f"advice_feedback_requests{JSONL_EXT}"
+ADVICE_FEEDBACK_FILE = Path.home() / ".spark" / f"advice_feedback{JSONL_EXT}"
+ADVISORY_RETRIEVAL_ROUTE_LOG_FILE = Path.home() / ".spark" / "advisor" / f"retrieval_router{JSONL_EXT}"
+ADVISOR_ADVICE_LOG_FILE = Path.home() / ".spark" / "advisor" / f"advice_log{JSONL_EXT}"
+ADVISOR_RECENT_ADVICE_FILE = Path.home() / ".spark" / "advisor" / f"recent_advice{JSONL_EXT}"
+OUTCOMES_FILE = Path.home() / ".spark" / f"outcomes{JSONL_EXT}"
+OUTCOME_LINKS_FILE = Path.home() / ".spark" / f"outcome_links{JSONL_EXT}"
+IMPLICIT_FEEDBACK_FILE = Path.home() / ".spark" / "advisor" / f"implicit_feedback{JSONL_EXT}"
 TRACE_EVENT_HISTORY_MAX = 12
 TRACE_HISTORY_TEXT_MAX = 60
 
@@ -1123,7 +1124,12 @@ def _obsidian_payload(packet: Dict[str, Any]) -> str:
             f"- suppressed events: {suppressed_total}",
             f"- outcomes seen: {outcome_summary}",
             f"- decision event sources: {source_summary_for_events}",
-            "- check `~/.spark/advisory_engine_alpha.jsonl` (primary), `~/.spark/advisory_emit.jsonl`, `~/.spark/advisory_decision_ledger.jsonl`, `~/.spark/advisor/retrieval_router.jsonl` for score trail",
+            (
+                f"- check `~/.spark/advisory_engine_alpha{JSONL_EXT}` (primary), "
+                f"`~/.spark/advisory_emit{JSONL_EXT}`, "
+                f"`~/.spark/advisory_decision_ledger{JSONL_EXT}`, "
+                f"`~/.spark/advisor/retrieval_router{JSONL_EXT}` for score trail"
+            ),
             "",
             "## Advisory Traceability Timeline",
         ]

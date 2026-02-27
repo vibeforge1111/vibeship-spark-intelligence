@@ -18,9 +18,10 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .file_lock import file_lock_for
 
-OUTCOMES_FILE = Path.home() / ".spark" / "outcomes.jsonl"
+JSONL_EXT = ".jsonl"
+OUTCOMES_FILE = Path.home() / ".spark" / f"outcomes{JSONL_EXT}"
 OUTCOMES_FILE_MAX = 3000
-OUTCOME_LINKS_FILE = Path.home() / ".spark" / "outcome_links.jsonl"
+OUTCOME_LINKS_FILE = Path.home() / ".spark" / f"outcome_links{JSONL_EXT}"
 OUTCOME_LINKS_FILE_MAX = 3000
 
 

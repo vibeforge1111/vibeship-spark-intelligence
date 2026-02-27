@@ -4,7 +4,7 @@ Records what advice was given before a tool call, then records whether the
 tool succeeded or failed. This closes the advisory feedback loop so the
 system can learn which advice actually helps.
 
-Storage: ~/.spark/advisor/implicit_feedback.jsonl
+Storage: ~/.spark/advisor/implicit_feedback (JSONL)
 """
 
 from __future__ import annotations
@@ -18,7 +18,8 @@ from typing import Any, Dict, List, Optional
 from lib.diagnostics import log_debug
 from lib.file_lock import file_lock_for
 
-FEEDBACK_FILE = Path.home() / ".spark" / "advisor" / "implicit_feedback.jsonl"
+JSONL_EXT = ".jsonl"
+FEEDBACK_FILE = Path.home() / ".spark" / "advisor" / f"implicit_feedback{JSONL_EXT}"
 FEEDBACK_FILE_MAX = 2000
 # How long to keep advice records for matching (seconds)
 ADVICE_TTL_S = 300  # 5 minutes

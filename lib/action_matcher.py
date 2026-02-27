@@ -8,9 +8,10 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-FEEDBACK_FILE = Path.home() / ".spark" / "advice_feedback.jsonl"
+JSONL_EXT = ".jsonl"
+FEEDBACK_FILE = Path.home() / ".spark" / f"advice_feedback{JSONL_EXT}"
 REPORTS_DIR = Path.home() / ".openclaw" / "workspace" / "spark_reports"
-OUTCOMES_FILE = Path.home() / ".spark" / "outcomes.jsonl"
+OUTCOMES_FILE = Path.home() / ".spark" / f"outcomes{JSONL_EXT}"
 
 _WS_RE = re.compile(r"\s+")
 

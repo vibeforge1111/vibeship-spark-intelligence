@@ -37,9 +37,10 @@ try:
 except Exception:
     _alpha_inline_jobs = 1
 ALPHA_INLINE_PREFETCH_MAX_JOBS = max(1, min(20, _alpha_inline_jobs))
-ALPHA_LOG = Path.home() / ".spark" / "advisory_engine_alpha.jsonl"
+JSONL_EXT = ".jsonl"
+ALPHA_LOG = Path.home() / ".spark" / f"advisory_engine_alpha{JSONL_EXT}"
 ALPHA_LOG_MAX_LINES = 2000
-ADVISORY_GLOBAL_DEDUPE_FILE = Path.home() / ".spark" / "advisory_global_dedupe.jsonl"
+ADVISORY_GLOBAL_DEDUPE_FILE = Path.home() / ".spark" / f"advisory_global_dedupe{JSONL_EXT}"
 ADVISORY_GLOBAL_DEDUPE_MAX_LINES = 5000
 
 
