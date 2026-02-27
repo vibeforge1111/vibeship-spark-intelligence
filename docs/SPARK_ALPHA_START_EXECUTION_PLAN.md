@@ -99,6 +99,7 @@ Tasks:
 1. Freeze alpha start command contract in docs.
 2. Add "required artifact set" checklist for every alpha run.
 3. Keep existing runtime path alpha-only (already done) and avoid adding new fallback paths.
+4. Add and run `scripts/alpha_gap_audit.py` each cycle so pending-gap counters are machine-generated (advisory files, tuneable keys, JSONL surface, distillation files, VibeForge lane flags).
 
 Exit criteria:
 
@@ -180,3 +181,5 @@ python scripts/alpha_start_readiness.py --emit-report --strict
 2. `benchmarks/out/alpha_start/alpha_start_readiness_latest.md`
 3. replay evidence files referenced by the JSON report
 4. controlled-delta output referenced by the JSON report
+5. `benchmarks/out/alpha_start/alpha_gap_audit_latest.json`
+6. `benchmarks/out/alpha_start/alpha_gap_audit_latest.md`
