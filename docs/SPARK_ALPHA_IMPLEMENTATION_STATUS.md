@@ -480,6 +480,11 @@ Branch: feat/spark-alpha
 - Updated `get_engine_status()` to expose alpha runtime status under compat mode.
 - Net deletion in legacy runtime surface: ~1k lines removed from `lib/advisory_engine.py`.
 
+74. `6ffa803` - `refactor(alpha-pr09): update advisory tuneables consumer maps for alpha-primary runtime`
+- Updated tuneables section consumer mapping in `lib/tuneables_schema.py` for `advisory_engine` to alpha-primary host attribution (`advisory_engine_alpha` + compat shim + emitter).
+- Updated observatory deep-dive known hot-reload host list for `advisory_engine` to alpha-primary runtime attribution.
+- Keeps config-authority/reporting outputs consistent with current runtime ownership.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -571,6 +576,7 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `172 passed`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
+- `pytest tests/test_pr1_config_authority.py tests/test_tuneables_alignment.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py -q` -> `34 passed`
 
 Notable metrics now:
 - `context.p50`: 230
