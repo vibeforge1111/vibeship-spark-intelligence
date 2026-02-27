@@ -24,6 +24,7 @@ Purpose: explicit legacy advisory-path candidates for PR-10 deletion sweep, tied
 8. [Done] `lib/advisor.py` superseded per-profile/domain rank-weight branches collapsed to one deterministic fusion-weight baseline with explicit override support retained (`1b53c38`).
 9. [Done] `lib/advisory_parser.py` legacy markdown/engine preview read paths removed.
 10. [Done] `lib/advisory_engine.py` dead global dedupe helper functions removed after dedupe path collapse (`8936beb`).
+11. [Done] `lib/advisory_engine.py` LLM-assisted global dedupe scope optimizer removed; dedupe scope is deterministic in global mode (`64c1f69`).
 
 ## Files Added in PR-06 That Enable This Sweep
 

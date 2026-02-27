@@ -330,6 +330,11 @@ Branch: feat/spark-alpha
 - Removed helper-only tests that depended on those dead helpers and kept behavior coverage anchored on `on_pre_tool` dedupe paths.
 - Simplified advisory dedupe surface while preserving runtime behavior.
 
+54. `64c1f69` - `refactor(alpha-pr10): make global dedupe scope deterministic`
+- Removed LLM-assisted global dedupe scope optimization from runtime.
+- `_dedupe_scope_key(...)` now resolves global scope deterministically to `"global"` (tree/contextual modes unchanged).
+- Deleted dead `_llm_area_dedupe_optimize(...)` implementation from `lib/advisory_engine.py`.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -380,6 +385,7 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py tests/test_advisory_dual_path_router.py tests/test_workflow_evidence.py tests/test_tuneables_alignment.py -q` -> `31 passed`
 - `pytest tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_orchestrator.py tests/test_advisory_dual_path_router.py tests/test_advisory_engine_alpha.py -q` -> `49 passed`
 - `pytest tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `48 passed`
+- `pytest tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `48 passed`
 - `pytest tests/test_advisor_retrieval_routing.py tests/test_advisor.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `134 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (workflow_evidence section now schema-covered)
 - `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `22/3`
