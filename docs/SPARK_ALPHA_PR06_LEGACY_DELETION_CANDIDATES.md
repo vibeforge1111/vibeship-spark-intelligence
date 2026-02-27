@@ -18,10 +18,10 @@ Purpose: explicit legacy advisory-path candidates for PR-10 deletion sweep, tied
 2. [Done] `lib/advisory_engine.py` quick fallback branch (`LIVE_QUICK_FALLBACK_ENABLED`).
 3. [Done] `lib/advisory_engine.py` packet fallback emit branch (`PACKET_FALLBACK_EMIT_ENABLED`).
 4. [Done] `lib/advisory_orchestrator.py` default route cut over to `alpha`; engine retained only as explicit route (no auto-fallback).
-5. [Pending] `lib/advisory_engine.py` duplicate post-gate dedupe pass if alpha gate+state dedupe proves equivalent or better.
-6. [Pending] `lib/advisory_engine.py` legacy route-only diagnostic fields superseded by alpha comparison report.
+5. [Done] `lib/advisory_engine.py` duplicate post-gate text-signature dedupe pass collapsed into the existing emission-quality filter (`49fd5c9`).
+6. [Done] `lib/advisory_engine.py` legacy route-only diagnostics parameter threading removed from diagnostics envelope (`49fd5c9`).
 7. [Done] `lib/advisor.py` keyword fallback path for cognitive retrieval removed.
-8. [Pending] `lib/advisor.py` superseded single-path rank weighting branches replaced by deterministic fusion stack.
+8. [Done] `lib/advisor.py` superseded per-profile/domain rank-weight branches collapsed to one deterministic fusion-weight baseline with explicit override support retained (`1b53c38`).
 9. [Done] `lib/advisory_parser.py` legacy markdown/engine preview read paths removed.
 
 ## Files Added in PR-06 That Enable This Sweep

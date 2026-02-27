@@ -68,6 +68,8 @@ Completed commits:
 48. `49d2354` PR-10 follow-up: removed residual requested-route plumbing from orchestrator
 49. `853200f` PR-04 follow-up: retired runtime JSON memory fallback and enforced SQLite-only runtime reads
 50. `b08cb77` PR-04 follow-up: deleted dead runtime snapshot coercion path after fallback retirement
+51. `49fd5c9` PR-10 follow-up: collapsed standalone post-gate text dedupe into emission-quality filter and removed dead diagnostics route threading
+52. `1b53c38` PR-10/PR-05 follow-up: unified retrieval fusion weights and pruned per-domain weight branches in advisor defaults
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -82,6 +84,8 @@ Current measured state:
    - `total_hits=64`
    - `ready_for_runtime_json_retirement=true`
 6. Tuneables schema validation: `ok=True`, `unknown=0` (workflow_evidence now schema-covered)
+7. Advisory legacy+dedupe test slice (`tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_orchestrator.py tests/test_advisory_dual_path_router.py tests/test_advisory_engine_alpha.py`): `49 passed`
+8. Retrieval+config slice (`tests/test_advisor_retrieval_routing.py tests/test_advisor.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py`): `134 passed`
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial
@@ -127,7 +131,8 @@ Current measured state:
 4. Added semantic-only cognitive advisory path and removed legacy keyword fallback branch.
 5. Removed superseded fallback rank-extension branch in prefilter ranking path.
 6. Removed legacy advisory parser fallback branches (markdown/engine preview).
-7. Remaining: broader retrieval simplification and post-cutover deletion pass outside these branches.
+7. Collapsed per-profile/per-domain weight branching to one deterministic fusion-weight baseline while keeping explicit overrides.
+8. Remaining: broader retrieval simplification and post-cutover deletion pass outside these branches.
 
 ### PR-06 Advisory Alpha Vertical Slice  (Near Complete)
 1. Emission reliability and trace binding improved.
@@ -181,12 +186,14 @@ Current measured state:
 7. Removed duplicate route-only ledger field (`route_hint`) from advisory decision entries.
 8. Removed route-derived `provider_path` diagnostics field from advisory engine envelope.
 9. Made live advisory orchestration alpha-only (legacy/canary runtime branches removed from orchestrator hot path).
-10. Remaining: larger advisory-stack file deletion set after live canary pass.
-11. Pending broader sweep once PR-03/04/05/06 are proven:
+10. Collapsed standalone post-gate text-signature dedupe into the existing emission-quality filter (single suppression pass).
+11. Removed dead route-only diagnostics parameter threading from advisory engine diagnostics envelope/callers.
+12. Remaining: larger advisory-stack file deletion set after live canary pass.
+13. Pending broader sweep once PR-03/04/05/06 are proven:
    - Legacy advisory stack (targeting 17-file collapse from V2)
    - Redundant noise filters no longer used
    - Legacy storage write paths replaced by SQLite spine
-12. Output required: explicit deleted file list + LOC removed + rollback tag.
+14. Output required: explicit deleted file list + LOC removed + rollback tag.
 
 ## Methods Decision (RL Governor vs VibeForge Loop)
 Default path for alpha:

@@ -314,6 +314,17 @@ Branch: feat/spark-alpha
 - Removed unused runtime snapshot coercion path from `lib/spark_memory_spine.py`.
 - Reduced PR-04 residual dead code after SQLite-only runtime cutover.
 
+51. `49fd5c9` - `refactor(alpha-pr10): collapse legacy post-gate text dedupe into quality filter`
+- Removed the standalone post-gate text-signature dedupe pass in `lib/advisory_engine.py`.
+- Folded text-signature suppression into `_apply_emission_quality_filters(...)` using one preloaded global dedupe snapshot.
+- Removed dead route-only diagnostics envelope threading in advisory engine diagnostics helpers/callers.
+- Updated advisory evidence test for the simplified diagnostics envelope API.
+
+52. `1b53c38` - `refactor(alpha-pr10): unify retrieval fusion weights and prune domain weight branches`
+- Added a single deterministic semantic fusion-weight baseline in `lib/advisor.py`.
+- Removed per-level/per-domain weight branching from default retrieval profiles while preserving explicit override support.
+- Pruned domain-profile weight override keys so domain profiles focus on retrieval routing/threshold knobs.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -362,6 +373,8 @@ Branch: feat/spark-alpha
 - `pytest tests/test_tuneables_alignment.py tests/test_advisor.py -q` -> `98 passed`
 - `pytest tests/test_memory_spine_sqlite.py tests/test_production_loop_gates.py tests/test_cognitive_learner.py tests/test_cognitive_emotion_capture.py tests/test_validation_loop.py -q` -> `95 passed`
 - `pytest tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py tests/test_advisory_dual_path_router.py tests/test_workflow_evidence.py tests/test_tuneables_alignment.py -q` -> `31 passed`
+- `pytest tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_orchestrator.py tests/test_advisory_dual_path_router.py tests/test_advisory_engine_alpha.py -q` -> `49 passed`
+- `pytest tests/test_advisor_retrieval_routing.py tests/test_advisor.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `134 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (workflow_evidence section now schema-covered)
 - `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `22/3`
 - Replay artifacts:
@@ -391,7 +404,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 7. Broad file/function deletion pass to reach Carmack-size target is not done.
 8. Final migration playbook for old paths/deprecated modules is not done.
 9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + optional mirror compatibility); runtime JSON consumer surface is now `0` and retirement gate is passing (`6/3` streak).
-10. PR-05 superseded fallback rank-extension branch deletion is complete, and keyword/parser fallback paths are removed; broader retrieval simplification outside these branches is still pending.
+10. PR-05 superseded fallback rank-extension branch deletion is complete, keyword/parser fallback paths are removed, and per-profile/domain weight branching is collapsed to deterministic fusion defaults; broader retrieval simplification outside these branches is still pending.
 11. PR-06 alpha ownership expansion for post-tool/user-prompt is complete; broad legacy advisory file removals after canary burn-in are still pending.
 12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup and dead fallback removal.
 
