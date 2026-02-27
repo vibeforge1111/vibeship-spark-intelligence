@@ -340,6 +340,10 @@ Branch: feat/spark-alpha
 - Removed `dedupe_optimize_*` keys from tuneables schema and baseline `config/tuneables.json`.
 - Updated LLM-areas observatory host mapping to drop the removed area.
 
+56. `dec4978` - `refactor(alpha-pr09): remove unused suppression_triage llm-area surface`
+- Removed the unused `suppression_triage` area from advisory runtime, LLM dispatch/defaults, prompt catalog, tuneables schema, and baseline config.
+- Further reduced architecture LLM-area surface and config authority footprint without changing advisory behavior.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -393,6 +397,7 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `48 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after dedupe_optimize llm-area surface removal)
 - `pytest tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_vibeforge_helpers.py tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `76 passed`
+- `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after suppression_triage llm-area surface removal)
 - `pytest tests/test_advisor_retrieval_routing.py tests/test_advisor.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `134 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (workflow_evidence section now schema-covered)
 - `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `22/3`
@@ -425,7 +430,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + optional mirror compatibility); runtime JSON consumer surface is now `0` and retirement gate is passing (`6/3` streak).
 10. PR-05 superseded fallback rank-extension branch deletion is complete, keyword/parser fallback paths are removed, and per-profile/domain weight branching is collapsed to deterministic fusion defaults; broader retrieval simplification outside these branches is still pending.
 11. PR-06 alpha ownership expansion for post-tool/user-prompt is complete; broad legacy advisory file removals after canary burn-in are still pending.
-12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup, dead fallback removal, and removal of unused `dedupe_optimize` llm-area config surface.
+12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup, dead fallback removal, and removal of unused `dedupe_optimize` + `suppression_triage` llm-area config surfaces.
 
 ## In progress right now
 
