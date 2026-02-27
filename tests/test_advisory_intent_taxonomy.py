@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lib import advisory_intent_taxonomy as taxonomy
+from lib import runtime_intent_taxonomy as taxonomy
 
 
 def test_intent_mapping_is_deterministic():
@@ -45,4 +45,3 @@ def test_session_context_key_changes_with_recent_tools():
         recent_tools=["Read", "Bash"],
     )
     assert a != b
-

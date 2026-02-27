@@ -2440,7 +2440,7 @@ class SparkAdvisor:
     def _get_allowed_domains(self, tool_name: str, context: str) -> set:
         """Determine which action_domains are allowed for this tool+context."""
         try:
-            from .advisory_intent_taxonomy import map_intent
+            from .runtime_intent_taxonomy import map_intent
             intent_result = map_intent(context or "", tool_name or "")
             intent_family = intent_result.get("intent_family", "emergent_other")
         except Exception:

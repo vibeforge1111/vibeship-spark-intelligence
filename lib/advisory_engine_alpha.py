@@ -248,7 +248,7 @@ def _project_key() -> str:
 
 def _resolve_intent(prompt: str, tool_name: str = "*") -> Dict[str, Any]:
     try:
-        from .advisory_intent_taxonomy import map_intent
+        from .runtime_intent_taxonomy import map_intent
 
         return map_intent(prompt or "", tool_name=tool_name)
     except Exception:
