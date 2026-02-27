@@ -136,7 +136,7 @@ def reload_runtime_refiner_from(cfg: Dict[str, Any]) -> None:
 try:
     from .tuneables_reload import register_reload as _register_reload
 
-    _register_reload("eidos", reload_runtime_refiner_from, label="distillation_refiner.reload_from")
+    _register_reload("eidos", reload_runtime_refiner_from, label="eidos_refiner.reload_from")
 except Exception:
     pass
 

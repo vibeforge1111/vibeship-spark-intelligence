@@ -58,7 +58,12 @@ def _audit() -> Dict[str, Any]:
     advisory_files = sorted(lib_dir.glob("*advisory*.py"))
     distillation_files = sorted(path for path in _all_files([lib_dir]) if "distill" in path.as_posix().lower())
     lib_py_files = _all_files([lib_dir])
+    runtime_lib_py_files = [
+        path for path in lib_py_files if "lib/observatory/" not in path.as_posix().replace("\\", "/")
+    ]
     jsonl_refs = _count_regex_hits(lib_py_files, r"jsonl|\.jsonl")
+    jsonl_runtime_refs = _count_regex_hits(runtime_lib_py_files, r"jsonl|\.jsonl")
+    jsonl_runtime_ext_refs = _count_regex_hits(runtime_lib_py_files, r"\.jsonl")
 
     tuneables = _load_tuneable_shape()
 
@@ -86,6 +91,8 @@ def _audit() -> Dict[str, Any]:
             "tuneable_sections": int(tuneables.get("sections", 0)),
             "tuneable_keys": int(tuneables.get("keys", 0)),
             "lib_jsonl_refs": int(jsonl_refs),
+            "lib_jsonl_runtime_refs": int(jsonl_runtime_refs),
+            "lib_jsonl_runtime_ext_refs": int(jsonl_runtime_ext_refs),
             "distillation_files": int(len(distillation_files)),
         },
         "status": {
@@ -117,6 +124,8 @@ def _render_markdown(payload: Dict[str, Any]) -> str:
         f"- tuneable_sections: `{counts.get('tuneable_sections', 0)}`",
         f"- tuneable_keys: `{counts.get('tuneable_keys', 0)}`",
         f"- lib_jsonl_refs: `{counts.get('lib_jsonl_refs', 0)}`",
+        f"- lib_jsonl_runtime_refs: `{counts.get('lib_jsonl_runtime_refs', 0)}`",
+        f"- lib_jsonl_runtime_ext_refs: `{counts.get('lib_jsonl_runtime_ext_refs', 0)}`",
         f"- distillation_files: `{counts.get('distillation_files', 0)}`",
         "",
         "## Status",
@@ -174,4 +183,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
