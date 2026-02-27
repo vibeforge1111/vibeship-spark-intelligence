@@ -43,6 +43,11 @@ class _FakeCognitive:
             self.insights[key].promoted = False
             self.insights[key].promoted_to = None
 
+    def mark_promoted(self, key: str, promoted_to: str):
+        if key in self.insights:
+            self.insights[key].promoted = True
+            self.insights[key].promoted_to = promoted_to
+
 
 def test_context_sync_high_validation_override_respects_reliability():
     low_rel = _FakeInsight(
@@ -136,3 +141,38 @@ def test_promoter_demotes_stale_promotions(tmp_path, monkeypatch):
     assert "stale rule" not in updated
     assert fake.insights["k1"].promoted is False
 
+
+def test_promoter_blocks_question_like_direct_promotion(tmp_path, monkeypatch):
+    project_dir = tmp_path
+    claude = project_dir / "CLAUDE.md"
+    claude.write_text(
+        "# CLAUDE\n\n## Spark Learnings\n\n*Auto-promoted insights from Spark*\n\n",
+        encoding="utf-8",
+    )
+    question_like = _FakeInsight(
+        insight="What would be your best recommendation so this system works right?",
+        category=CognitiveCategory.WISDOM,
+        reliability=1.0,
+        times_validated=12,
+        times_contradicted=0,
+        confidence=0.99,
+        created_at=(datetime.now() - timedelta(hours=12)).isoformat(),
+    )
+    fake = _FakeCognitive({"q1": question_like}, ranked=[])
+    log_file = tmp_path / "promotion_log.jsonl"
+    monkeypatch.setattr("lib.promoter.get_cognitive_learner", lambda: fake)
+    monkeypatch.setattr("lib.promoter.PROMOTION_LOG_FILE", log_file)
+
+    promoter = Promoter(project_dir=project_dir, reliability_threshold=0.7, min_validations=3)
+    target = promoter._get_target_for_category(question_like.category)
+    assert target is not None
+
+    promoted = promoter.promote_insight(question_like, "q1", target)
+    updated = claude.read_text(encoding="utf-8")
+
+    assert promoted is False
+    assert "What would be your best recommendation" not in updated
+    assert fake.insights["q1"].promoted is False
+    rows = [line for line in log_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert rows
+    assert "question_or_conversational" in rows[-1]

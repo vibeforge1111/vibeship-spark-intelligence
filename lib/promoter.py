@@ -128,6 +128,10 @@ _QUESTION_START_RE = re.compile(
     r"^\s*(do|does|did|should|would|could|can|is|are|am)\s+(we|you|i|they|it|this|that)\b",
     re.I,
 )
+_CONVERSATIONAL_RE = re.compile(
+    r"\b(can you|could you|would you|should we|do we|let'?s|please|i('?| a)?m not sure|not sure about)\b",
+    re.I,
+)
 
 # Safety block patterns (humanity-first guardrail)
 SAFETY_BLOCK_PATTERNS = [
@@ -242,6 +246,30 @@ def _is_operational_insight_legacy(insight_text: str) -> bool:
         return True
 
     return False
+
+
+def _is_question_or_conversational(insight_text: str) -> bool:
+    text = (insight_text or "").strip().lower()
+    if not text:
+        return True
+    if text.endswith("?") or _QUESTION_START_RE.match(text):
+        return True
+    if _CONVERSATIONAL_RE.search(text):
+        return True
+    return False
+
+
+def _promotion_block_reason(insight_text: str) -> str:
+    text = (insight_text or "").strip()
+    if not text:
+        return "empty_insight"
+    if _is_question_or_conversational(text):
+        return "question_or_conversational"
+    if is_unsafe_insight(text):
+        return "unsafe_content"
+    if is_operational_insight(text):
+        return "operational_telemetry"
+    return ""
 
 
 def is_operational_insight(insight_text: str) -> bool:
@@ -850,15 +878,20 @@ class Promoter:
         if fast_tracked:
             print(f"[SPARK] {fast_tracked} insights qualify via confidence fast-track")
 
-        # Phase 1: Filter out operational telemetry
+        # Final promotion boundary filter.
         if not include_operational:
-            cognitive_only, operational = filter_operational_insights(candidates)
-            if operational:
-                print(f"[SPARK] Filtered {len(operational)} operational insights (telemetry)")
-            safe_only, unsafe = filter_unsafe_insights(cognitive_only)
-            if unsafe:
-                print(f"[SPARK] Filtered {len(unsafe)} unsafe insights (safety guardrail)")
-            return safe_only
+            kept: List[Tuple[CognitiveInsight, str, PromotionTarget]] = []
+            blocked_by_reason: Dict[str, int] = {}
+            for insight, key, target in candidates:
+                reason = _promotion_block_reason(insight.insight)
+                if not reason:
+                    kept.append((insight, key, target))
+                    continue
+                blocked_by_reason[reason] = int(blocked_by_reason.get(reason, 0) or 0) + 1
+                self._log_promotion(key, target.filename, "filtered", reason)
+            for reason, count in sorted(blocked_by_reason.items()):
+                print(f"[SPARK] Filtered {count} insights ({reason})")
+            return kept
 
         return candidates
 
@@ -866,6 +899,12 @@ class Promoter:
                        target: PromotionTarget) -> bool:
         """Promote a single insight to its target file."""
         file_path = self.project_dir / target.filename
+
+        reason = _promotion_block_reason(insight.insight)
+        if reason:
+            self._log_promotion(insight_key, target.filename, "filtered", reason)
+            print(f"[SPARK] Promotion blocked ({reason}): {insight.insight[:80]}...")
+            return False
 
         # LLM area: soft_promotion_triage — verify promotion worthiness
         if not self._llm_area_soft_promotion_triage(insight, target):

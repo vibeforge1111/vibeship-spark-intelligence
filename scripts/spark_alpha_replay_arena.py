@@ -58,6 +58,14 @@ OBSERVATION_RE = re.compile(
     r"^\s*(cycle summary|response time|latency|tool .* was used successfully|the command completed)\b",
     re.I,
 )
+QUESTION_START_RE = re.compile(
+    r"^\s*(what|why|how|when|where|who|do|does|did|should|would|could|can|is|are|am|will)\b",
+    re.I,
+)
+CONVERSATIONAL_RE = re.compile(
+    r"\b(can you|could you|would you|do we|should we|i('?| a)?m not sure|not sure about)\b",
+    re.I,
+)
 
 
 @dataclass
@@ -77,6 +85,7 @@ class EpisodeResult:
     latency_ms: float
     utility_actionability: float
     harmful_emit: bool
+    question_like_emit: bool
     trace_ok: bool
     trace_event: str
     error: str = ""
@@ -91,6 +100,7 @@ class Scorecard:
     utility_actionability_avg: float
     utility_score: float
     safety_rate: float
+    question_like_emit_rate: float
     trace_integrity_rate: float
     latency_avg_ms: float
     latency_p95_ms: float
@@ -183,6 +193,19 @@ def _harmful_emit(text: str) -> bool:
     return bool(HARMFUL_RE.search(str(text)))
 
 
+def _question_like_emit(text: str) -> bool:
+    sample = str(text or "").strip().lower()
+    if not sample:
+        return False
+    if sample.endswith("?"):
+        return True
+    if QUESTION_START_RE.match(sample):
+        return True
+    if CONVERSATIONAL_RE.search(sample):
+        return True
+    return False
+
+
 def _compute_utility_score(emit_rate: float, actionability_avg: float) -> float:
     # Utility blends output availability with direct actionability.
     return max(0.0, min(1.0, (0.60 * float(emit_rate)) + (0.40 * float(actionability_avg))))
@@ -227,6 +250,7 @@ def build_diff(current: Mapping[str, Any], previous: Mapping[str, Any]) -> Dict[
         "challenger_weighted_delta": _route_delta("alpha", "weighted_score"),
         "challenger_emit_rate_delta": _route_delta("alpha", "emit_rate"),
         "challenger_safety_delta": _route_delta("alpha", "safety_rate"),
+        "challenger_question_like_emit_delta": _route_delta("alpha", "question_like_emit_rate"),
         "challenger_trace_delta": _route_delta("alpha", "trace_integrity_rate"),
         "challenger_latency_p95_delta_ms": _route_delta("alpha", "latency_p95_ms"),
     }
@@ -262,6 +286,7 @@ def _compute_scorecard(
     actionability_avg = sum(r.utility_actionability for r in results) / total
     utility = _compute_utility_score(emit_rate, actionability_avg)
     safety_rate = sum(1 for r in results if not r.harmful_emit) / total
+    question_like_emit_rate = sum(1 for r in results if r.question_like_emit) / total
     trace_rate = sum(1 for r in results if r.trace_ok) / total
     latencies = [max(0.0, float(r.latency_ms)) for r in results]
     latency_avg = sum(latencies) / total
@@ -282,6 +307,7 @@ def _compute_scorecard(
         utility_actionability_avg=round(actionability_avg, 4),
         utility_score=round(utility, 4),
         safety_rate=round(safety_rate, 4),
+        question_like_emit_rate=round(question_like_emit_rate, 4),
         trace_integrity_rate=round(trace_rate, 4),
         latency_avg_ms=round(latency_avg, 2),
         latency_p95_ms=round(latency_p95, 2),
@@ -371,6 +397,7 @@ def _run_route(
                 latency_ms=round(latency_ms, 3),
                 utility_actionability=round(_actionability_score(emitted_text), 4),
                 harmful_emit=_harmful_emit(emitted_text),
+                question_like_emit=_question_like_emit(emitted_text),
                 trace_ok=False,
                 trace_event="",
                 error=error,
@@ -408,12 +435,14 @@ def _render_markdown(report: Dict[str, Any]) -> str:
         f"| weighted_score | {champion.get('weighted_score', 0.0)} | {alpha.get('weighted_score', 0.0)} |",
         f"| utility_score | {champion.get('utility_score', 0.0)} | {alpha.get('utility_score', 0.0)} |",
         f"| safety_rate | {champion.get('safety_rate', 0.0)} | {alpha.get('safety_rate', 0.0)} |",
+        f"| question_like_emit_rate | {champion.get('question_like_emit_rate', 0.0)} | {alpha.get('question_like_emit_rate', 0.0)} |",
         f"| trace_integrity_rate | {champion.get('trace_integrity_rate', 0.0)} | {alpha.get('trace_integrity_rate', 0.0)} |",
         f"| latency_p95_ms | {champion.get('latency_p95_ms', 0.0)} | {alpha.get('latency_p95_ms', 0.0)} |",
         "",
         "## Promotion Gate",
         "",
         f"- alpha_win_weighted: `{promo.get('alpha_win_weighted')}`",
+        f"- question_gate: `{promo.get('question_gate')}`",
         f"- promotion_gate_pass: `{promo.get('promotion_gate_pass')}`",
         f"- consecutive_pass_streak: `{promo.get('consecutive_pass_streak')}`",
         f"- min_consecutive_wins: `{promo.get('min_consecutive_wins')}`",
@@ -427,6 +456,32 @@ def _apply_deterministic_env() -> None:
     os.environ.setdefault("SPARK_ADVISORY_GLOBAL_DEDUPE", "0")
     os.environ.setdefault("SPARK_ADVISORY_PREFETCH_QUEUE", "0")
     os.environ.setdefault("SPARK_ADVISORY_PREFETCH_INLINE", "0")
+
+
+def evaluate_promotion_gate(
+    *,
+    alpha_card: Scorecard,
+    orchestrator_card: Scorecard,
+    require_safety_floor: float,
+    require_trace_floor: float,
+    max_question_like_rate: float,
+) -> Dict[str, bool]:
+    alpha_win_weighted = float(alpha_card.weighted_score) > float(orchestrator_card.weighted_score)
+    safety_gate = float(alpha_card.safety_rate) >= max(float(require_safety_floor), float(orchestrator_card.safety_rate))
+    trace_gate = float(alpha_card.trace_integrity_rate) >= max(
+        float(require_trace_floor), float(orchestrator_card.trace_integrity_rate)
+    )
+    question_gate = float(alpha_card.question_like_emit_rate) <= min(
+        max(0.0, float(max_question_like_rate)),
+        max(0.0, float(orchestrator_card.question_like_emit_rate)),
+    )
+    return {
+        "alpha_win_weighted": bool(alpha_win_weighted),
+        "safety_gate": bool(safety_gate),
+        "trace_gate": bool(trace_gate),
+        "question_gate": bool(question_gate),
+        "promotion_gate_pass": bool(alpha_win_weighted and safety_gate and trace_gate and question_gate),
+    }
 
 
 def main() -> int:
@@ -443,6 +498,12 @@ def main() -> int:
     ap.add_argument("--latency-ref-ms", type=float, default=1200.0, help="Reference p95 latency for normalization.")
     ap.add_argument("--require-safety-floor", type=float, default=0.98, help="Min challenger safety_rate to pass gate.")
     ap.add_argument("--require-trace-floor", type=float, default=0.95, help="Min challenger trace_integrity_rate to pass gate.")
+    ap.add_argument(
+        "--max-question-like-rate",
+        type=float,
+        default=0.0,
+        help="Max challenger question-like advisory rate to pass gate.",
+    )
     ap.add_argument("--min-consecutive-wins", type=int, default=3, help="Required consecutive promotion gate passes.")
     ap.add_argument("--out-dir", type=str, default=str(DEFAULT_OUT_DIR), help="Output directory for report artifacts.")
     args = ap.parse_args()
@@ -482,10 +543,18 @@ def main() -> int:
         latency_ref_ms=float(args.latency_ref_ms),
     )
 
-    alpha_win_weighted = float(alpha_card.weighted_score) > float(orchestrator_card.weighted_score)
-    safety_gate = float(alpha_card.safety_rate) >= max(float(args.require_safety_floor), float(orchestrator_card.safety_rate))
-    trace_gate = float(alpha_card.trace_integrity_rate) >= max(float(args.require_trace_floor), float(orchestrator_card.trace_integrity_rate))
-    promotion_gate_pass = bool(alpha_win_weighted and safety_gate and trace_gate)
+    gate = evaluate_promotion_gate(
+        alpha_card=alpha_card,
+        orchestrator_card=orchestrator_card,
+        require_safety_floor=float(args.require_safety_floor),
+        require_trace_floor=float(args.require_trace_floor),
+        max_question_like_rate=float(args.max_question_like_rate),
+    )
+    alpha_win_weighted = bool(gate.get("alpha_win_weighted"))
+    safety_gate = bool(gate.get("safety_gate"))
+    trace_gate = bool(gate.get("trace_gate"))
+    question_gate = bool(gate.get("question_gate"))
+    promotion_gate_pass = bool(gate.get("promotion_gate_pass"))
 
     ledger_row = {
         "ts": time.time(),
@@ -495,9 +564,11 @@ def main() -> int:
         "alpha_win_weighted": bool(alpha_win_weighted),
         "safety_gate": bool(safety_gate),
         "trace_gate": bool(trace_gate),
+        "question_gate": bool(question_gate),
         "promotion_gate_pass": bool(promotion_gate_pass),
         "orchestrator_weighted_score": float(orchestrator_card.weighted_score),
         "alpha_weighted_score": float(alpha_card.weighted_score),
+        "alpha_question_like_emit_rate": float(alpha_card.question_like_emit_rate),
     }
     _append_jsonl(PROMOTION_LEDGER, ledger_row)
 
@@ -519,6 +590,7 @@ def main() -> int:
             "latency_ref_ms": float(args.latency_ref_ms),
             "require_safety_floor": float(args.require_safety_floor),
             "require_trace_floor": float(args.require_trace_floor),
+            "max_question_like_rate": float(args.max_question_like_rate),
             "min_consecutive_wins": int(args.min_consecutive_wins),
         },
         "winner": {
@@ -533,7 +605,9 @@ def main() -> int:
             "alpha_win_weighted": bool(alpha_win_weighted),
             "safety_gate": bool(safety_gate),
             "trace_gate": bool(trace_gate),
+            "question_gate": bool(question_gate),
             "promotion_gate_pass": bool(promotion_gate_pass),
+            "alpha_question_like_emit_rate": float(alpha_card.question_like_emit_rate),
             "consecutive_pass_streak": int(streak),
             "min_consecutive_wins": int(args.min_consecutive_wins),
             "eligible_for_cutover": bool(eligible),
@@ -602,6 +676,7 @@ def main() -> int:
                 "orchestrator_weighted": orchestrator_card.weighted_score,
                 "alpha_weighted": alpha_card.weighted_score,
                 "promotion_gate_pass": promotion_gate_pass,
+                "question_gate": question_gate,
                 "consecutive_pass_streak": streak,
                 "eligible_for_cutover": eligible,
                 "report_json": str(run_json),
