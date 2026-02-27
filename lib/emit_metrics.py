@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable
 SUPPRESSION_EVENTS = {
     "no_emit",
     "gate_no_emit",
+    "global_dedupe_suppressed",
     "context_repeat_blocked",
     "dedupe_empty",
     "no_advice",

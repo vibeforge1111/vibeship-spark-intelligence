@@ -13,16 +13,21 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .diagnostics import log_debug
 from .jsonl_utils import append_jsonl_capped as _append_jsonl_capped
+from .jsonl_utils import tail_jsonl_objects as _tail_jsonl_objects
 
 ALPHA_ENABLED = os.getenv("SPARK_ADVISORY_ALPHA_ENABLED", "1") != "0"
 ALPHA_PROGRAMMATIC_SYNTH_ONLY = os.getenv("SPARK_ADVISORY_ALPHA_SYNTH_PROGRAMMATIC", "1") != "0"
 ALPHA_TEXT_REPEAT_COOLDOWN_S = max(
     30.0,
     float(os.getenv("SPARK_ADVISORY_TEXT_REPEAT_COOLDOWN_S", "600") or 600),
+)
+ALPHA_GLOBAL_DEDUPE_COOLDOWN_S = max(
+    0.0,
+    float(os.getenv("SPARK_ADVISORY_GLOBAL_DEDUPE_COOLDOWN_S", "600") or 600),
 )
 ALPHA_PREFETCH_QUEUE_ENABLED = os.getenv("SPARK_ADVISORY_PREFETCH_QUEUE", "1") != "0"
 ALPHA_INLINE_PREFETCH_ENABLED = os.getenv("SPARK_ADVISORY_PREFETCH_INLINE", "1") != "0"
@@ -33,6 +38,8 @@ except Exception:
 ALPHA_INLINE_PREFETCH_MAX_JOBS = max(1, min(20, _alpha_inline_jobs))
 ALPHA_LOG = Path.home() / ".spark" / "advisory_engine_alpha.jsonl"
 ALPHA_LOG_MAX_LINES = 2000
+ADVISORY_GLOBAL_DEDUPE_FILE = Path.home() / ".spark" / "advisory_global_dedupe.jsonl"
+ADVISORY_GLOBAL_DEDUPE_MAX_LINES = 5000
 
 
 def _parse_bool(value: Any, default: bool) -> bool:
@@ -68,6 +75,7 @@ def _load_alpha_config(path: Optional[Path] = None) -> Dict[str, Any]:
             "enabled": env_bool("SPARK_ADVISORY_ALPHA_ENABLED"),
             "force_programmatic_synth": env_bool("SPARK_ADVISORY_ALPHA_SYNTH_PROGRAMMATIC"),
             "advisory_text_repeat_cooldown_s": env_float("SPARK_ADVISORY_TEXT_REPEAT_COOLDOWN_S"),
+            "global_dedupe_cooldown_s": env_float("SPARK_ADVISORY_GLOBAL_DEDUPE_COOLDOWN_S"),
             "prefetch_queue_enabled": env_bool("SPARK_ADVISORY_PREFETCH_QUEUE"),
             "prefetch_inline_enabled": env_bool("SPARK_ADVISORY_PREFETCH_INLINE"),
             "prefetch_inline_max_jobs": env_int("SPARK_ADVISORY_PREFETCH_INLINE_MAX_JOBS"),
@@ -80,6 +88,7 @@ def apply_alpha_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     global ALPHA_ENABLED
     global ALPHA_PROGRAMMATIC_SYNTH_ONLY
     global ALPHA_TEXT_REPEAT_COOLDOWN_S
+    global ALPHA_GLOBAL_DEDUPE_COOLDOWN_S
     global ALPHA_PREFETCH_QUEUE_ENABLED
     global ALPHA_INLINE_PREFETCH_ENABLED
     global ALPHA_INLINE_PREFETCH_MAX_JOBS
@@ -109,6 +118,16 @@ def apply_alpha_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
             applied.append("advisory_text_repeat_cooldown_s")
         except Exception:
             warnings.append("invalid_advisory_text_repeat_cooldown_s")
+
+    if "global_dedupe_cooldown_s" in cfg:
+        try:
+            ALPHA_GLOBAL_DEDUPE_COOLDOWN_S = max(
+                0.0,
+                min(86400.0, float(cfg.get("global_dedupe_cooldown_s") or 600.0)),
+            )
+            applied.append("global_dedupe_cooldown_s")
+        except Exception:
+            warnings.append("invalid_global_dedupe_cooldown_s")
 
     if "prefetch_queue_enabled" in cfg:
         ALPHA_PREFETCH_QUEUE_ENABLED = _parse_bool(
@@ -142,6 +161,7 @@ def get_alpha_config() -> Dict[str, Any]:
         "enabled": bool(ALPHA_ENABLED),
         "force_programmatic_synth": bool(ALPHA_PROGRAMMATIC_SYNTH_ONLY),
         "advisory_text_repeat_cooldown_s": float(ALPHA_TEXT_REPEAT_COOLDOWN_S),
+        "global_dedupe_cooldown_s": float(ALPHA_GLOBAL_DEDUPE_COOLDOWN_S),
         "prefetch_queue_enabled": bool(ALPHA_PREFETCH_QUEUE_ENABLED),
         "prefetch_inline_enabled": bool(ALPHA_INLINE_PREFETCH_ENABLED),
         "prefetch_inline_max_jobs": int(ALPHA_INLINE_PREFETCH_MAX_JOBS),
@@ -177,6 +197,108 @@ def _hash_text(value: str) -> str:
     if not text:
         return ""
     return hashlib.sha1(text.encode("utf-8", errors="ignore")).hexdigest()[:16]
+
+
+def _safe_ts(value: Any) -> float:
+    try:
+        return float(value or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _should_bypass_global_dedupe(session_id: str, trace_id: str) -> bool:
+    sid = str(session_id or "").strip().lower()
+    tid = str(trace_id or "").strip().lower()
+    if sid.startswith("advisory-bench-"):
+        return True
+    if tid.startswith("bench:"):
+        return True
+    return False
+
+
+def _load_recent_global_dedupe_snapshot(
+    *,
+    cooldown_s: float,
+    limit: int = 1200,
+) -> Tuple[Dict[str, float], Dict[str, float]]:
+    by_advice_id: Dict[str, float] = {}
+    by_text_sig: Dict[str, float] = {}
+    if cooldown_s <= 0.0:
+        return by_advice_id, by_text_sig
+    rows = _tail_jsonl_objects(ADVISORY_GLOBAL_DEDUPE_FILE, max(1, int(limit)))
+    if not rows:
+        return by_advice_id, by_text_sig
+    now = time.time()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        ts = _safe_ts(row.get("ts") or row.get("timestamp") or row.get("created_at"))
+        if ts <= 0.0:
+            continue
+        age_s = now - ts
+        if age_s < 0.0 or age_s > cooldown_s:
+            continue
+        advice_id = str(row.get("advice_id") or "").strip()
+        if advice_id and advice_id not in by_advice_id:
+            by_advice_id[advice_id] = age_s
+        text_sig = str(row.get("text_sig") or "").strip()
+        if not text_sig:
+            text_sig = _hash_text(str(row.get("text") or row.get("advice_text") or ""))
+        if text_sig and text_sig not in by_text_sig:
+            by_text_sig[text_sig] = age_s
+    return by_advice_id, by_text_sig
+
+
+def _record_global_dedupe_rows(
+    *,
+    emitted_items: List[Any],
+    effective_text: str,
+    session_id: str,
+    tool_name: str,
+    trace_id: str,
+) -> None:
+    now = time.time()
+    written_sigs: set[str] = set()
+    for item in emitted_items or []:
+        advice_id = str(getattr(item, "advice_id", "") or "").strip()
+        advice_text = str(getattr(item, "text", "") or "").strip()
+        text_sig = _hash_text(advice_text)
+        if not advice_id and not text_sig:
+            continue
+        _append_jsonl_capped(
+            ADVISORY_GLOBAL_DEDUPE_FILE,
+            {
+                "ts": now,
+                "session_id": str(session_id or "").strip(),
+                "tool_name": str(tool_name or "").strip(),
+                "trace_id": str(trace_id or "").strip(),
+                "advice_id": advice_id,
+                "text_sig": text_sig,
+                "text": advice_text[:300],
+                "source": str(getattr(item, "source", "") or "").strip(),
+            },
+            ADVISORY_GLOBAL_DEDUPE_MAX_LINES,
+            ensure_ascii=True,
+        )
+        if text_sig:
+            written_sigs.add(text_sig)
+    effective_sig = _hash_text(effective_text)
+    if effective_sig and effective_sig not in written_sigs:
+        _append_jsonl_capped(
+            ADVISORY_GLOBAL_DEDUPE_FILE,
+            {
+                "ts": now,
+                "session_id": str(session_id or "").strip(),
+                "tool_name": str(tool_name or "").strip(),
+                "trace_id": str(trace_id or "").strip(),
+                "advice_id": "",
+                "text_sig": effective_sig,
+                "text": str(effective_text or "").strip()[:300],
+                "source": "alpha_synth",
+            },
+            ADVISORY_GLOBAL_DEDUPE_MAX_LINES,
+            ensure_ascii=True,
+        )
 
 
 def _log_alpha(
@@ -318,6 +440,13 @@ def on_pre_tool(
         record_tool_call(state, tool_name, tool_payload, success=None, trace_id=resolved_trace_id)
         user_intent = str(getattr(state, "user_intent", "") or "").strip()
         context_fingerprint = _hash_text(f"{tool_name}|{user_intent}")
+        bypass_global_dedupe = _should_bypass_global_dedupe(session_id, resolved_trace_id)
+        recent_global_by_id: Dict[str, float] = {}
+        recent_global_by_text_sig: Dict[str, float] = {}
+        if (not bypass_global_dedupe) and float(ALPHA_GLOBAL_DEDUPE_COOLDOWN_S) > 0.0:
+            recent_global_by_id, recent_global_by_text_sig = _load_recent_global_dedupe_snapshot(
+                cooldown_s=float(ALPHA_GLOBAL_DEDUPE_COOLDOWN_S),
+            )
 
         advice_items = advise_on_tool(
             tool_name,
@@ -340,7 +469,13 @@ def on_pre_tool(
             )
             return None
 
-        gate_result = evaluate(advice_items, state, tool_name, tool_payload)
+        gate_result = evaluate(
+            advice_items,
+            state,
+            tool_name,
+            tool_payload,
+            recent_global_emissions=(recent_global_by_id if recent_global_by_id else None),
+        )
         if not gate_result.emitted:
             save_state(state)
             _log_alpha(
@@ -411,6 +546,23 @@ def on_pre_tool(
                 extra={"cooldown_s": float(ALPHA_TEXT_REPEAT_COOLDOWN_S)},
             )
             return None
+        if (not bypass_global_dedupe) and text_fingerprint and recent_global_by_text_sig:
+            age_s = recent_global_by_text_sig.get(text_fingerprint)
+            if age_s is not None:
+                save_state(state)
+                _log_alpha(
+                    "global_dedupe_suppressed",
+                    session_id=session_id,
+                    tool_name=tool_name,
+                    trace_id=resolved_trace_id,
+                    emitted=False,
+                    elapsed_ms=(time.time() - start) * 1000.0,
+                    extra={
+                        "cooldown_s": float(ALPHA_GLOBAL_DEDUPE_COOLDOWN_S),
+                        "age_s": round(float(age_s), 1),
+                    },
+                )
+                return None
 
         emitted = emit_advisory(
             gate_result,
@@ -448,6 +600,17 @@ def on_pre_tool(
         state.last_advisory_text_fingerprint = text_fingerprint
         state.last_advisory_context_fingerprint = context_fingerprint
         save_state(state)
+        if (not bypass_global_dedupe) and float(ALPHA_GLOBAL_DEDUPE_COOLDOWN_S) > 0.0:
+            try:
+                _record_global_dedupe_rows(
+                    emitted_items=emitted_items,
+                    effective_text=effective_text,
+                    session_id=session_id,
+                    tool_name=tool_name,
+                    trace_id=resolved_trace_id,
+                )
+            except Exception as exc:
+                log_debug("advisory_engine_alpha", "global dedupe write failed", exc)
 
         try:
             ralph = get_meta_ralph()

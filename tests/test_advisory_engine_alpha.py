@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import time
+from types import SimpleNamespace
 
 import lib.advisory_engine_alpha as alpha_engine
+import lib.advisory_gate as advisory_gate
 import lib.advisory_packet_store as packet_store
 import lib.runtime_session_state as runtime_session_state
 
@@ -95,3 +98,138 @@ def test_log_alpha_writes_alpha_log_only(monkeypatch, tmp_path):
 
     assert alpha_log.exists()
     assert not (tmp_path / "advisory_engine.jsonl").exists()
+
+
+def _patch_pre_tool_runtime(monkeypatch):
+    import lib.advisor as advisor
+    import lib.advisory_synthesizer as synthesizer
+    import lib.emitter as emitter
+    import lib.meta_ralph as meta_ralph
+
+    advice = SimpleNamespace(
+        advice_id="aid-1",
+        text="Repeat caution text",
+        source="workflow",
+        confidence=0.9,
+        context_match=0.9,
+        insight_key="insight:repeat",
+        category="context",
+        advisory_readiness=0.8,
+        advisory_quality={},
+    )
+    monkeypatch.setattr(
+        advisor,
+        "advise_on_tool",
+        lambda *_a, **_k: [advice],
+    )
+    monkeypatch.setattr(
+        advisor,
+        "record_recent_delivery",
+        lambda **_k: None,
+    )
+    monkeypatch.setattr(
+        advisory_gate,
+        "evaluate",
+        lambda advice_items, state, tool_name, tool_input, recent_global_emissions=None: advisory_gate.GateResult(
+            decisions=[
+                advisory_gate.GateDecision(
+                    advice_id="aid-1",
+                    authority=advisory_gate.AuthorityLevel.NOTE,
+                    emit=True,
+                    reason="ok",
+                    adjusted_score=0.9,
+                    original_score=0.9,
+                )
+            ],
+            emitted=[
+                advisory_gate.GateDecision(
+                    advice_id="aid-1",
+                    authority=advisory_gate.AuthorityLevel.NOTE,
+                    emit=True,
+                    reason="ok",
+                    adjusted_score=0.9,
+                    original_score=0.9,
+                )
+            ],
+            suppressed=[],
+            phase="implementation",
+            total_retrieved=len(advice_items),
+        ),
+    )
+    monkeypatch.setattr(advisory_gate, "get_tool_cooldown_s", lambda: 10)
+    monkeypatch.setattr(synthesizer, "synthesize", lambda *_a, **_k: "Repeat caution text")
+
+    emitted_calls = {"count": 0}
+
+    def _emit(*_a, **_k):
+        emitted_calls["count"] += 1
+        return True
+
+    monkeypatch.setattr(emitter, "emit_advisory", _emit)
+    monkeypatch.setattr(meta_ralph, "get_meta_ralph", lambda: SimpleNamespace(track_retrieval=lambda *_a, **_k: None))
+    return emitted_calls
+
+
+def test_on_pre_tool_blocks_global_text_repeat(monkeypatch, tmp_path):
+    _patch_state_and_store(monkeypatch, tmp_path)
+    emitted_calls = _patch_pre_tool_runtime(monkeypatch)
+    dedupe_file = tmp_path / "advisory_global_dedupe.jsonl"
+    monkeypatch.setattr(alpha_engine, "ADVISORY_GLOBAL_DEDUPE_FILE", dedupe_file)
+    monkeypatch.setattr(alpha_engine, "ALPHA_GLOBAL_DEDUPE_COOLDOWN_S", 600.0)
+    text_sig = alpha_engine._hash_text("Repeat caution text")
+    dedupe_file.write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "advice_id": "older-advice-id",
+                "text_sig": text_sig,
+                "text": "Repeat caution text",
+                "trace_id": "older-trace",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out = alpha_engine.on_pre_tool(
+        "s-alpha-global-dedupe",
+        "Edit",
+        {"file_path": "src/app.py"},
+        trace_id="trace-global-dedupe",
+    )
+
+    assert out is None
+    assert emitted_calls["count"] == 0
+    rows = [json.loads(line) for line in alpha_engine.ALPHA_LOG.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert any(str(r.get("event") or "") == "global_dedupe_suppressed" for r in rows)
+
+
+def test_on_pre_tool_bench_session_bypasses_global_dedupe(monkeypatch, tmp_path):
+    _patch_state_and_store(monkeypatch, tmp_path)
+    emitted_calls = _patch_pre_tool_runtime(monkeypatch)
+    dedupe_file = tmp_path / "advisory_global_dedupe.jsonl"
+    monkeypatch.setattr(alpha_engine, "ADVISORY_GLOBAL_DEDUPE_FILE", dedupe_file)
+    monkeypatch.setattr(alpha_engine, "ALPHA_GLOBAL_DEDUPE_COOLDOWN_S", 600.0)
+    dedupe_file.write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "advice_id": "older-advice-id",
+                "text_sig": alpha_engine._hash_text("Repeat caution text"),
+                "text": "Repeat caution text",
+                "trace_id": "older-trace",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out = alpha_engine.on_pre_tool(
+        "advisory-bench-smoke",
+        "Edit",
+        {"file_path": "src/app.py"},
+        trace_id="bench:trace-1",
+    )
+
+    assert out == "Repeat caution text"
+    assert emitted_calls["count"] == 1

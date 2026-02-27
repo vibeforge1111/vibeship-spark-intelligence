@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 ALPHA_SUPPRESSION_EVENTS = {
     "gate_no_emit",
     "emit_suppressed",
+    "global_dedupe_suppressed",
     "context_repeat_blocked",
     "dedupe_empty",
     "dedupe_gate_empty",

@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, sqlite-only packet lookup lock + advisory runtime cleanup)
+Last updated: 2026-02-27 (local branch snapshot, global dedupe wiring in alpha runtime + advisory telemetry alignment)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -1141,6 +1141,25 @@ Notable metrics now:
   - `python scripts/alpha_gap_audit.py` -> `advisory_files=9`, `tuneable_keys=286`, `distillation_files=3`
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, streak `59`
+
+### Latest advisory repeat-control delta (2026-02-27, alpha global dedupe restore)
+
+- Restored cross-session global dedupe wiring in `lib/advisory_engine_alpha.py`:
+  - now loads/applies `advisory_engine.global_dedupe_cooldown_s` from tuneables/env
+  - preloads recent global dedupe snapshot and passes `recent_global_emissions` into `advisory_gate.evaluate(...)`
+  - blocks repeated emission by text signature with explicit `global_dedupe_suppressed` event
+  - records emitted advice/text signatures into `~/.spark/advisory_global_dedupe.jsonl`
+  - preserves benchmark lane bypass for `advisory-bench-*` / `bench:*` sessions
+- Aligned suppression telemetry to include `global_dedupe_suppressed`:
+  - `lib/emit_metrics.py`
+  - `scripts/advisory_self_review.py`
+  - `scripts/advisory_controlled_delta.py`
+- Added targeted tests in `tests/test_advisory_engine_alpha.py`:
+  - global text-repeat suppression path
+  - benchmark-session bypass path
+- Validation:
+  - `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_self_review.py tests/test_carmack_kpi.py -q` -> `14 passed`
+  - `python scripts/alpha_gap_audit.py` -> `advisory_files=4`, `tuneable_keys=286`, `distillation_files=3`
 
 ## Not done yet
 
