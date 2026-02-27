@@ -31,7 +31,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .advisory_quarantine import record_quarantine_item
+from .runtime_quarantine import record_quarantine_item
 
 # Import existing Spark components
 from .cognitive_learner import get_cognitive_learner

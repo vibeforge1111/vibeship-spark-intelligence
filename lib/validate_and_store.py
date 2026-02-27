@@ -209,7 +209,7 @@ def validate_and_store_insight(
         # Fail-open: quarantine the insight for diagnostics, then continue to storage
         _record("quarantined")
         try:
-            from .advisory_quarantine import record_quarantine_item
+            from .runtime_quarantine import record_quarantine_item
             record_quarantine_item(
                 text=text,
                 reason=f"meta_ralph_exception: {e}",

@@ -17,7 +17,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from lib.advisory_quarantine import record_quarantine_item
+from lib.runtime_quarantine import record_quarantine_item
 from lib.bridge import update_spark_context
 from lib.chip_merger import merge_chip_insights
 from lib.chips import process_chip_events
