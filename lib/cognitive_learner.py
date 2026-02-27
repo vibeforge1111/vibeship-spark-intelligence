@@ -579,7 +579,7 @@ class CognitiveLearner:
     - When to apply knowledge, not just what knowledge exists
     """
 
-    INSIGHTS_FILE = Path.home() / ".spark" / "cognitive_insights.json"
+    INSIGHTS_FILE = Path.home() / ".spark" / "cognitive_snapshot_legacy.json"
     LOCK_FILE = Path.home() / ".spark" / ".cognitive.lock"
 
     def __init__(self):
@@ -597,35 +597,30 @@ class CognitiveLearner:
                 for key, info in data.items():
                     self.insights[key] = CognitiveInsight.from_dict(info)
                 loaded = bool(self.insights)
-                if loaded:
-                    self.dedupe_struggles()
-                    self._backfill_action_domains()
-                    self._backfill_advisory_readiness()
-            except Exception:
+            except Exception as e:
+                print(f"[SPARK] Error loading insights: {e}")
                 loaded = False
         if not loaded and self.INSIGHTS_FILE.exists():
             try:
                 data = json.loads(self.INSIGHTS_FILE.read_text(encoding="utf-8"))
                 for key, info in data.items():
                     self.insights[key] = CognitiveInsight.from_dict(info)
-                loaded = True
-                # Consolidate duplicate struggle variants (e.g., recovered X%).
-                self.dedupe_struggles()
-                # Backfill action_domain for insights loaded without one
-                self._backfill_action_domains()
-                # Ensure advisory_readiness exists for legacy insights.
-                self._backfill_advisory_readiness()
+                loaded = bool(self.insights)
             except Exception as e:
                 print(f"[SPARK] Error loading insights: {e}")
-        if not loaded and not self.insights:
-            # Shadow migration path: JSON remains canonical, but if unavailable we can
-            # recover from the latest SQLite spine snapshot.
+                loaded = False
+        if not loaded:
             try:
                 data = load_cognitive_insights_snapshot()
                 for key, info in data.items():
                     self.insights[key] = CognitiveInsight.from_dict(info)
             except Exception:
                 pass
+
+        if self.insights:
+            self.dedupe_struggles()
+            self._backfill_action_domains()
+            self._backfill_advisory_readiness()
 
     def _backfill_action_domains(self):
         """Backfill action_domain for insights that don't have one."""
@@ -721,7 +716,6 @@ class CognitiveLearner:
     def _save_insights_now(self, drop_keys: Optional[set] = None):
         """Actually write insights to disk."""
         self._dirty = False
-        self.INSIGHTS_FILE.parent.mkdir(parents=True, exist_ok=True)
         with _insights_lock(self.LOCK_FILE) as lock:
             if not lock.acquired:
                 # Another writer holds the lock; retry on next flush cycle.
@@ -771,6 +765,7 @@ class CognitiveLearner:
                 except Exception:
                     pass
             else:
+                self.INSIGHTS_FILE.parent.mkdir(parents=True, exist_ok=True)
                 tmp = self.INSIGHTS_FILE.with_suffix(f".json.tmp.{os.getpid()}")
                 tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
                 for _ in range(5):

@@ -151,11 +151,10 @@ def test_runtime_snapshot_prefers_sqlite_before_json_fallback(tmp_path, monkeypa
 
 def test_runtime_snapshot_mtime_uses_available_source(tmp_path, monkeypatch):
     db_path = tmp_path / "spark_memory_spine.db"
-    insights_path = tmp_path / "cognitive_insights.json"
     monkeypatch.setenv("SPARK_MEMORY_SPINE_DB", str(db_path))
-
-    insights_path.write_text(json.dumps({"a": {"insight": "x"}}), encoding="utf-8")
-    mtime = runtime_snapshot_mtime(json_fallback_path=insights_path)
+    monkeypatch.setenv("SPARK_MEMORY_SPINE_DUAL_WRITE", "1")
+    dual_write_cognitive_insights({"a": {"insight": "x"}})
+    mtime = runtime_snapshot_mtime()
     assert isinstance(mtime, float)
 
 

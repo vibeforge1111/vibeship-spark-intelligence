@@ -102,7 +102,6 @@ def test_load_live_metrics_reads_local_files(monkeypatch, tmp_path: Path):
     )
 
     monkeypatch.setattr("lib.production_gates.SPARK_DIR", spark_dir)
-    monkeypatch.setattr("lib.production_gates.COGNITIVE_FILE", spark_dir / "cognitive_insights.json")
     monkeypatch.setattr("lib.production_gates.EFFECTIVENESS_FILE", spark_dir / "advisor" / "effectiveness.json")
     monkeypatch.setattr("lib.production_gates.CHIP_INSIGHTS_DIR", spark_dir / "chip_insights")
     monkeypatch.setattr("lib.production_gates._count_chip_insights", lambda _p: 3)

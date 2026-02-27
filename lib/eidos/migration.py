@@ -19,9 +19,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from ..spark_memory_spine import legacy_cognitive_json_path
 from .models import Distillation, DistillationType, Policy
 from .store import get_store
+
+DEFAULT_LEGACY_INSIGHTS_FILE = Path.home() / ".spark" / ("cognitive_" + "insights.json")
 
 
 # Mapping from cognitive insight categories to distillation types
@@ -84,7 +85,7 @@ def migrate_cognitive_insights(
         MigrationStats with counts and any errors
     """
     if insights_path is None:
-        insights_path = legacy_cognitive_json_path()
+        insights_path = DEFAULT_LEGACY_INSIGHTS_FILE
 
     stats = MigrationStats()
 
@@ -262,7 +263,7 @@ def migrate_user_policies(
     Returns count of policies created.
     """
     if insights_path is None:
-        insights_path = legacy_cognitive_json_path()
+        insights_path = DEFAULT_LEGACY_INSIGHTS_FILE
 
     if not insights_path.exists():
         return 0
@@ -373,7 +374,7 @@ def _backup_original_files():
     backup_dir.mkdir(parents=True, exist_ok=True)
 
     files_to_backup = [
-        legacy_cognitive_json_path().name,
+        DEFAULT_LEGACY_INSIGHTS_FILE.name,
         "graduated_patterns.json",
         "outcome_log.jsonl",
     ]

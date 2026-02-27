@@ -14,11 +14,9 @@ from typing import Any, Dict, List
 
 from .config_authority import resolve_section
 from .metric_contract import METRIC_CONTRACT_VERSION
-from .spark_memory_spine import legacy_cognitive_json_path
 from .spark_memory_spine import load_cognitive_insights_runtime_snapshot
 
 SPARK_DIR = Path.home() / ".spark"
-COGNITIVE_FILE = legacy_cognitive_json_path()
 EFFECTIVENESS_FILE = SPARK_DIR / "advisor" / "effectiveness.json"
 CHIP_INSIGHTS_DIR = SPARK_DIR / "chip_insights"
 TUNEABLES_FILE = SPARK_DIR / "tuneables.json"
@@ -112,7 +110,7 @@ def _count_chip_insights(chip_dir: Path) -> int:
 
 def _count_stored_learnings(path: Path) -> int:
     data: Any
-    if path == COGNITIVE_FILE:
+    if path.name == "spark_memory_spine.db":
         data = load_cognitive_insights_runtime_snapshot()
     else:
         data = _read_json(path, {})
@@ -240,7 +238,7 @@ def _read_effectiveness_metrics() -> Dict[str, int]:
 
 def load_live_metrics() -> LoopMetrics:
     """Collect loop metrics from live local stores."""
-    stored = _count_stored_learnings(COGNITIVE_FILE)
+    stored = _count_stored_learnings(SPARK_DIR / "spark_memory_spine.db")
     chip_count = _count_chip_insights(CHIP_INSIGHTS_DIR)
 
     retrieved = 0

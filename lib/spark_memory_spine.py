@@ -27,11 +27,6 @@ def db_path() -> Path:
     return _db_path()
 
 
-def legacy_cognitive_json_path() -> Path:
-    """Compatibility path used only for legacy JSON fallback/mirror lanes."""
-    return Path.home() / ".spark" / "cognitive_insights.json"
-
-
 def dual_write_enabled() -> bool:
     raw = os.getenv("SPARK_MEMORY_SPINE_DUAL_WRITE")
     if raw is None and os.getenv("PYTEST_CURRENT_TEST"):
@@ -60,11 +55,8 @@ def json_mirror_enabled() -> bool:
 
 
 def runtime_json_fallback_enabled() -> bool:
-    raw = os.getenv("SPARK_MEMORY_RUNTIME_JSON_FALLBACK")
-    if raw is None and os.getenv("PYTEST_CURRENT_TEST"):
-        return True
-    val = str(raw if raw is not None else "0").strip().lower()
-    return val in {"1", "true", "yes", "on"}
+    # Runtime fallback is retired: SQLite is the only runtime source.
+    return False
 
 
 def _connect() -> sqlite3.Connection:
@@ -271,7 +263,8 @@ def load_cognitive_insights_runtime_snapshot(
     *,
     json_fallback_path: Optional[Path] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Read cognitive snapshot for runtime consumers (SQLite-first, JSON fallback)."""
+    """Read cognitive snapshot for runtime consumers (SQLite-only)."""
+    del json_fallback_path
     try:
         snap = load_cognitive_insights_snapshot(force=True)
         if isinstance(snap, dict) and snap:
@@ -284,34 +277,19 @@ def load_cognitive_insights_runtime_snapshot(
             return snap
     except Exception:
         pass
-
-    if not runtime_json_fallback_enabled():
-        return {}
-    fallback = json_fallback_path.expanduser() if json_fallback_path else legacy_cognitive_json_path()
-    if not fallback.exists():
-        return {}
-    try:
-        payload = json.loads(fallback.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    return _coerce_runtime_snapshot(payload)
+    return {}
 
 
 def runtime_snapshot_mtime(
     *,
     json_fallback_path: Optional[Path] = None,
 ) -> Optional[float]:
-    """Best-effort mtime for active cognitive snapshot source."""
+    """Best-effort mtime for active runtime cognitive snapshot source."""
+    del json_fallback_path
     db = _db_path()
     if db.exists():
         try:
             return float(db.stat().st_mtime)
-        except Exception:
-            pass
-    fallback = json_fallback_path.expanduser() if json_fallback_path else legacy_cognitive_json_path()
-    if fallback.exists():
-        try:
-            return float(fallback.stat().st_mtime)
         except Exception:
             pass
     return None
