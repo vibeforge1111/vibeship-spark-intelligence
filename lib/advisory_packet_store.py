@@ -2493,21 +2493,24 @@ def lookup_exact(
     intent_family: str,
     now_ts: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
-    index = _load_index()
     # Mirror build_packet/save_packet sanitization so exact hits work even if caller passes raw values.
     project = _sanitize_token(project_key, "unknown_project")
     session_ctx = _sanitize_token(session_context_key, "default")
     tool = _sanitize_token(tool_name, "*")
     intent = _sanitize_token(intent_family, "emergent_other")
     exact_key = _make_exact_key(project, session_ctx, tool, intent)
-    packet_id = ""
     if PACKET_SQLITE_LOOKUP_ENABLED:
         try:
-            packet_id = _spine_resolve_exact_packet_id(exact_key, now_ts=now_ts)
+            packet_id = str(_spine_resolve_exact_packet_id(exact_key, now_ts=now_ts) or "").strip()
         except Exception:
-            packet_id = ""
-    if not packet_id:
-        packet_id = (index.get("by_exact") or {}).get(exact_key)
+            return None
+        if not packet_id:
+            return None
+    else:
+        index = _load_index()
+        packet_id = str(((index.get("by_exact") or {}).get(exact_key)) or "").strip()
+        if not packet_id:
+            return None
     packet = get_packet(str(packet_id or ""))
     if not packet:
         return None
@@ -2611,8 +2614,6 @@ def lookup_relaxed_candidates(
     max_candidates: int = 10,
     context_text: str = "",
 ) -> List[Dict[str, Any]]:
-    index = _load_index()
-    meta = index.get("packet_meta") or {}
     now_value = float(now_ts if now_ts is not None else _now())
     limit = max(1, min(30, int(max_candidates or PACKET_RELAXED_MAX_CANDIDATES or 1)))
     candidates: List[Tuple[float, float, str, Dict[str, Any]]] = []
@@ -2648,9 +2649,10 @@ def lookup_relaxed_candidates(
                 score, updated_ts = scored
                 candidates.append((score, updated_ts, packet_id, row))
         except Exception:
-            candidates = []
-
-    if not candidates:
+            return []
+    else:
+        index = _load_index()
+        meta = index.get("packet_meta") or {}
         for packet_id, item in meta.items():
             row = item or {}
             scored = _candidate_match_score(
