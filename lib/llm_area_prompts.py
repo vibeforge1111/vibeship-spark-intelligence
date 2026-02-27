@@ -328,19 +328,6 @@ AREA_PROMPTS: Dict[str, Dict[str, str]] = {
             "Return only JSON."
         ),
     },
-    "dedupe_optimize": {
-        "system": (
-            "You propose a dedupe key strategy for advisory items at a specific stage. "
-            "Consider: intent, tool context, and semantic overlap. "
-            "Return JSON: {{\"strategy\": \"...\", \"key_fields\": [...], \"reason\": \"...\"}}"
-        ),
-        "template": (
-            "Propose dedupe key strategy for these near-duplicates:\n\n"
-            "Stage: {stage}\n"
-            "Samples:\n{samples}\n\n"
-            "Return only JSON."
-        ),
-    },
     "packet_rerank": {
         "system": (
             "You rerank advisory packet candidates by relevance to the current query. "
