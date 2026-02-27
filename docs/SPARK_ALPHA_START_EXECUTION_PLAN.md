@@ -49,11 +49,11 @@ Latest measured signals:
 1. Full advisory collapse not complete:
    - wave 1 completed and reduced further (`9` `lib/*advisory*.py` files), final 3-module end-state pending
 2. Config surface still large:
-   - reduced to `40` sections, `279` keys (target met for wave 1; deeper runtime-specific pruning still pending)
+   - currently `40` sections, `286` keys (wave 1 pruning landed earlier; later sync-compaction controls raised key count and deeper runtime-specific pruning is still pending)
 3. Single-store consolidation still partial:
    - SQLite path exists, but JSON/JSONL surface remains broad
 4. Memory compaction still partial:
-   - ACT-R compaction exists, but no unified advisory-store compaction layer
+   - ACT-R compaction exists and packet compaction is now sync-integrated with bounded apply policy, but full unified advisory/memory-store policy remains pending
 5. Distillation file-surface collapse done:
    - reduced to `3` distillation files; deeper flow unification remains
 6. VibeForge evolve lane deferred:

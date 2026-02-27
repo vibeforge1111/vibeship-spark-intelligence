@@ -2410,6 +2410,63 @@ def get_packet(packet_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def list_packet_meta(
+    *,
+    include_invalidated: bool = True,
+    limit: int = 0,
+) -> List[Dict[str, Any]]:
+    """Return packet-meta rows from index with stable ordering."""
+    index = _load_index()
+    meta = index.get("packet_meta") or {}
+    out: List[Dict[str, Any]] = []
+    if not isinstance(meta, dict):
+        return out
+
+    for packet_id, raw in meta.items():
+        if not isinstance(raw, dict):
+            continue
+        if not include_invalidated and bool(raw.get("invalidated")):
+            continue
+        row = dict(raw)
+        row["packet_id"] = str(packet_id)
+        out.append(row)
+
+    out.sort(
+        key=lambda row: (
+            float(row.get("updated_ts", 0.0) or 0.0),
+            str(row.get("packet_id") or ""),
+        ),
+        reverse=True,
+    )
+    if int(limit or 0) > 0:
+        return out[: int(limit)]
+    return out
+
+
+def mark_packet_compaction_review(
+    packet_id: str,
+    *,
+    reason: str = "cold_packet_review",
+    ts: Optional[float] = None,
+) -> bool:
+    """Attach review marker to packet meta for bounded compaction follow-up."""
+    resolved_id = str(packet_id or "").strip()
+    if not resolved_id:
+        return False
+    index = _load_index()
+    meta = index.get("packet_meta") or {}
+    row = meta.get(resolved_id) if isinstance(meta, dict) else None
+    if not isinstance(row, dict):
+        return False
+
+    marker_ts = float(ts if ts is not None else _now())
+    row["compaction_flag"] = "review"
+    row["compaction_reason"] = str(reason or "cold_packet_review")[:120]
+    row["compaction_ts"] = marker_ts
+    _save_index(index)
+    return True
+
+
 def _is_fresh(packet: Dict[str, Any], now_ts: Optional[float] = None) -> bool:
     now_value = float(now_ts if now_ts is not None else _now())
     if bool(packet.get("invalidated")):

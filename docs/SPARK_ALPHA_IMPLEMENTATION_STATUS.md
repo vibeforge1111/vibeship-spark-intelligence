@@ -1044,22 +1044,43 @@ Notable metrics now:
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, streak `58`
 
+### Latest compaction automation delta (2026-02-27, sync-integrated packet apply lane)
+
+- Added packet-compaction runtime integration in `lib/context_sync.py`:
+  - packet compaction now runs inside periodic compaction flow with bounded apply policy
+  - supports cooldown + apply caps + optional review updates
+  - records packet compaction telemetry in compaction diagnostics payload/state
+- Added packet-store public helper APIs for compaction runtime use:
+  - `list_packet_meta(...)`
+  - `mark_packet_compaction_review(...)`
+- Added sync tuneables for bounded packet-compaction runtime control:
+  - `sync.packet_compaction_*` keys (enabled/cooldown/apply thresholds)
+- Added validation tests:
+  - `tests/test_context_sync_policy.py` (new packet-compaction policy/runtime cases)
+  - `tests/test_advisory_packet_store_compaction_meta.py`
+- Validation:
+  - `pytest tests/test_context_sync_policy.py tests/test_packet_compaction.py tests/test_advisory_packet_compaction_helpers.py tests/test_advisory_packet_store_compaction_meta.py -q` -> `16 passed`
+  - `pytest tests/test_advisory_packet_store.py -q` -> `19 passed`
+  - `python scripts/alpha_gap_audit.py` -> `advisory_files=9`, `tuneable_keys=286`, `distillation_files=3`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, streak `59`
+
 ## Not done yet
 
 These are still pending relative to the broader Simplification/Fast-Track goals:
 
 1. Advisory collapse wave 1 is exceeded (`advisory_files=9`), but final 3-module end-state is not yet implemented.
 2. Storage consolidation to single SQLite-first memory/advisory store is partially implemented (cognitive memory is SQLite-canonical; advisory packet lookup is now SQLite-canonical with no runtime JSON lookup fallback mode).
-3. Memory compaction engine is partially implemented (ACT-R cognitive compaction + packet compaction preview/apply lane are in place); deeper automated apply-policy integration across advisory stores is still pending.
+3. Memory compaction engine is partially implemented (ACT-R cognitive compaction + packet compaction preview/apply lane + sync-integrated bounded packet apply lane are in place); deeper unified policy across all advisory/memory stores is still pending.
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).
-5. Config reduction wave target is now met (`tuneable_keys=279`), but deeper runtime simplification of high-noise sections is still pending.
+5. Config reduction wave target was met and then expanded for sync packet-compaction controls (`tuneable_keys=286`); deeper runtime simplification of high-noise sections is still pending.
 6. Distillation file-count collapse wave is now met (`distillation_files=3`); end-to-end flow-level unification beyond module surface is still pending.
 7. Broad file/function deletion pass is in progress (legacy advisory dual-path test suites + `advisory_memory_fusion.py` + `advisory_prefetch_planner.py` + `advisory_packet_feedback.py` + `advisory_packet_llm_reranker.py` removed); larger legacy advisory/runtime file deletions are still pending.
 8. Final migration playbook is now documented (`docs/SPARK_ALPHA_MIGRATION_PLAYBOOK.md`); execution and cutover evidence collection remains ongoing.
 9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + optional mirror compatibility); runtime JSON consumer surface is now `0` and retirement gate is passing (`6/3` streak).
 10. PR-05 superseded fallback rank-extension branch deletion is complete, keyword/parser fallback paths are removed, and per-profile/domain weight branching is collapsed to deterministic fusion defaults; broader retrieval simplification outside these branches is still pending.
 11. PR-06 alpha ownership expansion for post-tool/user-prompt is complete; broad legacy advisory file removals after canary burn-in are still pending.
-12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup, dead fallback removal, removal of unused `dedupe_optimize` + `suppression_triage` llm-area config surfaces, and retirement of 8 packet-lookup LLM rerank knobs.
+12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup, dead fallback removal, removal of unused `dedupe_optimize` + `suppression_triage` llm-area config surfaces, retirement of 8 packet-lookup LLM rerank knobs, and addition of bounded sync packet-compaction controls.
 
 ## In progress right now
 

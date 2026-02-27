@@ -434,6 +434,13 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "adapters_enabled": TuneableSpec("list", [], None, None, "Optional explicit sync target allowlist"),
         "adapters_disabled": TuneableSpec("list", [], None, None, "Optional sync target denylist"),
         "mind_limit": TuneableSpec("int", 2, 0, 6, "Max Mind highlights included in sync context"),
+        "packet_compaction_enabled": TuneableSpec("bool", True, None, None, "Enable advisory packet compaction during sync"),
+        "packet_compaction_cooldown_s": TuneableSpec("int", 21600, 300, 604800, "Cooldown between packet compaction runs (s)"),
+        "packet_compaction_apply_limit": TuneableSpec("int", 12, 0, 500, "Max packet compaction actions per run"),
+        "packet_compaction_apply_updates": TuneableSpec("bool", False, None, None, "Allow packet review-mark updates during compaction"),
+        "packet_compaction_stale_age_days": TuneableSpec("float", 7.0, 0.5, 3650.0, "Min age for stale packet delete candidates"),
+        "packet_compaction_low_effectiveness": TuneableSpec("float", 0.25, 0.0, 1.0, "Delete threshold for stale low-effectiveness packets"),
+        "packet_compaction_review_age_days": TuneableSpec("float", 2.0, 0.5, 3650.0, "Min age for cold packet review candidates"),
     },
 
     # ---- queue ----

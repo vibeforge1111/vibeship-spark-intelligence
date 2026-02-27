@@ -30,6 +30,8 @@ from .sync_tracker import get_sync_tracker
 from .outcome_checkin import list_checkins
 from .queue import _tail_lines
 from .memory_compaction import build_compaction_plan
+from .packet_compaction import build_packet_compaction_plan
+from . import advisory_packet_store as packet_store
 
 
 DEFAULT_MIN_RELIABILITY = 0.7
@@ -47,6 +49,12 @@ DEFAULT_COMPACTION_COOLDOWN_S = 6 * 3600
 DEFAULT_ACTR_COMPACTION_MAX_AGE_DAYS = 180.0
 DEFAULT_ACTR_COMPACTION_MIN_ACTIVATION = 0.20
 DEFAULT_ACTR_COMPACTION_MAX_DELETES = 20
+DEFAULT_PACKET_COMPACTION_COOLDOWN_S = 6 * 3600
+DEFAULT_PACKET_COMPACTION_APPLY_LIMIT = 12
+DEFAULT_PACKET_COMPACTION_STALE_AGE_DAYS = 7.0
+DEFAULT_PACKET_COMPACTION_LOW_EFFECTIVENESS = 0.25
+DEFAULT_PACKET_COMPACTION_REVIEW_AGE_DAYS = 2.0
+DEFAULT_PACKET_COMPACTION_APPLY_UPDATES = False
 
 CORE_SYNC_ADAPTERS = ("openclaw", "exports")
 OPTIONAL_SYNC_ADAPTERS = ("claude_code", "cursor", "windsurf", "clawdbot", "codex")
@@ -75,6 +83,25 @@ def _parse_adapter_list(raw: Any) -> List[str]:
             seen.add(name)
             out.append(name)
     return out
+
+
+def _parse_bool(raw: Any, *, default: bool) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    text = str(raw or "").strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return bool(default)
+
+
+def _parse_float(raw: Any, *, default: float, min_value: float, max_value: float) -> float:
+    try:
+        value = float(raw)
+    except Exception:
+        value = float(default)
+    return max(min_value, min(max_value, value))
 
 
 def _load_sync_adapter_policy() -> Dict[str, Any]:
@@ -117,6 +144,81 @@ def _load_sync_adapter_policy() -> Dict[str, Any]:
         "mode": mode,
         "enabled": sorted(enabled),
         "disabled": sorted(set(ALL_SYNC_ADAPTERS) - set(enabled)),
+    }
+
+
+def _load_sync_compaction_policy() -> Dict[str, Any]:
+    cfg = resolve_section(
+        "sync",
+        baseline_path=BASELINE_TUNEABLES_FILE,
+        runtime_path=TUNEABLES_FILE,
+        env_overrides={
+            "packet_compaction_enabled": EnvOverride(
+                "SPARK_PACKET_COMPACTION_ENABLED",
+                lambda raw: _parse_bool(raw, default=True),
+            ),
+            "packet_compaction_cooldown_s": EnvOverride(
+                "SPARK_PACKET_COMPACTION_COOLDOWN_S",
+                lambda raw: int(float(raw)),
+            ),
+            "packet_compaction_apply_limit": EnvOverride(
+                "SPARK_PACKET_COMPACTION_APPLY_LIMIT",
+                lambda raw: int(float(raw)),
+            ),
+            "packet_compaction_apply_updates": EnvOverride(
+                "SPARK_PACKET_COMPACTION_APPLY_UPDATES",
+                lambda raw: _parse_bool(raw, default=False),
+            ),
+            "packet_compaction_stale_age_days": EnvOverride(
+                "SPARK_PACKET_COMPACTION_STALE_AGE_DAYS",
+                lambda raw: float(raw),
+            ),
+            "packet_compaction_low_effectiveness": EnvOverride(
+                "SPARK_PACKET_COMPACTION_LOW_EFFECTIVENESS",
+                lambda raw: float(raw),
+            ),
+            "packet_compaction_review_age_days": EnvOverride(
+                "SPARK_PACKET_COMPACTION_REVIEW_AGE_DAYS",
+                lambda raw: float(raw),
+            ),
+        },
+    ).data
+    cfg = cfg if isinstance(cfg, dict) else {}
+    return {
+        "enabled": _parse_bool(
+            cfg.get("packet_compaction_enabled", True),
+            default=True,
+        ),
+        "cooldown_s": max(
+            300,
+            int(float(cfg.get("packet_compaction_cooldown_s", DEFAULT_PACKET_COMPACTION_COOLDOWN_S) or DEFAULT_PACKET_COMPACTION_COOLDOWN_S)),
+        ),
+        "apply_limit": max(
+            0,
+            int(float(cfg.get("packet_compaction_apply_limit", DEFAULT_PACKET_COMPACTION_APPLY_LIMIT) or DEFAULT_PACKET_COMPACTION_APPLY_LIMIT)),
+        ),
+        "apply_updates": _parse_bool(
+            cfg.get("packet_compaction_apply_updates", DEFAULT_PACKET_COMPACTION_APPLY_UPDATES),
+            default=DEFAULT_PACKET_COMPACTION_APPLY_UPDATES,
+        ),
+        "stale_age_days": _parse_float(
+            cfg.get("packet_compaction_stale_age_days", DEFAULT_PACKET_COMPACTION_STALE_AGE_DAYS),
+            default=DEFAULT_PACKET_COMPACTION_STALE_AGE_DAYS,
+            min_value=0.5,
+            max_value=3650.0,
+        ),
+        "low_effectiveness": _parse_float(
+            cfg.get("packet_compaction_low_effectiveness", DEFAULT_PACKET_COMPACTION_LOW_EFFECTIVENESS),
+            default=DEFAULT_PACKET_COMPACTION_LOW_EFFECTIVENESS,
+            min_value=0.0,
+            max_value=1.0,
+        ),
+        "review_age_days": _parse_float(
+            cfg.get("packet_compaction_review_age_days", DEFAULT_PACKET_COMPACTION_REVIEW_AGE_DAYS),
+            default=DEFAULT_PACKET_COMPACTION_REVIEW_AGE_DAYS,
+            min_value=0.5,
+            max_value=3650.0,
+        ),
     }
 
 
@@ -259,6 +361,87 @@ def _run_actr_compaction(cognitive: CognitiveLearner) -> Dict[str, Any]:
     }
 
 
+def _run_packet_compaction(
+    *,
+    now_ts: float,
+    state: Dict[str, Any],
+) -> Dict[str, Any]:
+    policy = _load_sync_compaction_policy()
+    if not bool(policy.get("enabled", True)):
+        return {"enabled": False, "ran": False, "reason": "disabled"}
+
+    last_ts = float(state.get("packet_last_run_ts", 0.0) or 0.0)
+    age_s = max(0.0, now_ts - last_ts) if last_ts > 0 else None
+    cooldown_s = int(policy.get("cooldown_s", DEFAULT_PACKET_COMPACTION_COOLDOWN_S) or DEFAULT_PACKET_COMPACTION_COOLDOWN_S)
+    if age_s is not None and age_s < float(cooldown_s):
+        return {
+            "enabled": True,
+            "ran": False,
+            "reason": "cooldown",
+            "age_s": round(age_s, 2),
+            "cooldown_s": int(cooldown_s),
+        }
+
+    try:
+        rows = packet_store.list_packet_meta(include_invalidated=False)
+    except Exception as exc:
+        return {"enabled": True, "ran": False, "reason": "packet_meta_read_failed", "error": str(exc)[:240]}
+
+    plan = build_packet_compaction_plan(
+        rows,
+        now_ts=now_ts,
+        stale_age_days=float(policy.get("stale_age_days", DEFAULT_PACKET_COMPACTION_STALE_AGE_DAYS) or DEFAULT_PACKET_COMPACTION_STALE_AGE_DAYS),
+        low_effectiveness=float(
+            policy.get("low_effectiveness", DEFAULT_PACKET_COMPACTION_LOW_EFFECTIVENESS) or DEFAULT_PACKET_COMPACTION_LOW_EFFECTIVENESS
+        ),
+        review_age_days=float(policy.get("review_age_days", DEFAULT_PACKET_COMPACTION_REVIEW_AGE_DAYS) or DEFAULT_PACKET_COMPACTION_REVIEW_AGE_DAYS),
+    )
+
+    apply_limit = max(0, int(policy.get("apply_limit", DEFAULT_PACKET_COMPACTION_APPLY_LIMIT) or DEFAULT_PACKET_COMPACTION_APPLY_LIMIT))
+    apply_updates = bool(policy.get("apply_updates", DEFAULT_PACKET_COMPACTION_APPLY_UPDATES))
+    remaining = int(apply_limit)
+    deleted = 0
+    updated = 0
+    candidates = list(plan.get("candidates") or [])
+    for row in candidates:
+        if remaining <= 0:
+            break
+        action = str((row or {}).get("action") or "").strip().lower()
+        packet_id = str((row or {}).get("packet_id") or "").strip()
+        reason = str((row or {}).get("reason") or "compaction").strip() or "compaction"
+        if not packet_id:
+            continue
+        if action == "delete":
+            try:
+                ok = bool(packet_store.invalidate_packet(packet_id, reason=f"auto_compaction:{reason}"))
+            except Exception:
+                ok = False
+            if ok:
+                deleted += 1
+                remaining -= 1
+            continue
+        if action == "update" and apply_updates:
+            try:
+                ok = bool(packet_store.mark_packet_compaction_review(packet_id, reason=reason, ts=now_ts))
+            except Exception:
+                ok = False
+            if ok:
+                updated += 1
+                remaining -= 1
+
+    return {
+        "enabled": True,
+        "ran": True,
+        "rows": int(len(rows)),
+        "summary": dict(plan.get("summary") or {}),
+        "applied_limit": int(apply_limit),
+        "remaining_budget": int(remaining),
+        "apply_updates": bool(apply_updates),
+        "deleted": int(deleted),
+        "updated": int(updated),
+    }
+
+
 def _run_periodic_compaction(cognitive: CognitiveLearner) -> Dict[str, Any]:
     enabled = str(os.getenv("SPARK_COGNITIVE_COMPACTION_ENABLED", "1")).strip().lower() not in {
         "0",
@@ -288,13 +471,17 @@ def _run_periodic_compaction(cognitive: CognitiveLearner) -> Dict[str, Any]:
     struggle_merged = cognitive.dedupe_struggles()
     wisdom = cognitive.promote_to_wisdom()
     actr = _run_actr_compaction(cognitive)
+    packet = _run_packet_compaction(now_ts=now_ts, state=state)
     summary = {
         "last_run_ts": now_ts,
         "signal_groups": int(len(signal_merged)),
         "struggle_groups": int(len(struggle_merged)),
         "wisdom_promoted": int((wisdom or {}).get("promoted", 0) or 0),
         "actr": actr,
+        "packet": packet,
     }
+    if bool(packet.get("ran")):
+        summary["packet_last_run_ts"] = now_ts
     _save_compaction_state(summary)
     return {"ran": True, **summary}
 
