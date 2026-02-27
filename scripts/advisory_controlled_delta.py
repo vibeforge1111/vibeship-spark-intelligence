@@ -8,6 +8,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+ALPHA_SUPPRESSION_EVENTS = {
+    "gate_no_emit",
+    "emit_suppressed",
+    "context_repeat_blocked",
+    "dedupe_empty",
+    "dedupe_gate_empty",
+}
+
 
 def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
     if not path.exists():
@@ -103,6 +111,7 @@ def _summarize_engine(engine_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     emitted_authority_counts = Counter()
     trace_rows = 0
     fallback_events = 0
+    suppression_events = 0
     delivered = 0
     elapsed_ms: List[float] = []
     for row in engine_rows:
@@ -129,6 +138,8 @@ def _summarize_engine(engine_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             trace_rows += 1
         if ev == "fallback_emit" or str(row.get("delivery_mode") or "") == "fallback":
             fallback_events += 1
+        if ev in ALPHA_SUPPRESSION_EVENTS:
+            suppression_events += 1
         if ev in {"emitted", "fallback_emit"}:
             delivered += 1
             ems = _safe_float(row.get("elapsed_ms"), 0.0)
@@ -155,6 +166,7 @@ def _summarize_engine(engine_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "selective_ai_eligibility": dict(selective_ai_eligibility),
         "emitted_authority_counts": dict(emitted_authority_counts),
         "fallback_share_pct": round((fallback_events / max(1, delivered)) * 100.0, 2),
+        "suppression_share_pct": round((suppression_events / max(1, len(engine_rows))) * 100.0, 2),
         "latency": {
             "n": len(elapsed_ms),
             "p50_ms": round(_pct(50), 2),

@@ -17,6 +17,14 @@ EFFECTIVENESS_FILE = SPARK_DIR / "advisor" / "effectiveness.json"
 SYNC_STATS_FILE = SPARK_DIR / "sync_stats.json"
 CHIP_MERGE_FILE = SPARK_DIR / "chip_merge_state.json"
 
+ALPHA_SUPPRESSION_EVENTS = {
+    "gate_no_emit",
+    "emit_suppressed",
+    "context_repeat_blocked",
+    "dedupe_empty",
+    "dedupe_gate_empty",
+}
+
 DEFAULT_ALERT_THRESHOLDS = {
     "max_bridge_heartbeat_age_s": 120.0,
     "min_core_reliability": 0.75,
@@ -76,20 +84,29 @@ def _count_advisory_events(rows: List[Dict[str, Any]], start_ts: float, end_ts: 
     emitted = int(counts.get("emitted", 0))
     fallback_emit = int(counts.get("fallback_emit", 0))
     delivered = emitted + fallback_emit
-    no_emit = int(counts.get("no_emit", 0))
+    alpha_suppressed = sum(int(counts.get(ev, 0) or 0) for ev in ALPHA_SUPPRESSION_EVENTS)
+    no_emit = int(counts.get("no_emit", 0)) + int(alpha_suppressed)
     synth_empty = int(counts.get("synth_empty", 0))
     duplicate_suppressed = int(counts.get("duplicate_suppressed", 0))
     noise_num = no_emit + synth_empty + duplicate_suppressed
+    alpha_suppression_counts = {
+        ev: int(counts.get(ev, 0) or 0)
+        for ev in sorted(ALPHA_SUPPRESSION_EVENTS)
+        if int(counts.get(ev, 0) or 0) > 0
+    }
     return {
         "event_counts": dict(counts),
         "total_events": total,
         "emitted": emitted,
         "fallback_emit": fallback_emit,
         "delivered": delivered,
+        "alpha_suppressed": int(alpha_suppressed),
+        "alpha_suppression_events": alpha_suppression_counts,
         "no_emit": no_emit,
         "synth_empty": synth_empty,
         "duplicate_suppressed": duplicate_suppressed,
         "fallback_burden": _safe_ratio(fallback_emit, delivered),
+        "suppression_burden": _safe_ratio(alpha_suppressed, total),
         "noise_burden": _safe_ratio(noise_num, total),
     }
 
@@ -287,6 +304,13 @@ def _sample_failure_snapshot(limit: int = 12) -> Dict[str, Any]:
         "low_auth_global_suppressed",
         "synth_empty",
         "no_advice",
+        "gate_no_emit",
+        "emit_suppressed",
+        "context_repeat_blocked",
+        "dedupe_empty",
+        "dedupe_gate_empty",
+        "post_tool_error",
+        "user_prompt_error",
     }
     out: List[Dict[str, Any]] = []
     for row in reversed(rows):
@@ -364,6 +388,10 @@ def build_scorecard(window_hours: float = 4.0, now_ts: Optional[float] = None) -
         "noise_burden": {
             "current": current.get("noise_burden"),
             "previous": previous.get("noise_burden"),
+        },
+        "suppression_burden": {
+            "current": current.get("suppression_burden"),
+            "previous": previous.get("suppression_burden"),
         },
         "core_reliability": {
             "current": core.get("core_reliability"),

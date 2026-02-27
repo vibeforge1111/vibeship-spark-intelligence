@@ -78,6 +78,8 @@ def test_summarize_engine_and_outcomes(tmp_path):
     assert eng["rows"] == 3
     assert eng["events"]["fallback_emit"] == 2
     assert eng["fallback_share_pct"] > 60.0
+    assert eng["suppression_events"] == 0
+    assert eng["suppression_share_pct"] == 0.0
 
     outcome_path = tmp_path / "outcome_tracking.json"
     records = [

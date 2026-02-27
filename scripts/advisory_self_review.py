@@ -17,6 +17,13 @@ from typing import Any, Dict, Iterable, List, Optional
 from lib.advisory_log_paths import advisory_engine_log_default
 
 SPARK_DIR = Path.home() / ".spark"
+ALPHA_SUPPRESSION_EVENTS = {
+    "gate_no_emit",
+    "emit_suppressed",
+    "context_repeat_blocked",
+    "dedupe_empty",
+    "dedupe_gate_empty",
+}
 
 
 def _to_ts(value: Any) -> float:
@@ -152,7 +159,14 @@ def summarize_engine(path: Path, window_s: float, now_ts: float) -> Dict[str, An
     routes = Counter(str(r.get("route") or "unknown") for r in rows)
     delivered = events.get("emitted", 0) + events.get("fallback_emit", 0)
     fallback_share_pct = _pct(events.get("fallback_emit", 0), delivered)
+    suppression_events = sum(int(events.get(ev, 0) or 0) for ev in ALPHA_SUPPRESSION_EVENTS)
+    suppression_share_pct = _pct(suppression_events, len(rows))
     trace_rows = sum(1 for r in rows if r.get("trace_id"))
+    suppression_breakdown = {
+        ev: int(events.get(ev, 0) or 0)
+        for ev in sorted(ALPHA_SUPPRESSION_EVENTS)
+        if int(events.get(ev, 0) or 0) > 0
+    }
 
     return {
         "rows": int(len(rows)),
@@ -161,6 +175,9 @@ def summarize_engine(path: Path, window_s: float, now_ts: float) -> Dict[str, An
         "events": dict(events),
         "routes": dict(routes),
         "fallback_share_pct": fallback_share_pct,
+        "suppression_events": int(suppression_events),
+        "suppression_share_pct": suppression_share_pct,
+        "suppression_breakdown": suppression_breakdown,
     }
 
 
@@ -267,9 +284,10 @@ def build_report(summary: Dict[str, Any], window_hours: float, now_ts: float) ->
     rep = ra["repeated_texts"][:6]
     repeated_share = round(sum(float(r["share_pct_of_items"]) for r in rep), 2)
     high_fallback = float(en.get("fallback_share_pct") or 0.0) >= 60.0
+    high_suppression = float(en.get("suppression_share_pct") or 0.0) >= 60.0
 
     improvement_state = "improving" if (oc.get("strict_effectiveness_rate") or 0) >= 0.9 else "unclear"
-    if high_fallback:
+    if high_fallback or high_suppression:
         improvement_state = "noisy"
 
     lines = [
@@ -292,6 +310,7 @@ def build_report(summary: Dict[str, Any], window_hours: float, now_ts: float) ->
         f"- Engine events: {en['rows']}",
         f"- Engine trace coverage: {en['trace_rows']}/{en['rows']} ({en['trace_coverage_pct']}%)",
         f"- Fallback share (delivered): {en['fallback_share_pct']}%",
+        f"- Suppression share (all events): {en.get('suppression_share_pct', 0.0)}%",
         f"- Strict action rate: {oc['strict_action_rate']}",
         f"- Strict effectiveness rate: {oc['strict_effectiveness_rate']}",
         f"- Trace mismatch count: {oc['trace_mismatch_count']}",
@@ -316,9 +335,9 @@ def build_report(summary: Dict[str, Any], window_hours: float, now_ts: float) ->
             "",
             "### Were there misses despite memory existing?",
             (
-                "- Yes. High fallback share suggests packet/live retrieval quality is still inconsistent."
-                if high_fallback
-                else "- Mixed. Fallback was not dominant in this window; evaluate misses via trace coverage and repeated-noise patterns."
+                "- Yes. High suppression share suggests retrieval/gating quality is still inconsistent."
+                if high_suppression
+                else "- Mixed. Suppression was not dominant in this window; evaluate misses via trace coverage and repeated-noise patterns."
             ),
             (
                 "- Engine trace coverage is low; evidence linkage is incomplete in the engine path."
@@ -362,7 +381,7 @@ def build_report(summary: Dict[str, Any], window_hours: float, now_ts: float) ->
             "## Questions To Ask Every Review",
             "1. Which advisories changed a concrete decision, with trace IDs?",
             "2. Which advisories repeated without adding new actionability?",
-            "3. Where did fallback dominate and why?",
+            "3. Where did suppression dominate and why?",
             "4. Which sources had strict-good outcomes vs non-strict optimism?",
             "5. What is one simplification we can do before adding anything new?",
             "",

@@ -54,6 +54,28 @@ def test_window_metrics_computes_aligned_gaur_and_burdens():
     assert round(out["noise_burden"], 4) == round(2.0 / 4.0, 4)
 
 
+def test_window_metrics_counts_alpha_suppression_events_as_noise():
+    start = 1000.0
+    end = 2000.0
+    events = [
+        {"ts": 1200.0, "event": "emitted"},
+        {"ts": 1300.0, "event": "gate_no_emit"},
+        {"ts": 1400.0, "event": "context_repeat_blocked"},
+        {"ts": 1500.0, "event": "dedupe_empty"},
+    ]
+    out = ck._window_metrics(
+        advisory_rows=events,
+        feedback_rows=[],
+        recent_outcomes={},
+        start_ts=start,
+        end_ts=end,
+    )
+    assert out["alpha_suppressed"] == 3
+    assert out["no_emit"] == 3
+    assert round(out["suppression_burden"], 4) == round(3.0 / 4.0, 4)
+    assert round(out["noise_burden"], 4) == round(3.0 / 4.0, 4)
+
+
 def test_build_scorecard_reads_files_and_computes_core_reliability(tmp_path, monkeypatch):
     advisory = tmp_path / "advisory.jsonl"
     feedback = tmp_path / "feedback.jsonl"
