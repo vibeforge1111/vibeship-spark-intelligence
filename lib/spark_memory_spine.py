@@ -54,6 +54,14 @@ def json_mirror_enabled() -> bool:
     return val in {"1", "true", "yes", "on"}
 
 
+def runtime_json_fallback_enabled() -> bool:
+    raw = os.getenv("SPARK_MEMORY_RUNTIME_JSON_FALLBACK")
+    if raw is None and os.getenv("PYTEST_CURRENT_TEST"):
+        return True
+    val = str(raw if raw is not None else "0").strip().lower()
+    return val in {"1", "true", "yes", "on"}
+
+
 def _connect() -> sqlite3.Connection:
     path = _db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -272,6 +280,8 @@ def load_cognitive_insights_runtime_snapshot(
     except Exception:
         pass
 
+    if not runtime_json_fallback_enabled():
+        return {}
     fallback = json_fallback_path.expanduser() if json_fallback_path else (Path.home() / ".spark" / "cognitive_insights.json")
     if not fallback.exists():
         return {}

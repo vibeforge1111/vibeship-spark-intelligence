@@ -6,6 +6,7 @@ from lib.cognitive_learner import CognitiveInsight
 from lib.cognitive_learner import CognitiveLearner
 from lib.spark_memory_spine import dual_write_cognitive_insights
 from lib.spark_memory_spine import load_cognitive_insights_runtime_snapshot
+from lib.spark_memory_spine import runtime_json_fallback_enabled
 from lib.spark_memory_spine import runtime_snapshot_mtime
 
 
@@ -156,3 +157,14 @@ def test_runtime_snapshot_mtime_uses_available_source(tmp_path, monkeypatch):
     insights_path.write_text(json.dumps({"a": {"insight": "x"}}), encoding="utf-8")
     mtime = runtime_snapshot_mtime(json_fallback_path=insights_path)
     assert isinstance(mtime, float)
+
+
+def test_runtime_snapshot_respects_json_fallback_disable(tmp_path, monkeypatch):
+    insights_path = tmp_path / "cognitive_insights.json"
+    db_path = tmp_path / "spark_memory_spine.db"
+    insights_path.write_text(json.dumps({"json_only": {"insight": "legacy"}}), encoding="utf-8")
+    monkeypatch.setenv("SPARK_MEMORY_SPINE_DB", str(db_path))
+    monkeypatch.setenv("SPARK_MEMORY_RUNTIME_JSON_FALLBACK", "0")
+    assert runtime_json_fallback_enabled() is False
+    snap = load_cognitive_insights_runtime_snapshot(json_fallback_path=insights_path)
+    assert snap == {}
