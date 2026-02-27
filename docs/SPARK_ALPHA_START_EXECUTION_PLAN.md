@@ -4,6 +4,10 @@ Date: 2026-02-27
 Branch: `feat/spark-alpha`  
 Mode: autonomous sequence (no-stop execution order)
 
+Companion execution doc for remaining structural cuts:
+
+1. `docs/SPARK_ALPHA_REDUCTION_WAVES_PLAN.md`
+
 ## Objective
 
 Ship a stable Spark Alpha start state now, with a repeatable proof command that verifies:
