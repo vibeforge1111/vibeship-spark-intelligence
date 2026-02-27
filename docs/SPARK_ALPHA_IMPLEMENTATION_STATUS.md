@@ -870,6 +870,22 @@ Branch: feat/spark-alpha
   - `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_152921`)
   - `python scripts/alpha_gap_audit.py` -> `advisory_files=10`, `tuneable_keys=415`, `lib_jsonl_refs=376`
 
+107. `fdc3b72` - `refactor(alpha-wave2): prune five retired tuneable keys with migration-safe validation`
+- Removed five externally orphaned keys from active schema and baseline config:
+  - `advisory_engine.delivery_stale_s`
+  - `advisory_engine.global_dedupe_scope`
+  - `advisory_engine.actionability_enforce`
+  - `auto_tuner.apply_cross_section_recommendations`
+  - `auto_tuner.recommendation_sections_allowlist`
+- Added retired-key migration handling in `validate_tuneables(...)` so these keys are silently dropped from runtime/user tuneables instead of being reported as unknown-key warnings.
+- Regression + gate evidence:
+  - `python -m py_compile lib/tuneables_schema.py` -> pass
+  - `python -m lib.tuneables_schema` -> `ok=True`, `warnings=0`, `unknown=0`
+  - `pytest tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_intelligence_llm_preferences.py tests/test_llm_dispatch.py tests/test_production_loop_gates.py tests/test_observatory_tuneables_deep_dive.py -q` -> `56 passed`
+  - `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_153728`)
+  - `python scripts/alpha_gap_audit.py` -> `tuneable_keys=410`, `advisory_files=10`, `lib_jsonl_refs=376`
+  - `python scripts/tuneables_usage_audit.py` -> `keys=410`, `external_orphan_keys=86`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -882,12 +898,12 @@ Branch: feat/spark-alpha
 
 ### Current measured state (latest run)
 
-- `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_152921`)
+- `python scripts/alpha_start_readiness.py --emit-report --strict` -> `ready=true` (`run_id=20260227_153728`)
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
 - replay evidence batch (`seeds=42,77`; `episodes=8,20`) -> `alpha_win_rate=1.0`, `promotion_pass_rate=1.0`, `runs=4`
 - alpha core pytest slice in readiness run -> `242 passed`
-- `python scripts/alpha_gap_audit.py` -> `advisory_files=10`, `tuneable_keys=415`, `lib_jsonl_refs=376`, `distillation_files=5`, `orchestrator_module_present=false`, `vibeforge_has_code_evolve_lane=false`
-- `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=415`, `hits=7551`, `orphan_keys=0`, `external_hits=6976`, `external_orphan_keys=91`, `scanned_files=504`
+- `python scripts/alpha_gap_audit.py` -> `advisory_files=10`, `tuneable_keys=410`, `lib_jsonl_refs=376`, `distillation_files=5`, `orchestrator_module_present=false`, `vibeforge_has_code_evolve_lane=false`
+- `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=410`, `hits=7546`, `orphan_keys=0`, `external_hits=6976`, `external_orphan_keys=86`, `scanned_files=506`
 - `python scripts/jsonl_surface_audit.py` -> `jsonl_hits=735`, `files_with_jsonl_hits=136`, `scopes_with_hits=4`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `18`
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
