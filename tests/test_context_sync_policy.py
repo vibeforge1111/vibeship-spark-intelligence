@@ -67,3 +67,53 @@ def test_mind_limit_reads_sync_section_and_env(monkeypatch, tmp_path):
 
     monkeypatch.setenv("SPARK_SYNC_MIND_LIMIT", "6")
     assert context_sync._mind_limit_from_env() == 6
+
+
+def test_periodic_compaction_respects_disabled_env(monkeypatch):
+    class _DummyCognitive:
+        def dedupe_signals(self):
+            raise AssertionError("should not run when disabled")
+
+        def dedupe_struggles(self):
+            raise AssertionError("should not run when disabled")
+
+        def promote_to_wisdom(self):
+            raise AssertionError("should not run when disabled")
+
+    monkeypatch.setenv("SPARK_COGNITIVE_COMPACTION_ENABLED", "0")
+    out = context_sync._run_periodic_compaction(_DummyCognitive())
+    assert out["ran"] is False
+    assert out["reason"] == "disabled"
+
+
+def test_periodic_compaction_writes_state_and_obeys_cooldown(monkeypatch, tmp_path):
+    class _DummyCognitive:
+        def __init__(self):
+            self.calls = 0
+
+        def dedupe_signals(self):
+            self.calls += 1
+            return {"a": 2}
+
+        def dedupe_struggles(self):
+            self.calls += 1
+            return {}
+
+        def promote_to_wisdom(self):
+            self.calls += 1
+            return {"promoted": 1}
+
+    state_path = tmp_path / "state.json"
+    monkeypatch.setattr(context_sync, "COMPACTION_STATE_FILE", state_path)
+    monkeypatch.setenv("SPARK_COGNITIVE_COMPACTION_ENABLED", "1")
+    monkeypatch.setenv("SPARK_COGNITIVE_COMPACTION_COOLDOWN_S", "3600")
+
+    cog = _DummyCognitive()
+    first = context_sync._run_periodic_compaction(cog)
+    assert first["ran"] is True
+    assert state_path.exists()
+    assert cog.calls == 3
+
+    second = context_sync._run_periodic_compaction(cog)
+    assert second["ran"] is False
+    assert second["reason"] == "cooldown"

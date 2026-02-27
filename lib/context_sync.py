@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import json
 import os
 import re
+import time
 
 from .cognitive_learner import CognitiveLearner, CognitiveInsight
 from .config_authority import EnvOverride, env_int, env_str, resolve_section
@@ -40,6 +41,8 @@ DEFAULT_MAX_MIND_HIGHLIGHTS = 2
 CHIP_INSIGHTS_DIR = Path.home() / ".spark" / "chip_insights"
 TUNEABLES_FILE = Path.home() / ".spark" / "tuneables.json"
 BASELINE_TUNEABLES_FILE = Path(__file__).resolve().parent.parent / "config" / "tuneables.json"
+COMPACTION_STATE_FILE = Path.home() / ".spark" / "cognitive_compaction_state.json"
+DEFAULT_COMPACTION_COOLDOWN_S = 6 * 3600
 
 CORE_SYNC_ADAPTERS = ("openclaw", "exports")
 OPTIONAL_SYNC_ADAPTERS = ("claude_code", "cursor", "windsurf", "clawdbot", "codex")
@@ -122,6 +125,66 @@ def _normalize_text(text: str) -> str:
     t = re.sub(r"\s+\d+$", "", t)
     t = re.sub(r"\s+", " ", t)
     return t.strip()
+
+
+def _load_compaction_state(path: Optional[Path] = None) -> Dict[str, Any]:
+    path = path or COMPACTION_STATE_FILE
+    try:
+        if not path.exists():
+            return {}
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            return raw
+    except Exception:
+        pass
+    return {}
+
+
+def _save_compaction_state(payload: Dict[str, Any], path: Optional[Path] = None) -> None:
+    path = path or COMPACTION_STATE_FILE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _run_periodic_compaction(cognitive: CognitiveLearner) -> Dict[str, Any]:
+    enabled = str(os.getenv("SPARK_COGNITIVE_COMPACTION_ENABLED", "1")).strip().lower() not in {
+        "0",
+        "false",
+        "off",
+        "no",
+    }
+    if not enabled:
+        return {"ran": False, "reason": "disabled"}
+
+    try:
+        cooldown_s = max(
+            300,
+            int(float(os.getenv("SPARK_COGNITIVE_COMPACTION_COOLDOWN_S", str(DEFAULT_COMPACTION_COOLDOWN_S)) or DEFAULT_COMPACTION_COOLDOWN_S)),
+        )
+    except Exception:
+        cooldown_s = DEFAULT_COMPACTION_COOLDOWN_S
+
+    now_ts = time.time()
+    state = _load_compaction_state()
+    last_ts = float(state.get("last_run_ts", 0.0) or 0.0)
+    age_s = max(0.0, now_ts - last_ts) if last_ts > 0 else None
+    if age_s is not None and age_s < float(cooldown_s):
+        return {"ran": False, "reason": "cooldown", "age_s": round(age_s, 2), "cooldown_s": cooldown_s}
+
+    signal_merged = cognitive.dedupe_signals()
+    struggle_merged = cognitive.dedupe_struggles()
+    wisdom = cognitive.promote_to_wisdom()
+    summary = {
+        "last_run_ts": now_ts,
+        "signal_groups": int(len(signal_merged)),
+        "struggle_groups": int(len(struggle_merged)),
+        "wisdom_promoted": int((wisdom or {}).get("promoted", 0) or 0),
+    }
+    _save_compaction_state(summary)
+    return {"ran": True, **summary}
 
 
 def _is_low_value(insight_text: str) -> bool:
@@ -718,6 +781,7 @@ def sync_context(
     cognitive = CognitiveLearner()
     # Prune stale insights (conservative defaults)
     cognitive.prune_stale(max_age_days=180.0, min_effective=0.2)
+    compaction = _run_periodic_compaction(cognitive)
 
     root = project_dir or Path.cwd()
     project_context = None
@@ -727,6 +791,8 @@ def sync_context(
         project_context = None
 
     diagnostics: Optional[Dict] = {} if diagnose else None
+    if diagnostics is not None:
+        diagnostics["compaction"] = compaction
     insights = _select_insights(
         min_reliability=min_reliability,
         min_validations=min_validations,
