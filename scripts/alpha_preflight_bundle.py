@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
+from lib.doctor import DoctorResult, _check_alpha_env_contract
 from lib.integration_status import get_full_status
 from lib.production_gates import evaluate_gates, load_live_metrics
 from lib.service_control import service_status
@@ -72,6 +73,12 @@ def evaluate_alpha_preflight(*, bridge_stale_s: int = 90) -> Dict[str, Any]:
     codex_gate_strict_ok = bool(codex_gates.get("passing"))
     codex_gate_ok = codex_gate_strict_ok or codex_window_activity == 0
 
+    env_contract_probe = DoctorResult()
+    _check_alpha_env_contract(env_contract_probe)
+    env_contract_check = next((c for c in env_contract_probe.checks if c.id == "alpha_env_contract"), None)
+    env_contract_status = str(getattr(env_contract_check, "status", "skip"))
+    env_contract_ok = env_contract_status != "fail"
+
     checks = [
         {"name": "integration.all_ok", "ok": bool(integration.get("all_ok")), "value": integration.get("status")},
         {"name": "services.core_running", "ok": core_services_running, "value": {k: (services.get(k) or {}).get("running") for k in core_services}},
@@ -89,6 +96,15 @@ def evaluate_alpha_preflight(*, bridge_stale_s: int = 90) -> Dict[str, Any]:
             },
         },
         {"name": "codex_hooks.alert_not_critical", "ok": codex_ok and str(codex_alert.get("level") or "unknown") != "critical", "value": codex_alert if codex_ok else codex_err},
+        {
+            "name": "config.alpha_env_contract",
+            "ok": env_contract_ok,
+            "value": {
+                "status": env_contract_status,
+                "message": getattr(env_contract_check, "message", ""),
+                "details": getattr(env_contract_check, "details", ""),
+            },
+        },
         {"name": "production_gates.ready", "ok": bool(production.get("ready")), "value": {"passed": production.get("passed"), "total": production.get("total")}},
     ]
 
