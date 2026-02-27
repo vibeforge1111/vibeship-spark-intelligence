@@ -413,10 +413,10 @@ def apply_quality_uplift(
 
     runtime: Dict[str, Any] = {}
     try:
-        from .advisory_engine import apply_engine_config, get_engine_status
+        from .advisory_engine_alpha import apply_alpha_config, get_alpha_status
 
-        apply_engine_config(advisory_engine_cfg)
-        runtime["engine"] = get_engine_status()
+        apply_alpha_config(advisory_engine_cfg)
+        runtime["engine"] = get_alpha_status()
     except Exception:
         runtime["engine"] = {}
 

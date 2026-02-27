@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 
 import lib.advisor as advisor_mod
+import lib.advisory_engine_alpha as advisory_alpha_mod
 import lib.advisory_preferences as prefs
-import lib.advisory_engine as advisory_engine_mod
 import lib.advisory_synthesizer as advisory_synth_mod
 
 
@@ -138,8 +138,8 @@ def test_apply_quality_uplift_persists_and_hot_applies(monkeypatch, tmp_path):
     def _fake_get_synth_status():
         return {"tier_label": "AI-Enhanced", "ai_available": True}
 
-    monkeypatch.setattr(advisory_engine_mod, "apply_engine_config", _fake_apply_engine)
-    monkeypatch.setattr(advisory_engine_mod, "get_engine_status", _fake_get_engine_status)
+    monkeypatch.setattr(advisory_alpha_mod, "apply_alpha_config", _fake_apply_engine)
+    monkeypatch.setattr(advisory_alpha_mod, "get_alpha_status", _fake_get_engine_status)
     monkeypatch.setattr(advisory_synth_mod, "apply_synth_config", _fake_apply_synth)
     monkeypatch.setattr(advisory_synth_mod, "get_synth_status", _fake_get_synth_status)
 
@@ -195,8 +195,8 @@ def test_apply_quality_uplift_sets_minimax_model(monkeypatch, tmp_path):
     tuneables = tmp_path / "tuneables.json"
     calls = {"synth": None}
 
-    monkeypatch.setattr(advisory_engine_mod, "apply_engine_config", lambda cfg: {"applied": [], "warnings": []})
-    monkeypatch.setattr(advisory_engine_mod, "get_engine_status", lambda: {"enabled": True})
+    monkeypatch.setattr(advisory_alpha_mod, "apply_alpha_config", lambda cfg: {"applied": [], "warnings": []})
+    monkeypatch.setattr(advisory_alpha_mod, "get_alpha_status", lambda: {"enabled": True})
     monkeypatch.setattr(
         advisory_synth_mod,
         "apply_synth_config",

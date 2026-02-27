@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -35,6 +36,145 @@ ENGINE_COMPAT_LOG = Path.home() / ".spark" / "advisory_engine.jsonl"
 ALPHA_LOG_MAX_LINES = 2000
 _compat_default = "0" if "PYTEST_CURRENT_TEST" in os.environ else "1"
 ALPHA_COMPAT_ENGINE_LOG_ENABLED = os.getenv("SPARK_ADVISORY_ALPHA_COMPAT_ENGINE_LOG", _compat_default) != "0"
+
+
+def _parse_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return bool(default)
+
+
+def _load_alpha_config(path: Optional[Path] = None) -> Dict[str, Any]:
+    tuneables = path or (Path.home() / ".spark" / "tuneables.json")
+    if (
+        path is None
+        and "pytest" in sys.modules
+        and str(os.environ.get("SPARK_TEST_ALLOW_HOME_TUNEABLES", "")).strip().lower()
+        not in {"1", "true", "yes", "on"}
+    ):
+        try:
+            if tuneables.resolve() == (Path.home() / ".spark" / "tuneables.json").resolve():
+                return {}
+        except Exception:
+            return {}
+    from .config_authority import env_bool, env_float, env_int, resolve_section
+
+    cfg = resolve_section(
+        "advisory_engine",
+        runtime_path=tuneables,
+        env_overrides={
+            "enabled": env_bool("SPARK_ADVISORY_ALPHA_ENABLED"),
+            "force_programmatic_synth": env_bool("SPARK_ADVISORY_ALPHA_SYNTH_PROGRAMMATIC"),
+            "advisory_text_repeat_cooldown_s": env_float("SPARK_ADVISORY_TEXT_REPEAT_COOLDOWN_S"),
+            "prefetch_queue_enabled": env_bool("SPARK_ADVISORY_PREFETCH_QUEUE"),
+            "prefetch_inline_enabled": env_bool("SPARK_ADVISORY_PREFETCH_INLINE"),
+            "prefetch_inline_max_jobs": env_int("SPARK_ADVISORY_PREFETCH_INLINE_MAX_JOBS"),
+        },
+    ).data
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def apply_alpha_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
+    global ALPHA_ENABLED
+    global ALPHA_PROGRAMMATIC_SYNTH_ONLY
+    global ALPHA_TEXT_REPEAT_COOLDOWN_S
+    global ALPHA_PREFETCH_QUEUE_ENABLED
+    global ALPHA_INLINE_PREFETCH_ENABLED
+    global ALPHA_INLINE_PREFETCH_MAX_JOBS
+
+    applied: List[str] = []
+    warnings: List[str] = []
+    if not isinstance(cfg, dict):
+        return {"applied": applied, "warnings": warnings}
+
+    if "enabled" in cfg:
+        ALPHA_ENABLED = _parse_bool(cfg.get("enabled"), ALPHA_ENABLED)
+        applied.append("enabled")
+
+    if "force_programmatic_synth" in cfg:
+        ALPHA_PROGRAMMATIC_SYNTH_ONLY = _parse_bool(
+            cfg.get("force_programmatic_synth"),
+            ALPHA_PROGRAMMATIC_SYNTH_ONLY,
+        )
+        applied.append("force_programmatic_synth")
+
+    if "advisory_text_repeat_cooldown_s" in cfg:
+        try:
+            ALPHA_TEXT_REPEAT_COOLDOWN_S = max(
+                30.0,
+                min(86400.0, float(cfg.get("advisory_text_repeat_cooldown_s") or 600.0)),
+            )
+            applied.append("advisory_text_repeat_cooldown_s")
+        except Exception:
+            warnings.append("invalid_advisory_text_repeat_cooldown_s")
+
+    if "prefetch_queue_enabled" in cfg:
+        ALPHA_PREFETCH_QUEUE_ENABLED = _parse_bool(
+            cfg.get("prefetch_queue_enabled"),
+            ALPHA_PREFETCH_QUEUE_ENABLED,
+        )
+        applied.append("prefetch_queue_enabled")
+
+    if "prefetch_inline_enabled" in cfg:
+        ALPHA_INLINE_PREFETCH_ENABLED = _parse_bool(
+            cfg.get("prefetch_inline_enabled"),
+            ALPHA_INLINE_PREFETCH_ENABLED,
+        )
+        applied.append("prefetch_inline_enabled")
+
+    if "prefetch_inline_max_jobs" in cfg:
+        try:
+            ALPHA_INLINE_PREFETCH_MAX_JOBS = max(
+                1,
+                min(20, int(cfg.get("prefetch_inline_max_jobs") or 1)),
+            )
+            applied.append("prefetch_inline_max_jobs")
+        except Exception:
+            warnings.append("invalid_prefetch_inline_max_jobs")
+
+    return {"applied": applied, "warnings": warnings}
+
+
+def get_alpha_config() -> Dict[str, Any]:
+    return {
+        "enabled": bool(ALPHA_ENABLED),
+        "force_programmatic_synth": bool(ALPHA_PROGRAMMATIC_SYNTH_ONLY),
+        "advisory_text_repeat_cooldown_s": float(ALPHA_TEXT_REPEAT_COOLDOWN_S),
+        "prefetch_queue_enabled": bool(ALPHA_PREFETCH_QUEUE_ENABLED),
+        "prefetch_inline_enabled": bool(ALPHA_INLINE_PREFETCH_ENABLED),
+        "prefetch_inline_max_jobs": int(ALPHA_INLINE_PREFETCH_MAX_JOBS),
+        "compat_engine_log_enabled": bool(ALPHA_COMPAT_ENGINE_LOG_ENABLED),
+    }
+
+
+def get_alpha_status() -> Dict[str, Any]:
+    return {
+        "enabled": bool(ALPHA_ENABLED),
+        "config": get_alpha_config(),
+        "alpha_log": str(ALPHA_LOG),
+        "engine_compat_log": str(ENGINE_COMPAT_LOG),
+    }
+
+
+def _reload_alpha_from_section(cfg: Dict[str, Any]) -> None:
+    apply_alpha_config(cfg)
+
+
+_BOOT_ALPHA_CFG = _load_alpha_config()
+if _BOOT_ALPHA_CFG:
+    apply_alpha_config(_BOOT_ALPHA_CFG)
+
+try:
+    from .tuneables_reload import register_reload as _alpha_register
+
+    _alpha_register("advisory_engine", _reload_alpha_from_section, label="advisory_engine_alpha.apply_config")
+except Exception as exc:
+    log_debug("advisory_engine_alpha", f"hot-reload registration failed: {exc}", None)
 
 
 def _hash_text(value: str) -> str:
