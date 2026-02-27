@@ -92,7 +92,7 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
         "unsuppression_score": "lib/meta_ralph.py",
         "soft_promotion_triage": "lib/promoter.py",
         "outcome_link_reconstruct": "lib/eidos/distillation_engine.py",
-        "implicit_feedback_interpret": "lib/advisory_engine.py",
+        "implicit_feedback_interpret": "lib/advisory_implicit_feedback.py",
         "curriculum_gap_summarize": "lib/eidos_distillation_curriculum.py",
         "policy_autotuner_recommend": "lib/auto_tuner.py",
         "packet_rerank": "lib/advisory_packet_store.py",

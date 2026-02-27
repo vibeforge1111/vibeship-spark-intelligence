@@ -414,9 +414,9 @@ def on_post_tool(
 
         if state.shown_advice_ids:
             try:
-                from .advisory_engine import _record_implicit_feedback
+                from .advisory_implicit_feedback import record_implicit_feedback
 
-                _record_implicit_feedback(state, tool_name, bool(success), resolved_trace_id)
+                record_implicit_feedback(state, tool_name, bool(success), resolved_trace_id)
             except Exception as exc:
                 log_debug("advisory_engine_alpha", "post-tool implicit feedback failed", exc)
 
