@@ -57,7 +57,6 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
     "values": {
         "min_occurrences": TuneableSpec("int", 1, 1, 100, "Min observations before learning"),
         "min_occurrences_critical": TuneableSpec("int", 1, 1, 100, "Min observations for critical insights"),
-        "confidence_threshold": TuneableSpec("float", 0.6, 0.0, 1.0, "Confidence threshold for acceptance"),
         "gate_threshold": TuneableSpec("float", 0.45, 0.0, 1.0, "Quality gate threshold"),
         "max_retries_per_error": TuneableSpec("int", 3, 1, 20, "Max retries per error type"),
         "max_file_touches": TuneableSpec("int", 5, 1, 50, "Max file modifications per episode"),
@@ -652,120 +651,23 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "max_advisory_top_category_concentration": TuneableSpec("float", 0.85, 0.0, 1.0, "Max top category concentration"),
     },
 
-    # ---- llm_areas: per-area LLM assist toggles ----
-    # 30 areas (20 learning + 10 architecture), each with _enabled/_provider/_timeout_s/_max_chars.
-    # All default to enabled=False (opt-in). Provider enum shared across all areas.
-    "llm_areas": {
-        # -- Learning System (20) --
-        "archive_rewrite_enabled": TuneableSpec("bool", False, None, None, "Enable LLM rewrite of suppressed archive statements"),
-        "archive_rewrite_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for archive rewrite", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "archive_rewrite_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for archive rewrite LLM call"),
-        "archive_rewrite_max_chars": TuneableSpec("int", 300, 50, 2000, "Max output chars for archive rewrite"),
-
-        "archive_rescue_enabled": TuneableSpec("bool", False, None, None, "Enable LLM rescue pass for low-unified items"),
-        "archive_rescue_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for archive rescue", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "archive_rescue_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for archive rescue LLM call"),
-        "archive_rescue_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for archive rescue"),
-
-        "system28_reformulate_enabled": TuneableSpec("bool", False, None, None, "Enable LLM reformulation to condition-action-reason"),
-        "system28_reformulate_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for reformulation", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "system28_reformulate_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for reformulation LLM call"),
-        "system28_reformulate_max_chars": TuneableSpec("int", 300, 50, 2000, "Max output chars for reformulation"),
-
-        "conflict_resolve_enabled": TuneableSpec("bool", False, None, None, "Enable LLM resolution of contradicting statements"),
-        "conflict_resolve_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for conflict resolution", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "conflict_resolve_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for conflict resolution LLM call"),
-        "conflict_resolve_max_chars": TuneableSpec("int", 500, 50, 3000, "Max output chars for conflict resolution"),
-
-        "evidence_compress_enabled": TuneableSpec("bool", False, None, None, "Enable LLM compression of verbose evidence"),
-        "evidence_compress_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for evidence compression", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "evidence_compress_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for evidence compression LLM call"),
-        "evidence_compress_max_chars": TuneableSpec("int", 300, 50, 2000, "Max output chars for evidence compression"),
-
-        "novelty_score_enabled": TuneableSpec("bool", False, None, None, "Enable LLM novelty scoring for memory capture"),
-        "novelty_score_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for novelty scoring", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "novelty_score_timeout_s": TuneableSpec("float", 4.0, 0.5, 60.0, "Timeout for novelty scoring LLM call"),
-        "novelty_score_max_chars": TuneableSpec("int", 100, 50, 1000, "Max output chars for novelty scoring"),
-
-        "missed_signal_detect_enabled": TuneableSpec("bool", False, None, None, "Enable LLM detection of missed high-signal prompts"),
-        "missed_signal_detect_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for missed signal detection", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "missed_signal_detect_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for missed signal detection LLM call"),
-        "missed_signal_detect_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for missed signal detection"),
-
-        "retrieval_rewrite_enabled": TuneableSpec("bool", False, None, None, "Enable LLM query rewriting for weak retrieval"),
-        "retrieval_rewrite_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for retrieval rewriting", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "retrieval_rewrite_timeout_s": TuneableSpec("float", 4.0, 0.5, 60.0, "Timeout for retrieval rewriting LLM call"),
-        "retrieval_rewrite_max_chars": TuneableSpec("int", 200, 50, 1000, "Max output chars for retrieval rewriting"),
-
-        "retrieval_explain_enabled": TuneableSpec("bool", False, None, None, "Enable LLM explanation of retrieval results"),
-        "retrieval_explain_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for retrieval explanation", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "retrieval_explain_timeout_s": TuneableSpec("float", 4.0, 0.5, 60.0, "Timeout for retrieval explanation LLM call"),
-        "retrieval_explain_max_chars": TuneableSpec("int", 200, 50, 1000, "Max output chars for retrieval explanation"),
-
-        "generic_demotion_enabled": TuneableSpec("bool", False, None, None, "Enable LLM demotion of generic memories"),
-        "generic_demotion_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for generic demotion", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "generic_demotion_timeout_s": TuneableSpec("float", 4.0, 0.5, 60.0, "Timeout for generic demotion LLM call"),
-        "generic_demotion_max_chars": TuneableSpec("int", 100, 50, 1000, "Max output chars for generic demotion"),
-
-        "meta_ralph_remediate_enabled": TuneableSpec("bool", False, None, None, "Enable LLM remediation for Meta-Ralph NEEDS_WORK"),
-        "meta_ralph_remediate_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for Meta-Ralph remediation", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "meta_ralph_remediate_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for Meta-Ralph remediation LLM call"),
-        "meta_ralph_remediate_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for Meta-Ralph remediation"),
-
-        "actionability_boost_enabled": TuneableSpec("bool", False, None, None, "Enable LLM actionability boost for low-action insights"),
-        "actionability_boost_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for actionability boost", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "actionability_boost_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for actionability boost LLM call"),
-        "actionability_boost_max_chars": TuneableSpec("int", 300, 50, 2000, "Max output chars for actionability boost"),
-
-        "specificity_augment_enabled": TuneableSpec("bool", False, None, None, "Enable LLM augmentation for vague statements"),
-        "specificity_augment_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for specificity augmentation", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "specificity_augment_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for specificity augmentation LLM call"),
-        "specificity_augment_max_chars": TuneableSpec("int", 300, 50, 2000, "Max output chars for specificity augmentation"),
-
-        "reasoning_patch_enabled": TuneableSpec("bool", False, None, None, "Enable LLM patching of weak reasoning chains"),
-        "reasoning_patch_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for reasoning patches", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "reasoning_patch_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for reasoning patch LLM call"),
-        "reasoning_patch_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for reasoning patches"),
-
-        "unsuppression_score_enabled": TuneableSpec("bool", False, None, None, "Enable LLM scoring of suppressed items for rescue"),
-        "unsuppression_score_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for unsuppression scoring", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "unsuppression_score_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for unsuppression scoring LLM call"),
-        "unsuppression_score_max_chars": TuneableSpec("int", 200, 50, 1000, "Max output chars for unsuppression scoring"),
-
-        "soft_promotion_triage_enabled": TuneableSpec("bool", False, None, None, "Enable LLM triage for archive recovery promotion"),
-        "soft_promotion_triage_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for soft promotion triage", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "soft_promotion_triage_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for soft promotion triage LLM call"),
-        "soft_promotion_triage_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for soft promotion triage"),
-
-        "outcome_link_reconstruct_enabled": TuneableSpec("bool", False, None, None, "Enable LLM reconstruction of outcome-action links"),
-        "outcome_link_reconstruct_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for outcome link reconstruction", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "outcome_link_reconstruct_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for outcome link reconstruction LLM call"),
-        "outcome_link_reconstruct_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for outcome link reconstruction"),
-
-        "implicit_feedback_interpret_enabled": TuneableSpec("bool", False, None, None, "Enable LLM interpretation of implicit user feedback"),
-        "implicit_feedback_interpret_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for implicit feedback interpretation", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "implicit_feedback_interpret_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for implicit feedback LLM call"),
-        "implicit_feedback_interpret_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for implicit feedback interpretation"),
-
-        "curriculum_gap_summarize_enabled": TuneableSpec("bool", False, None, None, "Enable LLM summarization of curriculum gaps"),
-        "curriculum_gap_summarize_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for curriculum gap summary", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "curriculum_gap_summarize_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for curriculum gap summary LLM call"),
-        "curriculum_gap_summarize_max_chars": TuneableSpec("int", 600, 50, 3000, "Max output chars for curriculum gap summary"),
-
-        "policy_autotuner_recommend_enabled": TuneableSpec("bool", False, None, None, "Enable LLM recommendations for policy autotuning"),
-        "policy_autotuner_recommend_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for policy autotuner", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "policy_autotuner_recommend_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for policy autotuner LLM call"),
-        "policy_autotuner_recommend_max_chars": TuneableSpec("int", 600, 50, 3000, "Max output chars for policy autotuner"),
-
-    },
+    # ---- llm_areas: dynamic per-area LLM assist section ----
+    # Key shape is runtime-driven by lib/llm_dispatch.ALL_AREAS:
+    #   {area_id}_enabled / {area_id}_provider / {area_id}_timeout_s / {area_id}_max_chars
+    # Defaults for missing keys are enforced in lib/llm_dispatch._AREA_DEFAULTS.
+    "llm_areas": {},
 }
 
 # Sections with internal _doc keys that should not trigger unknown-key warnings
 _DOC_KEY_SECTIONS: set = {"source_roles", "scheduler"}
+_DYNAMIC_KEY_SECTIONS: set = {"llm_areas"}
 
 # Keys intentionally retired from active tuneables schema.
 # If present in runtime/user tuneables, they are silently dropped.
 _RETIRED_KEYS: Dict[str, set[str]] = {
+    "values": {
+        "confidence_threshold",
+    },
     "advisory_engine": {
         "delivery_stale_s",
         "global_dedupe_scope",
@@ -941,6 +843,8 @@ def validate_tuneables(
                 if key in retired_keys:
                     continue
                 cleaned_section[key] = raw_section[key]
+                if section_name in _DYNAMIC_KEY_SECTIONS:
+                    continue
                 if key.startswith("_") or (allow_doc_keys and key == "_doc"):
                     continue  # Skip _doc, _comment etc.
                 result.unknown_keys.append(f"{section_name}.{key}")

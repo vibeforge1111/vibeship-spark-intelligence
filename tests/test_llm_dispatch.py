@@ -191,14 +191,25 @@ class TestSchemaIntegration:
         from lib.tuneables_schema import SCHEMA
         assert "llm_areas" in SCHEMA
 
-    def test_llm_areas_schema_has_all_keys(self):
+    def test_llm_areas_schema_is_dynamic_section(self):
         from lib.tuneables_schema import SCHEMA
-        llm_schema = SCHEMA["llm_areas"]
-        for area_id in ALL_AREAS:
-            assert f"{area_id}_enabled" in llm_schema, f"Missing {area_id}_enabled"
-            assert f"{area_id}_provider" in llm_schema, f"Missing {area_id}_provider"
-            assert f"{area_id}_timeout_s" in llm_schema, f"Missing {area_id}_timeout_s"
-            assert f"{area_id}_max_chars" in llm_schema, f"Missing {area_id}_max_chars"
+        assert SCHEMA["llm_areas"] == {}
+
+    def test_dynamic_llm_area_keys_validate_without_unknown_warnings(self):
+        from lib.tuneables_schema import validate_tuneables
+
+        payload = {
+            "llm_areas": {
+                "archive_rewrite_enabled": True,
+                "archive_rewrite_provider": "minimax",
+                "archive_rewrite_timeout_s": 7.0,
+                "archive_rewrite_max_chars": 333,
+            },
+        }
+        result = validate_tuneables(payload)
+        llm_warnings = [w for w in result.warnings if "llm_areas" in w]
+        assert llm_warnings == []
+        assert result.data["llm_areas"]["archive_rewrite_enabled"] is True
 
     def test_config_json_has_llm_areas(self):
         config_path = ROOT / "config" / "tuneables.json"
