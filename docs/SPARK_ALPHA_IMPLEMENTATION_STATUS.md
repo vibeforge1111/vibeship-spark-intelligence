@@ -698,6 +698,18 @@ Branch: feat/spark-alpha
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `16`
 
+97. `4c2e45c` - `refactor(alpha-pr10): remove advisory_orchestrator module and inline alpha replay lane`
+- Deleted the final `lib/advisory_orchestrator.py` compatibility shim now that all runtime and script call sites are alpha-direct.
+- Updated replay arena champion/challenger import behavior to avoid module dependency on orchestrator while preserving lane labels and scorecard schema.
+- Updated observability flow/readability references to point at alpha runtime ownership only.
+- Replaced orchestrator-specific test expectations with alpha entrypoint assertions in `tests/test_advisory_orchestrator.py`.
+- Regression + gate evidence:
+  - `python -m py_compile scripts/spark_alpha_replay_arena.py lib/observatory/readability_pack.py lib/observatory/advisory_reverse_engineering.py tests/test_advisory_orchestrator.py` -> pass
+  - `pytest tests/test_advisory_orchestrator.py tests/test_spark_alpha_replay_arena.py tests/test_advisory_engine_alpha.py -q` -> `9 passed`
+  - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `18`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -710,6 +722,9 @@ Branch: feat/spark-alpha
 
 ### Current measured state (latest run)
 
+- `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `18`
+- `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
+- `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
 - `python scripts/memory_quality_observatory.py` -> retrieval guardrails `passing=true`
 - `pytest tests/test_meta_ralph.py -q` -> `18 passed`
