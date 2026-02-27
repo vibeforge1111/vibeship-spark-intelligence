@@ -326,44 +326,6 @@
     "adapters_disabled": [],
     "mind_limit": 2
   },
-  "source_roles": {
-    "_doc": "Defines each source's PRIMARY job. Distillers are NOT advisory sources -- measure them on pattern quality, not helpfulness.",
-    "distillers": {
-      "_doc": "These sources distill/funnel/learn -- advisory helpfulness is NOT their metric",
-      "cognitive": {
-        "role": "learner",
-        "metric": "insight_diversity_and_validation_rate",
-        "description": "Learns and stores reusable insights from sessions"
-      },
-      "eidos": {
-        "role": "distiller",
-        "metric": "distillation_reliability_and_reuse",
-        "description": "Extracts reusable rules from episode outcomes"
-      },
-      "engagement": {
-        "role": "predictor",
-        "metric": "prediction_accuracy",
-        "description": "Predicts and tracks surprise/engagement patterns"
-      }
-    },
-    "direct_advisory": {
-      "_doc": "These sources exist TO advise -- measure them on helpfulness",
-      "sources": [
-        "semantic",
-        "semantic-agentic",
-        "prefetch",
-        "bank",
-        "convo",
-        "self_awareness",
-        "chip",
-        "trigger",
-        "skill"
-      ]
-    },
-    "disabled_from_advisory": {
-      "_doc": "Sources removed from advisory pipeline. Mind re-enabled 2026-02-21 (was circular: disabled -> 0% -> stays disabled)."
-    }
-  },
   "auto_tuner": {
     "enabled": true,
     "mode": "apply",
@@ -680,7 +642,6 @@
     "max_advisory_top_category_concentration": 0.85
   },
   "llm_areas": {
-    "_doc": "Per-area LLM assist toggles. 30 areas (20 learning + 10 architecture). All default disabled (opt-in).",
     "archive_rewrite_enabled": false,
     "archive_rewrite_provider": "minimax",
     "archive_rewrite_timeout_s": 6.0,
