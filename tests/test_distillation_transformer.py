@@ -478,18 +478,6 @@ def test_transform_for_advisory_external_signals_can_reduce_very_high_score():
     assert boosted.unified_score == pytest.approx(expected)
 
 
-def test_transform_for_advisory_quality_is_consumed_by_memory_fusion_readiness():
-    from lib.advisory_memory_fusion import _coerce_readiness
-
-    aq = transform_for_advisory(
-        "Use retries because it prevents transient failures and improves success rate"
-    )
-    readiness = _coerce_readiness({"advisory_quality": aq.to_dict()}, confidence=0.1)
-
-    assert readiness == pytest.approx(round(aq.unified_score, 3))
-    assert readiness > 0.1
-
-
 def test_transform_for_advisory_detects_domain_from_source():
     aq = transform_for_advisory("General sentence", source="depth_session")
     assert aq.domain == "code"

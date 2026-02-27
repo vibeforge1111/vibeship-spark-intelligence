@@ -13,7 +13,6 @@ Integration:
 - cognitive_learner.add_insight() -> transform_for_advisory() -> store advisory_quality
 - bridge_cycle._append_eidos_update() -> transform_for_advisory() -> embed in JSONL
 - advisor._rank_score() -> read advisory_quality instead of _score_actionability()
-- advisory_memory_fusion._collect_cognitive() -> use unified_score as confidence
 """
 
 from __future__ import annotations
