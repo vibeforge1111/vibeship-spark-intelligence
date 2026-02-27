@@ -18,7 +18,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .advisory_packet_spine import (
+from .packet_spine import (
     relaxed_candidates as _spine_relaxed_candidates,
     resolve_exact_packet_id as _spine_resolve_exact_packet_id,
     set_exact_alias as _spine_set_exact_alias,

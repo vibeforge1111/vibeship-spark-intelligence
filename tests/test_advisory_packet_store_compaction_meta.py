@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import lib.advisory_packet_spine as packet_spine
+import lib.packet_spine as packet_spine
 import lib.advisory_packet_store as store
 
 

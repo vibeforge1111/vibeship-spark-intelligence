@@ -11,7 +11,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-SPINE_DB = Path(os.getenv("SPARK_ADVISORY_PACKET_SPINE_DB", str(Path.home() / ".spark" / "advisory_packet_spine.db")))
+_SPINE_DB_RAW = str(
+    os.getenv("SPARK_ADVISORY_PACKET_SPINE_DB")
+    or os.getenv("SPARK_PACKET_SPINE_DB")
+    or (Path.home() / ".spark" / "advisory_packet_spine.db")
+).strip()
+SPINE_DB = Path(_SPINE_DB_RAW)
 _SPINE_LOCK = threading.RLock()
 
 

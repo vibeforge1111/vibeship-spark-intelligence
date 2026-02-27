@@ -383,7 +383,7 @@ Branch: feat/spark-alpha
 - Packet-store now relies solely on canonical LLM reranker module state for lookup LLM controls.
 
 62. `7418601` - `feat(alpha-pr04): add sqlite advisory packet spine and lookup integration`
-- Added SQLite advisory packet spine module `lib/advisory_packet_spine.py`:
+- Added SQLite advisory packet spine module `lib/packet_spine.py`:
   - metadata upsert path
   - exact-key alias table
   - relaxed candidate query path
@@ -959,7 +959,7 @@ Branch: feat/spark-alpha
 - `python -m py_compile lib/advisory_packet_store.py` -> pass
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after sqlite packet-spine config integration)
 - `pytest tests/test_advisory_packet_store.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `155 passed`
-- `python -m py_compile lib/advisory_packet_spine.py lib/advisory_packet_store.py` -> pass
+- `python -m py_compile lib/packet_spine.py lib/advisory_packet_store.py` -> pass
 - `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `171 passed`
 - `python -m py_compile scripts/advisory_controlled_delta.py` -> pass
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
@@ -1061,6 +1061,22 @@ Notable metrics now:
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, streak `61`
 
+### Latest advisory collapse delta (2026-02-27, packet spine rename)
+
+- Renamed `lib/advisory_packet_spine.py` -> `lib/packet_spine.py` to reduce advisory module surface while preserving SQLite spine behavior.
+- Updated packet-store + tests to import the renamed module:
+  - `lib/advisory_packet_store.py`
+  - `tests/test_advisory_packet_store.py`
+  - `tests/test_advisory_packet_store_compaction_meta.py`
+- Preserved backward compatibility for runtime DB/env resolution in `lib/packet_spine.py`:
+  - reads `SPARK_ADVISORY_PACKET_SPINE_DB` (primary), `SPARK_PACKET_SPINE_DB` (fallback)
+  - default DB path remains `~/.spark/advisory_packet_spine.db`
+- Validation:
+  - `pytest tests/test_advisory_packet_store.py tests/test_advisory_packet_store_compaction_meta.py tests/test_advisory_engine_alpha.py tests/test_tuneables_alignment.py -q` -> `25 passed`
+  - `python scripts/alpha_gap_audit.py` -> `advisory_files=6`, `tuneable_keys=286`, `distillation_files=3`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, streak `67`
+
 ### Latest compaction unification delta (2026-02-27, packet compaction lane)
 
 - Added packet compaction planner: `lib/packet_compaction.py` (action contract `update/delete/noop`)
@@ -1099,7 +1115,7 @@ Notable metrics now:
 
 These are still pending relative to the broader Simplification/Fast-Track goals:
 
-1. Advisory collapse wave 1 is exceeded (`advisory_files=7`), but final 3-module end-state is not yet implemented.
+1. Advisory collapse wave 1 is exceeded (`advisory_files=6`), but final 3-module end-state is not yet implemented.
 2. Storage consolidation to single SQLite-first memory/advisory store is partially implemented (cognitive memory is SQLite-canonical; advisory packet lookup is now SQLite-canonical with no runtime JSON lookup fallback mode).
 3. Memory compaction engine is partially implemented (ACT-R cognitive compaction + packet compaction preview/apply lane + sync-integrated bounded packet apply lane are in place); deeper unified policy across all advisory/memory stores is still pending.
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).
