@@ -121,7 +121,6 @@ def get_current_preferences(path: Path = TUNEABLES_PATH) -> Dict[str, Any]:
     eidos = resolve_section("eidos", runtime_path=path).data
     meta = resolve_section("meta_ralph", runtime_path=path).data
     scanner = resolve_section("opportunity_scanner", runtime_path=path).data
-    packets = resolve_section("advisory_packet_store", runtime_path=path).data
     llm_areas = resolve_section("llm_areas", runtime_path=path).data
 
     prefs: Dict[str, Any] = {
@@ -130,8 +129,6 @@ def get_current_preferences(path: Path = TUNEABLES_PATH) -> Dict[str, Any]:
         "meta_ralph_runtime_refiner_llm_enabled": bool((meta or {}).get("runtime_refiner_llm_enabled", False)),
         "meta_ralph_runtime_refiner_llm_provider": str((meta or {}).get("runtime_refiner_llm_provider", "auto")),
         "opportunity_scanner_llm_enabled": bool((scanner or {}).get("llm_enabled", True)),
-        "packet_lookup_llm_enabled": bool((packets or {}).get("packet_lookup_llm_enabled", False)),
-        "packet_lookup_llm_provider": str((packets or {}).get("packet_lookup_llm_provider", "minimax")),
     }
 
     # Include LLM area preferences (30 areas)
@@ -156,7 +153,6 @@ def apply_runtime_llm_preferences(
     eidos_runtime_llm: Any = None,
     meta_ralph_runtime_llm: Any = None,
     opportunity_scanner_llm: Any = None,
-    packet_lookup_llm: Any = None,
     llm_areas_enable: Any = None,
     llm_areas_list: Any = None,
     provider: Any = "auto",
@@ -170,7 +166,6 @@ def apply_runtime_llm_preferences(
     eidos = data.setdefault("eidos", {})
     meta = data.setdefault("meta_ralph", {})
     scanner = data.setdefault("opportunity_scanner", {})
-    packets = data.setdefault("advisory_packet_store", {})
 
     if not isinstance(eidos, dict):
         eidos = {}
@@ -181,26 +176,19 @@ def apply_runtime_llm_preferences(
     if not isinstance(scanner, dict):
         scanner = {}
         data["opportunity_scanner"] = scanner
-    if not isinstance(packets, dict):
-        packets = {}
-        data["advisory_packet_store"] = packets
 
     eidos_enabled = _norm_bool(eidos_runtime_llm, current["eidos_runtime_refiner_llm_enabled"])
     meta_enabled = _norm_bool(meta_ralph_runtime_llm, current["meta_ralph_runtime_refiner_llm_enabled"])
     scanner_enabled = _norm_bool(opportunity_scanner_llm, current["opportunity_scanner_llm_enabled"])
-    packet_enabled = _norm_bool(packet_lookup_llm, current["packet_lookup_llm_enabled"])
 
     eidos["runtime_refiner_llm_enabled"] = eidos_enabled
     meta["runtime_refiner_llm_enabled"] = meta_enabled
     scanner["llm_enabled"] = scanner_enabled
-    packets["packet_lookup_llm_enabled"] = packet_enabled
 
     if eidos_enabled:
         eidos["runtime_refiner_llm_provider"] = selected_provider
     if meta_enabled:
         meta["runtime_refiner_llm_provider"] = selected_provider
-    if packet_enabled:
-        packets["packet_lookup_llm_provider"] = selected_provider
 
     # Apply LLM areas bulk enable/disable
     llm_areas_changed = 0
@@ -231,7 +219,6 @@ def apply_runtime_llm_preferences(
         "eidos_runtime_refiner_llm_enabled": eidos_enabled,
         "meta_ralph_runtime_refiner_llm_enabled": meta_enabled,
         "opportunity_scanner_llm_enabled": scanner_enabled,
-        "packet_lookup_llm_enabled": packet_enabled,
         "llm_areas_changed": llm_areas_changed,
     }
 
@@ -243,7 +230,6 @@ def apply_runtime_llm_preferences(
         "eidos_runtime_refiner_llm_enabled": eidos_enabled,
         "meta_ralph_runtime_refiner_llm_enabled": meta_enabled,
         "opportunity_scanner_llm_enabled": scanner_enabled,
-        "packet_lookup_llm_enabled": packet_enabled,
         "llm_areas_changed": llm_areas_changed,
     }
 

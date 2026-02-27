@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import time
 from collections import Counter
 from pathlib import Path
@@ -27,11 +26,6 @@ from .advisory_packet_spine import (
     upsert_packet as _spine_upsert_packet,
 )
 from .config_authority import resolve_section
-
-try:
-    import httpx as _HTTPX
-except Exception:
-    _HTTPX = None
 
 PACKET_DIR = Path.home() / ".spark" / "advice_packets"
 INDEX_FILE = PACKET_DIR / "index.json"
@@ -72,15 +66,6 @@ RELAXED_MIN_MATCH_SCORE = 3.0
 DEFAULT_PACKET_RELAXED_MAX_CANDIDATES = 6
 DEFAULT_PACKET_RELAXED_PREVIEW_CHARS = 360
 DEFAULT_PACKET_LOOKUP_CANDIDATES = 6
-PACKET_LOOKUP_LLM_ENABLED = False
-PACKET_LOOKUP_LLM_PROVIDER = "minimax"
-PACKET_LOOKUP_LLM_TIMEOUT_S = 1.2
-PACKET_LOOKUP_LLM_TOP_K = 3
-PACKET_LOOKUP_LLM_MIN_CANDIDATES = 2
-PACKET_LOOKUP_LLM_CONTEXT_CHARS = 220
-PACKET_LOOKUP_LLM_URL = "https://api.minimax.io/v1"
-PACKET_LOOKUP_LLM_MODEL = "MiniMax-M2.5"
-PACKET_LOOKUP_LLM_FALLBACK_TO_SCORING = True
 DEFAULT_OBSIDIAN_EXPORT_MAX_PACKETS = 300
 DEFAULT_OBSIDIAN_EXPORT_ENABLED = False
 DEFAULT_OBSIDIAN_AUTO_EXPORT = False
@@ -673,229 +658,6 @@ def _meta_count(row: Dict[str, Any], key: str, *, fallback_key: Optional[str] = 
 
 # LLM-assisted packet reranking helpers.
 # apply_packet_store_config() updates them there via module reference.
-def _sanitize_lookup_provider(raw: Any) -> str:
-    provider = str(raw or "").strip().lower()
-    if not provider:
-        return PACKET_LOOKUP_LLM_PROVIDER
-    if provider in {"minimax", "openai", "ollama", "anthropic", "gemini"}:
-        return provider
-    return PACKET_LOOKUP_LLM_PROVIDER
-
-
-def _build_lookup_payload(
-    packet_candidates: List[Dict[str, Any]],
-    context_text: str,
-    top_k: int,
-) -> str:
-    prompt_lines = [
-        "You are a strict ranker for advisory packet retrieval.",
-        "Return exactly one JSON array of packet_id strings in descending relevance order.",
-        "Only include packet_ids from the provided candidate list.",
-        f"Select at most {top_k} packet_ids.",
-        "Prefer packets with higher expected usefulness for the immediate user intent.",
-    ]
-    context = str(context_text or "").strip().replace("\n", " ")
-    if context:
-        prompt_lines.append(f'Context: "{context}"')
-    prompt_lines.append("Candidates (packet_id, score, tool_name, intent_family, task_plane, advisory_preview):")
-    for row in packet_candidates[:top_k]:
-        prompt_lines.append(
-            json.dumps(
-                {
-                    "packet_id": str(row.get("packet_id") or ""),
-                    "score": float(row.get("score", 0.0) or 0.0),
-                    "tool_name": str(row.get("tool_name") or ""),
-                    "intent_family": str(row.get("intent_family") or ""),
-                    "task_plane": str(row.get("task_plane") or ""),
-                    "effectiveness_score": float(row.get("effectiveness_score", 0.0) or 0.0),
-                    "advisory_text_preview": str(row.get("advisory_text_preview") or ""),
-                },
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
-        )
-    prompt_lines.append('Return only JSON. No markdown. Example: ["pkt_abc", "pkt_def"]')
-    return "\n".join(prompt_lines)
-
-
-def _extract_json_like_array(raw: str) -> List[str]:
-    if not raw:
-        return []
-    text = str(raw).strip()
-    try:
-        parsed = json.loads(text)
-    except Exception:
-        match = re.search(r"\[[^\r\n]*\]", text, re.DOTALL)
-        if not match:
-            return []
-        try:
-            parsed = json.loads(match.group(0))
-        except Exception:
-            return []
-    if isinstance(parsed, dict):
-        parsed_list: Optional[List[Any]] = None
-        for key in ("packet_ids", "reranked_ids", "result", "ids"):
-            candidate = parsed.get(key)
-            if isinstance(candidate, list):
-                parsed_list = candidate
-                break
-        parsed = parsed_list if parsed_list is not None else []
-    if not isinstance(parsed, list):
-        return []
-    out: List[str] = []
-    for value in parsed:
-        packet_id = str(value or "").strip()
-        if packet_id:
-            out.append(packet_id)
-    return out
-
-
-def _lookup_llm_api_key(provider: str) -> Optional[str]:
-    p = str(provider or "").strip().lower()
-    if p == "minimax":
-        return (
-            os.getenv("SPARK_MINIMAX_API_KEY")
-            or os.getenv("MINIMAX_API_KEY")
-            or os.getenv("SPARK_MINIMAX_TOKEN")
-        )
-    if p == "openai":
-        return os.getenv("OPENAI_API_KEY") or os.getenv("SPARK_OPENAI_API_KEY")
-    if p == "anthropic":
-        return (
-            os.getenv("ANTHROPIC_API_KEY")
-            or os.getenv("SPARK_ANTHROPIC_API_KEY")
-            or os.getenv("CLAUDE_API_KEY")
-        )
-    if p == "gemini":
-        return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    return None
-
-
-def _lookup_llm_url(provider: str) -> str:
-    p = str(provider or "").strip().lower()
-    if p == "ollama":
-        return str(os.getenv("SPARK_OLLAMA_API", "http://localhost:11434")).rstrip("/")
-    if p == "minimax":
-        return str(os.getenv("SPARK_MINIMAX_BASE_URL", PACKET_LOOKUP_LLM_URL)).rstrip("/")
-    if p == "openai":
-        return str(os.getenv("SPARK_OPENAI_BASE_URL", "https://api.openai.com")).rstrip("/")
-    if p == "anthropic":
-        return str(os.getenv("SPARK_ANTHROPIC_BASE_URL", "https://api.anthropic.com")).rstrip("/")
-    if p == "gemini":
-        return str(os.getenv("SPARK_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com")).rstrip("/")
-    return str(PACKET_LOOKUP_LLM_URL).rstrip("/")
-
-
-def _call_lookup_llm(
-    prompt: str,
-    *,
-    provider: str,
-    timeout_s: float,
-) -> Optional[str]:
-    if _HTTPX is None:
-        return None
-    provider = str(provider or "").strip().lower()
-    base_url = _lookup_llm_url(provider)
-    if provider == "ollama":
-        request_url = f"{base_url}/api/chat"
-        payload = {
-            "model": PACKET_LOOKUP_LLM_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": False,
-            "options": {"temperature": 0.0},
-        }
-        headers: Dict[str, str] = {"Content-Type": "application/json"}
-    else:
-        if provider == "minimax":
-            request_url = f"{base_url}/chat/completions"
-        else:
-            request_url = f"{base_url}/v1/chat/completions"
-        api_key = _lookup_llm_api_key(provider)
-        if not api_key:
-            return None
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": PACKET_LOOKUP_LLM_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 220,
-            "temperature": 0.0,
-            "response_format": {"type": "json_object"},
-        }
-    try:
-        with _HTTPX.Client(timeout=timeout_s) as client:
-            resp = client.post(request_url, headers=headers, json=payload)
-        if not (200 <= int(resp.status_code) < 300):
-            return None
-        data = resp.json()
-        if isinstance(data, dict):
-            choices = data.get("choices") or []
-            if choices:
-                msg = choices[0].get("message") if isinstance(choices[0], dict) else {}
-                content = msg.get("content", "") if isinstance(msg, dict) else ""
-                if isinstance(content, str) and content.strip():
-                    return content.strip()
-            raw = data.get("response")
-            if isinstance(raw, str) and raw.strip():
-                return raw.strip()
-    except Exception:
-        return None
-    return None
-
-
-def _rerank_candidates_with_lookup_llm(
-    candidates: List[Dict[str, Any]],
-    *,
-    context_text: str,
-) -> List[Dict[str, Any]]:
-    if not PACKET_LOOKUP_LLM_ENABLED or not candidates:
-        return candidates
-    provider = _sanitize_lookup_provider(PACKET_LOOKUP_LLM_PROVIDER)
-    if provider not in {"minimax", "openai", "ollama", "anthropic", "gemini"}:
-        return candidates
-    min_candidates = max(1, int(PACKET_LOOKUP_LLM_MIN_CANDIDATES))
-    if len(candidates) < min_candidates:
-        return candidates
-
-    top_k = max(1, min(len(candidates), int(PACKET_LOOKUP_LLM_TOP_K)))
-    context = str(context_text or "").strip().replace("\n", " ")
-    if context:
-        context = context[: max(1, int(PACKET_LOOKUP_LLM_CONTEXT_CHARS))]
-    prompt = _build_lookup_payload(candidates, context, top_k)
-    response = _call_lookup_llm(prompt, provider=provider, timeout_s=PACKET_LOOKUP_LLM_TIMEOUT_S)
-    if not response:
-        return candidates
-    ranked_ids = _extract_json_like_array(response)
-    if not ranked_ids:
-        return candidates
-
-    lookup = {str(row.get("packet_id") or ""): row for row in candidates}
-    reranked: List[Dict[str, Any]] = []
-    seen: set[str] = set()
-    for packet_id in ranked_ids:
-        packet_id = str(packet_id or "").strip()
-        if not packet_id or packet_id in seen:
-            continue
-        row = lookup.get(packet_id)
-        if row is not None:
-            row = dict(row)
-            row["llm_rank"] = len(reranked)
-            row["llm_reranked"] = True
-            reranked.append(row)
-            seen.add(packet_id)
-
-    for row in candidates:
-        packet_id = str(row.get("packet_id") or "")
-        if packet_id in seen:
-            continue
-        row = dict(row)
-        row["llm_rank"] = len(reranked)
-        row["llm_reranked"] = False
-        reranked.append(row)
-    return reranked
-
 def _coerce_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
@@ -2974,9 +2736,6 @@ def lookup_relaxed_candidates(
         }
         out.append(item)
 
-    if context_text and len(out) > 1:
-        out = _rerank_candidates_with_lookup_llm(out, context_text=context_text)
-
     # LLM area: packet_rerank — additional LLM-based reranking of candidates
     if len(out) > 1:
         out = _llm_area_packet_rerank(out, context_text)
@@ -3469,14 +3228,6 @@ def apply_packet_store_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     global PACKET_RELAXED_MAX_CANDIDATES
     global PACKET_LOOKUP_CANDIDATES
     global PACKET_SQLITE_LOOKUP_ENABLED
-    global PACKET_LOOKUP_LLM_ENABLED
-    global PACKET_LOOKUP_LLM_PROVIDER
-    global PACKET_LOOKUP_LLM_TIMEOUT_S
-    global PACKET_LOOKUP_LLM_TOP_K
-    global PACKET_LOOKUP_LLM_MIN_CANDIDATES
-    global PACKET_LOOKUP_LLM_CONTEXT_CHARS
-    global PACKET_LOOKUP_LLM_URL
-    global PACKET_LOOKUP_LLM_MODEL
     global OBSIDIAN_EXPORT_ENABLED
     global OBSIDIAN_AUTO_EXPORT
     global OBSIDIAN_EXPORT_MAX_PACKETS
@@ -3578,62 +3329,6 @@ def apply_packet_store_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
         )
         applied.append("packet_sqlite_lookup_enabled")
 
-    # LLM reranking config
-    if "packet_lookup_llm_enabled" in cfg:
-        PACKET_LOOKUP_LLM_ENABLED = _coerce_bool(
-            cfg.get("packet_lookup_llm_enabled"),
-            PACKET_LOOKUP_LLM_ENABLED,
-        )
-        applied.append("packet_lookup_llm_enabled")
-
-    if "packet_lookup_llm_provider" in cfg:
-        PACKET_LOOKUP_LLM_PROVIDER = _sanitize_lookup_provider(cfg.get("packet_lookup_llm_provider"))
-        applied.append("packet_lookup_llm_provider")
-
-    if "packet_lookup_llm_timeout_s" in cfg:
-        try:
-            PACKET_LOOKUP_LLM_TIMEOUT_S = max(0.2, float(cfg.get("packet_lookup_llm_timeout_s")))
-            applied.append("packet_lookup_llm_timeout_s")
-        except Exception:
-            warnings.append("invalid_packet_lookup_llm_timeout_s")
-
-    if "packet_lookup_llm_top_k" in cfg:
-        try:
-            PACKET_LOOKUP_LLM_TOP_K = max(1, min(20, int(cfg.get("packet_lookup_llm_top_k") or 1)))
-            applied.append("packet_lookup_llm_top_k")
-        except Exception:
-            warnings.append("invalid_packet_lookup_llm_top_k")
-
-    if "packet_lookup_llm_min_candidates" in cfg:
-        try:
-            PACKET_LOOKUP_LLM_MIN_CANDIDATES = max(
-                1, min(20, int(cfg.get("packet_lookup_llm_min_candidates") or 1))
-            )
-            applied.append("packet_lookup_llm_min_candidates")
-        except Exception:
-            warnings.append("invalid_packet_lookup_llm_min_candidates")
-
-    if "packet_lookup_llm_context_chars" in cfg:
-        try:
-            PACKET_LOOKUP_LLM_CONTEXT_CHARS = max(
-                40, min(5000, int(cfg.get("packet_lookup_llm_context_chars") or 40))
-            )
-            applied.append("packet_lookup_llm_context_chars")
-        except Exception:
-            warnings.append("invalid_packet_lookup_llm_context_chars")
-
-    if "packet_lookup_llm_provider_url" in cfg:
-        url = str(cfg.get("packet_lookup_llm_provider_url") or PACKET_LOOKUP_LLM_URL).strip()
-        if url:
-            PACKET_LOOKUP_LLM_URL = url.rstrip("/")
-            applied.append("packet_lookup_llm_provider_url")
-
-    if "packet_lookup_llm_model" in cfg:
-        model = str(cfg.get("packet_lookup_llm_model") or PACKET_LOOKUP_LLM_MODEL).strip()
-        if model:
-            PACKET_LOOKUP_LLM_MODEL = model
-            applied.append("packet_lookup_llm_model")
-
     if "obsidian_enabled" in cfg:
         OBSIDIAN_EXPORT_ENABLED = _coerce_bool(
             cfg.get("obsidian_enabled"),
@@ -3683,14 +3378,6 @@ def get_packet_store_config() -> Dict[str, Any]:
         "relaxed_max_candidates": int(PACKET_RELAXED_MAX_CANDIDATES),
         "packet_lookup_candidates": int(PACKET_LOOKUP_CANDIDATES),
         "packet_sqlite_lookup_enabled": bool(PACKET_SQLITE_LOOKUP_ENABLED),
-        "packet_lookup_llm_enabled": bool(PACKET_LOOKUP_LLM_ENABLED),
-        "packet_lookup_llm_provider": str(PACKET_LOOKUP_LLM_PROVIDER),
-        "packet_lookup_llm_timeout_s": float(PACKET_LOOKUP_LLM_TIMEOUT_S),
-        "packet_lookup_llm_top_k": int(PACKET_LOOKUP_LLM_TOP_K),
-        "packet_lookup_llm_min_candidates": int(PACKET_LOOKUP_LLM_MIN_CANDIDATES),
-        "packet_lookup_llm_context_chars": int(PACKET_LOOKUP_LLM_CONTEXT_CHARS),
-        "packet_lookup_llm_provider_url": str(PACKET_LOOKUP_LLM_URL),
-        "packet_lookup_llm_model": str(PACKET_LOOKUP_LLM_MODEL),
         "obsidian_enabled": bool(OBSIDIAN_EXPORT_ENABLED),
         "obsidian_auto_export": bool(OBSIDIAN_AUTO_EXPORT),
         "obsidian_export_max_packets": int(OBSIDIAN_EXPORT_MAX_PACKETS),
@@ -3836,9 +3523,7 @@ def get_store_status() -> Dict[str, Any]:
         "deliver_hit_rate": (deliver_total / max(usage_total, 1)) if usage_total > 0 else None,
         "hit_rate": (deliver_total / max(usage_total, 1)) if usage_total > 0 else None,
         "avg_effectiveness_score": round(float(avg_effectiveness), 3),
-        "lookup_rerank_enabled": bool(PACKET_LOOKUP_LLM_ENABLED),
         "config": get_packet_store_config(),
-        "lookup_rerank_provider": str(PACKET_LOOKUP_LLM_PROVIDER),
         "obsidian_enabled": bool(OBSIDIAN_EXPORT_ENABLED),
         "obsidian_auto_export": bool(OBSIDIAN_AUTO_EXPORT),
         "obsidian_export_dir": str(_obsidian_export_dir()),
@@ -3867,6 +3552,7 @@ try:
         pass
 except Exception:
     pass
+
 
 
 

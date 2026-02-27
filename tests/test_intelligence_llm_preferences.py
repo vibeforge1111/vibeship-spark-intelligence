@@ -24,7 +24,6 @@ def test_apply_runtime_llm_preferences_updates_sections(tmp_path: Path):
         eidos_runtime_llm=True,
         meta_ralph_runtime_llm=True,
         opportunity_scanner_llm=True,
-        packet_lookup_llm=False,
         provider="ollama",
         path=tuneables,
         source="test",
@@ -36,6 +35,4 @@ def test_apply_runtime_llm_preferences_updates_sections(tmp_path: Path):
     assert data["meta_ralph"]["runtime_refiner_llm_enabled"] is True
     assert data["meta_ralph"]["runtime_refiner_llm_provider"] == "ollama"
     assert data["opportunity_scanner"]["llm_enabled"] is True
-    assert data["advisory_packet_store"]["packet_lookup_llm_enabled"] is False
     assert "_llm_runtime_setup" in data
-

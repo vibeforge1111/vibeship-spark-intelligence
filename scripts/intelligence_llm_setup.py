@@ -81,12 +81,10 @@ def main() -> int:
         eidos = True
         meta = True
         scanner = True
-        packet = True
     elif args.disable_all:
         eidos = False
         meta = False
         scanner = False
-        packet = False
     else:
         provider = _pick_provider(provider)
         eidos = _ask_bool(
@@ -101,16 +99,11 @@ def main() -> int:
             "Enable LLM assistance in Opportunity Scanner?",
             default=bool(current.get("opportunity_scanner_llm_enabled", True)),
         )
-        packet = _ask_bool(
-            "Enable LLM rerank for advisory packet lookup (higher latency)?",
-            default=False,
-        )
 
     result = apply_runtime_llm_preferences(
         eidos_runtime_llm=eidos,
         meta_ralph_runtime_llm=meta,
         opportunity_scanner_llm=scanner,
-        packet_lookup_llm=packet,
         provider=provider,
         source=args.source,
     )
@@ -121,4 +114,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
