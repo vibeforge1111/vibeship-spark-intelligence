@@ -2599,43 +2599,6 @@ def lookup_relaxed(
     return get_packet(packet_id)
 
 
-def _llm_area_packet_rerank(candidates: List[Dict[str, Any]], context_text: str) -> List[Dict[str, Any]]:
-    """LLM area: rerank packet candidates before emit.
-
-    When disabled (default), returns candidates unchanged.
-    """
-    try:
-        from .llm_area_prompts import format_prompt
-        from .llm_dispatch import llm_area_call
-
-        previews = [c.get("advisory_text_preview", "")[:100] for c in candidates[:5]]
-        prompt = format_prompt(
-            "packet_rerank",
-            candidates=str(previews),
-            context=context_text[:300],
-            count=str(len(candidates)),
-        )
-        result = llm_area_call("packet_rerank", prompt, fallback="")
-        if result.used_llm and result.text:
-            import json as _json
-            try:
-                data = _json.loads(result.text)
-                if isinstance(data, dict) and data.get("order"):
-                    order = data["order"]
-                    if isinstance(order, list) and all(isinstance(i, int) for i in order):
-                        reordered = []
-                        for idx in order:
-                            if 0 <= idx < len(candidates):
-                                reordered.append(candidates[idx])
-                        remaining = [c for i, c in enumerate(candidates) if i not in order]
-                        return reordered + remaining
-            except (ValueError, TypeError):
-                pass
-        return candidates
-    except Exception:
-        return candidates
-
-
 def lookup_relaxed_candidates(
     *,
     project_key: str,
@@ -2735,10 +2698,6 @@ def lookup_relaxed_candidates(
             "invalidated": bool(row.get("invalidated", False)),
         }
         out.append(item)
-
-    # LLM area: packet_rerank — additional LLM-based reranking of candidates
-    if len(out) > 1:
-        out = _llm_area_packet_rerank(out, context_text)
 
     return out
 

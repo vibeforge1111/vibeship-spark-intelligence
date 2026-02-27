@@ -313,18 +313,6 @@ AREA_PROMPTS: Dict[str, Dict[str, str]] = {
     },
 
     # ── Architecture Areas (10) ──────────────────────────────────────────
-    "packet_rerank": {
-        "system": (
-            "You rerank advisory packet candidates by relevance to the current query. "
-            "Return JSON: {{\"ranked_indices\": [2, 0, 1, ...], \"scores\": [0.9, 0.7, ...]}}"
-        ),
-        "template": (
-            "Rerank these candidates for the query:\n\n"
-            "Query: {query}\n"
-            "Candidates:\n{candidates}\n\n"
-            "Return only JSON."
-        ),
-    },
     "operator_now_synth": {
         "system": (
             "You compose a concise operator briefing: top 3 blockers with concrete "

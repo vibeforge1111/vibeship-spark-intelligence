@@ -1,7 +1,7 @@
 """Generate an LLM Areas status page for Obsidian Observatory.
 
 Shows per-area enabled/disabled status, provider, timeout, max_chars,
-and host module for all 30 configurable LLM-assisted areas.
+and host module for all registered configurable LLM-assisted areas.
 """
 
 from __future__ import annotations
@@ -95,7 +95,6 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
         "implicit_feedback_interpret": "lib/advisory_implicit_feedback.py",
         "curriculum_gap_summarize": "lib/eidos_distillation_curriculum.py",
         "policy_autotuner_recommend": "lib/auto_tuner.py",
-        "packet_rerank": "lib/advisory_packet_store.py",
         "operator_now_synth": "lib/observatory/__init__.py",
         "drift_diagnose": "scripts/cross_surface_drift_checker.py",
         "dead_widget_plan": "lib/observatory/stage_pages.py",
@@ -106,7 +105,7 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
     }
 
     # Learning System Areas table
-    lines.append("## Learning System Areas (20)")
+    lines.append(f"## Learning System Areas ({len(LEARNING_AREAS)})")
     lines.append("")
     lines.append("| # | Area ID | Status | Provider | Timeout | Max Chars | Host Module |")
     lines.append("| --- | --- | --- | --- | --- | --- | --- |")
@@ -123,7 +122,7 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
     lines.append("")
 
     # Architecture Areas table
-    lines.append("## Architecture Areas (10)")
+    lines.append(f"## Architecture Areas ({len(ARCHITECTURE_AREAS)})")
     lines.append("")
     lines.append("| # | Area ID | Status | Provider | Timeout | Max Chars | Host Module |")
     lines.append("| --- | --- | --- | --- | --- | --- | --- |")

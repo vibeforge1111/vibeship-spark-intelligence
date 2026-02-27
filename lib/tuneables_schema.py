@@ -778,11 +778,6 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
 
         # -- Architecture (8) --
 
-        "packet_rerank_enabled": TuneableSpec("bool", False, None, None, "Enable LLM reranking of advisory packets"),
-        "packet_rerank_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for packet reranking", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "packet_rerank_timeout_s": TuneableSpec("float", 4.0, 0.5, 60.0, "Timeout for packet reranking LLM call"),
-        "packet_rerank_max_chars": TuneableSpec("int", 200, 50, 1000, "Max output chars for packet reranking"),
-
         "operator_now_synth_enabled": TuneableSpec("bool", False, None, None, "Enable LLM synthesis of operator briefings"),
         "operator_now_synth_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for operator synthesis", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
         "operator_now_synth_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for operator synthesis LLM call"),
