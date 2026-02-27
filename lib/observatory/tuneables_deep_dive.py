@@ -1,4 +1,4 @@
-"""Generate a comprehensive tuneables deep-dive page for Obsidian Observatory.
+﻿"""Generate a comprehensive tuneables deep-dive page for Obsidian Observatory.
 
 Analyzes both config files, identifies drift, checks hot-reload coverage,
 maps cooldown redundancy, reports auto-tuner activity, and generates
@@ -26,7 +26,7 @@ _SPARK_DIR = spark_dir()
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-# ── Helpers ──────────────────────────────────────────────────────────
+# â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _read_json(path: Path) -> Dict[str, Any]:
     if not path.exists():
@@ -77,7 +77,7 @@ def _val_repr(val: Any) -> str:
     return f"`{_trunc(val, 50)}`"
 
 
-# ── Data Collectors ──────────────────────────────────────────────────
+# â”€â”€ Data Collectors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 # Which sections have register_reload() calls in code
 KNOWN_RELOAD_SECTIONS = {
@@ -91,7 +91,7 @@ KNOWN_RELOAD_SECTIONS = {
     "auto_tuner": ["lib/advisor.py"],
     "bridge_worker": ["lib/bridge_cycle.py"],
     "chip_merge": ["lib/chip_merger.py"],
-    "eidos": ["lib/eidos/models.py", "lib/distillation_refiner.py"],
+    "eidos": ["lib/eidos/models.py", "lib/eidos_refiner.py"],
     "memory_capture": ["lib/memory_capture.py"],
     "memory_deltas": ["lib/memory_store.py"],
     "memory_emotion": ["lib/memory_store.py", "lib/memory_banks.py"],
@@ -324,7 +324,7 @@ def _auto_tuner_analysis(live: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-# ── Page Generator ───────────────────────────────────────────────────
+# â”€â”€ Page Generator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _llm_area_config_advise(drifts: list, anomalies: list) -> str:
     _ = drifts
@@ -339,12 +339,12 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     anomalies = _detect_anomalies(live)
     tuner = _auto_tuner_analysis(live)
 
-    # LLM area: config_advise — generate config recommendations
+    # LLM area: config_advise â€” generate config recommendations
     config_advice = _llm_area_config_advise(drifts, anomalies)
 
     lines: List[str] = []
 
-    # ── Frontmatter ──
+    # â”€â”€ Frontmatter â”€â”€
     lines.append("---")
     lines.append("title: Tuneables Deep Dive")
     lines.append("tags:")
@@ -355,7 +355,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     lines.append("---")
     lines.append("")
 
-    # ── 1. Executive Summary ──
+    # â”€â”€ 1. Executive Summary â”€â”€
     lines.append("# Tuneables Deep Dive")
     lines.append("")
     lines.append(f"> Generated: {_fmt_ts(time.time())}")
@@ -390,7 +390,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     lines.append(f"| Auto-tuner entries | {tuner.get('total_log_entries', 0)} |")
     lines.append("")
 
-    # ── 2. Hot-Reload Coverage Map ──
+    # â”€â”€ 2. Hot-Reload Coverage Map â”€â”€
     lines.append("## Hot-Reload Coverage Map")
     lines.append("")
     lines.append("Sections with `register_reload()` get updated at runtime when `tuneables.json` changes.")
@@ -417,10 +417,10 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     if critical_gaps:
         lines.append("> **CRITICAL GAPS**: The following high-impact sections have NO hot-reload:")
         for s in critical_gaps:
-            lines.append(f"> - `{s}` ({SECTION_IMPACT.get(s)}) — consumed by {', '.join(SECTION_CONSUMERS.get(s, []))}")
+            lines.append(f"> - `{s}` ({SECTION_IMPACT.get(s)}) â€” consumed by {', '.join(SECTION_CONSUMERS.get(s, []))}")
         lines.append("")
 
-    # ── 3. Config Drift Analysis ──
+    # â”€â”€ 3. Config Drift Analysis â”€â”€
     lines.append("## Config Drift Analysis")
     lines.append("")
     lines.append("Comparison of `~/.spark/tuneables.json` (live) vs `config/tuneables.json` (version-controlled).")
@@ -440,7 +440,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
         lines.append("No config drift detected (configs are in sync).")
         lines.append("")
 
-    # ── 4. Cooldown Redundancy Report ──
+    # â”€â”€ 4. Cooldown Redundancy Report â”€â”€
     lines.append("## Cooldown Redundancy Report")
     lines.append("")
     lines.append("Three overlapping cooldown mechanisms control advisory suppression:")
@@ -479,7 +479,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
                          f"({advice_cd}s). The text cooldown may shadow the advice cooldown for exact-match cases.")
         lines.append("")
 
-    # ── 5. Source TTL & Tool Cooldown Multipliers ──
+    # â”€â”€ 5. Source TTL & Tool Cooldown Multipliers â”€â”€
     lines.append("## Source TTL & Tool Cooldown Multipliers")
     lines.append("")
 
@@ -510,7 +510,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
             lines.append(f"| `{tool}` | {mult}x | ~{effective}s |")
         lines.append("")
 
-    # ── 6. Auto-Tuner Activity ──
+    # â”€â”€ 6. Auto-Tuner Activity â”€â”€
     lines.append("## Auto-Tuner Activity")
     lines.append("")
 
@@ -560,7 +560,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
                 lines.append(f"| {r['ts']} | {r['changes']} | {r['basis']} |")
             lines.append("")
 
-    # ── 7. Value Anomalies ──
+    # â”€â”€ 7. Value Anomalies â”€â”€
     lines.append("## Value Anomalies")
     lines.append("")
 
@@ -576,7 +576,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
         lines.append("No value anomalies detected.")
         lines.append("")
 
-    # ── 8. Live Values Table ──
+    # â”€â”€ 8. Live Values Table â”€â”€
     lines.append("## Live Values (All Sections)")
     lines.append("")
     lines.append("Complete dump of `~/.spark/tuneables.json` organized by section.")
@@ -596,7 +596,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
         reload_badge = " (hot-reload)" if has_reload else " (restart-only)"
         impact = SECTION_IMPACT.get(section, "?")
 
-        lines.append(f"### `{section}`{reload_badge} — Impact: {impact}")
+        lines.append(f"### `{section}`{reload_badge} â€” Impact: {impact}")
         lines.append("")
 
         # Skip massive nested structures for readability
@@ -613,7 +613,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
             lines.append(f"| `{key}` | {_val_repr(val)} |")
         lines.append("")
 
-    # ── 9. Advisory Pipeline Impact Map ──
+    # â”€â”€ 9. Advisory Pipeline Impact Map â”€â”€
     lines.append("## Advisory Pipeline Impact Map")
     lines.append("")
     lines.append("Which tuneables control which stage of the advisory path.")
@@ -635,7 +635,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     lines.append("| 12. Post-tool feedback | `advisory_engine` | `advisory_text_repeat_cooldown_s`, `global_dedupe_cooldown_s` |")
     lines.append("")
 
-    # ── 10. Cross-Section Dependencies ──
+    # â”€â”€ 10. Cross-Section Dependencies â”€â”€
     lines.append("## Cross-Section Dependencies")
     lines.append("")
     lines.append("| From Section | To Section | Dependency |")
@@ -651,7 +651,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     lines.append("| `production_gates` | `meta_ralph` | Production gates check quality band from Meta-Ralph |")
     lines.append("")
 
-    # ── 11. Recommendations ──
+    # â”€â”€ 11. Recommendations â”€â”€
     lines.append("## Recommendations")
     lines.append("")
     lines.append("| Priority | Issue | Current | Recommended | Rationale |")
@@ -706,7 +706,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
 
     lines.append("")
 
-    # ── 12. Self-Audit Questions ──
+    # â”€â”€ 12. Self-Audit Questions â”€â”€
     lines.append("## Self-Audit Questions")
     lines.append("")
     lines.append("Use these when reviewing tuneable changes:")
@@ -714,7 +714,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     lines.append("1. **Is every suppression justified by data?** Check the suppression buckets in [[Advisory Reverse Engineering]].")
     lines.append("2. **Are any high-value sources being penalized?** Compare auto-tuner `source_boosts` vs `source_effectiveness`.")
     lines.append("3. **Could reducing cooldowns improve emit rate without harming follow rate?** "
-                 "Follow rate (96.8%) is very high — there may be room to emit more without quality loss.")
+                 "Follow rate (96.8%) is very high â€” there may be room to emit more without quality loss.")
     lines.append("4. **Are there tuneables nobody has ever changed from default?** "
                  "Any key matching its schema default and never appearing in tuning_log is a candidate for removal.")
     lines.append("5. **Is the auto-tuner converging or oscillating?** Check if source boosts are moving in consistent directions across runs.")
@@ -726,7 +726,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
                  "As the system matures, quality floors may need adjustment.")
     lines.append("")
 
-    # ── 13. Change History ──
+    # â”€â”€ 13. Change History â”€â”€
     lines.append("## Change History (Auto-Tuner Log)")
     lines.append("")
 
@@ -742,7 +742,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
             action = entry.get("action", "?")
             changes = entry.get("changes", {})
             basis = entry.get("data_basis", "?")
-            lines.append(f"### {ts} — `{action}`")
+            lines.append(f"### {ts} â€” `{action}`")
             lines.append(f"Data basis: {basis}")
             lines.append("")
             if changes:
@@ -755,13 +755,13 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
         lines.append("No auto-tuner log entries available.")
         lines.append("")
 
-    # ── 14. Related Pages ──
+    # â”€â”€ 14. Related Pages â”€â”€
     lines.append("## Related Pages")
     lines.append("")
-    lines.append("- [[Advisory Reverse Engineering]] — Suppression analysis and improvement tracking")
-    lines.append("- [[Stage 12 - Tuneables]] — Basic tuneable overview")
-    lines.append("- [[System Flow Comprehensive]] — Full pipeline reverse engineering")
-    lines.append("- [[System Flow Operator Playbook]] — Operational procedures")
+    lines.append("- [[Advisory Reverse Engineering]] â€” Suppression analysis and improvement tracking")
+    lines.append("- [[Stage 12 - Tuneables]] â€” Basic tuneable overview")
+    lines.append("- [[System Flow Comprehensive]] â€” Full pipeline reverse engineering")
+    lines.append("- [[System Flow Operator Playbook]] â€” Operational procedures")
     lines.append("")
 
     # Inject LLM config advice section if available
@@ -772,3 +772,4 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+

@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import sqlite3
 from pathlib import Path
 
-from lib.eidos_distillation_curriculum import build_curriculum, render_curriculum_markdown
+from lib.eidos_curriculum import build_curriculum, render_curriculum_markdown
 
 
 def _seed_db(path: Path) -> None:
@@ -105,4 +105,5 @@ def test_render_curriculum_markdown_has_expected_sections(tmp_path: Path):
     assert "# EIDOS Distillation Curriculum" in md
     assert "## Top Question Cards" in md
     assert "Recommended loop:" in md
+
 

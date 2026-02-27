@@ -1,4 +1,4 @@
-"""Generate an EIDOS distillation learning curriculum from eidos.db."""
+﻿"""Generate an EIDOS distillation learning curriculum from eidos.db."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from lib.eidos_distillation_curriculum import build_curriculum, render_curriculum_markdown
+from lib.eidos_curriculum import build_curriculum, render_curriculum_markdown
 
 
 def main() -> int:
@@ -43,4 +43,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 

@@ -1,4 +1,4 @@
-"""Generate an LLM Areas status page for Obsidian Observatory.
+﻿"""Generate an LLM Areas status page for Obsidian Observatory.
 
 Shows per-area enabled/disabled status, provider, timeout, max_chars,
 and host module for all registered configurable LLM-assisted areas.
@@ -75,8 +75,8 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
 
     # Host module mapping
     host_modules = {
-        "archive_rewrite": "lib/distillation_refiner.py",
-        "archive_rescue": "lib/distillation_refiner.py",
+        "archive_rewrite": "lib/eidos_refiner.py",
+        "archive_rescue": "lib/eidos_refiner.py",
         "system28_reformulate": "lib/distillation_transformer.py",
         "conflict_resolve": "lib/cognitive_learner.py",
         "evidence_compress": "lib/cognitive_learner.py",
@@ -93,7 +93,7 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
         "soft_promotion_triage": "lib/promoter.py",
         "outcome_link_reconstruct": "lib/eidos/distillation_engine.py",
         "implicit_feedback_interpret": "lib/advisory_implicit_feedback.py",
-        "curriculum_gap_summarize": "lib/eidos_distillation_curriculum.py",
+        "curriculum_gap_summarize": "lib/eidos_curriculum.py",
         "policy_autotuner_recommend": "lib/auto_tuner.py",
     }
 
@@ -184,7 +184,7 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
     # Links
     lines.append("---")
     lines.append("")
-    lines.append("[[flow|← Flow Dashboard]] · [[tuneables_deep_dive|Tuneables Deep Dive]] · [[advisory_reverse_engineering|Advisory Analysis]]")
+    lines.append("[[flow|â† Flow Dashboard]] Â· [[tuneables_deep_dive|Tuneables Deep Dive]] Â· [[advisory_reverse_engineering|Advisory Analysis]]")
     lines.append("")
 
     return "\n".join(lines)
@@ -198,3 +198,4 @@ def _fallback_page(reason: str) -> str:
         f"> Generated {now}\n\n"
         f"WARNING: Could not generate status page: {reason}\n"
     )
+

@@ -1,4 +1,4 @@
-"""
+﻿"""
 EIDOS Store: SQLite Persistence Layer
 
 The canonical memory - simple, inspectable, debuggable.
@@ -839,7 +839,7 @@ class EidosStore:
                     boost = min(0.05, headroom * 0.15)
                     new_conf = min(1.0, current_conf + boost)
                 else:
-                    # Decay confidence — faster when contradiction rate is high
+                    # Decay confidence â€” faster when contradiction rate is high
                     contra_rate = contra / max(total, 1)
                     if contra_rate > 0.8 and total >= 10:
                         new_conf = max(0.05, current_conf - 0.05)
@@ -1079,7 +1079,7 @@ class EidosStore:
         Returns summary dict with counts.
         """
         try:
-            from ..distillation_refiner import refine_distillation
+            from ..eidos_refiner import refine_distillation
         except Exception:
             return {"error": "Could not import refine_distillation"}
 
@@ -1324,3 +1324,4 @@ def purge_telemetry_distillations(dry_run: bool = False, max_preview: int = 20) 
     """Purge telemetry/primitive distillations from the EIDOS store."""
     store = get_store()
     return store.purge_telemetry_distillations(dry_run=dry_run, max_preview=max_preview)
+

@@ -1,4 +1,4 @@
-"""Auto-refinement worker for high-priority EIDOS curriculum cards."""
+﻿"""Auto-refinement worker for high-priority EIDOS curriculum cards."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .distillation_refiner import refine_distillation
-from .eidos_distillation_curriculum import build_curriculum
+from .eidos_refiner import refine_distillation
+from .eidos_curriculum import build_curriculum
 
 _SPARK_DIR = Path.home() / ".spark"
 _DEFAULT_DB = _SPARK_DIR / "eidos.db"
@@ -464,3 +464,4 @@ def run_curriculum_autofix(
         bool(report["archive_attempted"] > 0 and report["archive_update_rate"] < 0.05)
     )
     return report
+

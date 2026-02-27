@@ -1,4 +1,4 @@
-"""
+﻿"""
 EIDOS Distillation Engine: Where Intelligence Crystallizes
 
 Runs after every episode to extract reusable rules from experience.
@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-from ..distillation_refiner import refine_distillation
+from ..eidos_refiner import refine_distillation
 from ..distillation_transformer import transform_for_advisory
 from ..elevation import elevate
 from ..noise_patterns import is_session_boilerplate
@@ -304,7 +304,7 @@ class DistillationEngine:
         if re.search(r"\b(?:watch out|be careful)\b.{0,80}\bunknown\b.{0,40}\bapproach\b", low):
             return False
 
-        # Reject "When X, try: Y" where X ≈ Y (>60% word overlap)
+        # Reject "When X, try: Y" where X â‰ˆ Y (>60% word overlap)
         if "try:" in low and "when " in low:
             parts = low.split("try:", 1)
             if len(parts) == 2:
@@ -337,7 +337,7 @@ class DistillationEngine:
         candidates = []
 
         # 1. Generate from new_rule (HEURISTIC)
-        # Initial confidence capped at 0.4 — must earn trust through usage
+        # Initial confidence capped at 0.4 â€” must earn trust through usage
         if reflection.new_rule:
             candidates.append(DistillationCandidate(
                 type=DistillationType.HEURISTIC,
@@ -425,7 +425,7 @@ class DistillationEngine:
         Improvements over original:
         - Uses full goal text (not truncated to 30 chars)
         - Uses domain keywords as triggers (not just first word)
-        - Starts at low confidence (0.3) — must earn trust through usage
+        - Starts at low confidence (0.3) â€” must earn trust through usage
         - Requires diverse step types (not just 2 unique decisions)
         """
         # Reject generic goals
@@ -473,7 +473,7 @@ class DistillationEngine:
             domains=self._extract_domains(episode, steps),
             triggers=triggers,
             source_steps=[s.step_id for s in success_steps],
-            confidence=0.3,  # Start low — must earn trust
+            confidence=0.3,  # Start low â€” must earn trust
             rationale="Successful step sequence"
         )
 
@@ -603,7 +603,7 @@ class DistillationEngine:
             min_unified_score=0.60,
         )
 
-        # LLM area: outcome_link_reconstruct — link orphaned outcomes
+        # LLM area: outcome_link_reconstruct â€” link orphaned outcomes
         refined_statement = _llm_area_outcome_link_reconstruct(
             refined_statement or candidate.statement,
             candidate.source_steps,
@@ -770,3 +770,4 @@ def get_distillation_engine() -> DistillationEngine:
     if _distillation_engine is None:
         _distillation_engine = DistillationEngine()
     return _distillation_engine
+

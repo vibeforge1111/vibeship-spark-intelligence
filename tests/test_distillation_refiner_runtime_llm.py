@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import copy
 
 import pytest
 
-import lib.distillation_refiner as ref
+import lib.eidos_refiner as ref
 
 
 class _AQ:
@@ -123,3 +123,4 @@ def test_runtime_llm_refiner_keeps_deterministic_if_llm_worse(monkeypatch):
     )
     assert text == deterministic_text
     assert quality["unified_score"] == 0.68
+

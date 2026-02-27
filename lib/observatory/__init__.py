@@ -1,8 +1,8 @@
-"""Spark Intelligence Observatory — full pipeline visualization for Obsidian.
+﻿"""Spark Intelligence Observatory â€” full pipeline visualization for Obsidian.
 
 Public API:
-    generate_observatory(force=False) — generate all observatory pages
-    maybe_sync_observatory(stats=None) — cooldown-gated auto-sync (call from bridge_cycle)
+    generate_observatory(force=False) â€” generate all observatory pages
+    maybe_sync_observatory(stats=None) â€” cooldown-gated auto-sync (call from bridge_cycle)
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def _sync_eidos_curriculum(cfg, obs_dir: Path, *, verbose: bool = False) -> dict
         return summary
 
     try:
-        from ..eidos_distillation_curriculum import (
+        from ..eidos_curriculum import (
             build_curriculum,
             load_curriculum_latest,
             render_curriculum_markdown,
@@ -178,7 +178,7 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
         stage7["curriculum_history_points"] = _coerce_int(curriculum_summary.get("history_points"), 0)
         stage7["curriculum_high_delta"] = _coerce_int(curriculum_summary.get("high_delta"), 0)
 
-    # LLM area: operator_now_synth — synthesize system state summary
+    # LLM area: operator_now_synth â€” synthesize system state summary
     operator_summary = _llm_area_operator_now_synth(data)
     if operator_summary:
         (obs_dir / "operator_now.md").write_text(
@@ -242,7 +242,7 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
     if cfg.generate_canvas:
         canvas_path = obs_dir / "flow.canvas"
         canvas_content = generate_canvas()
-        # LLM area: canvas_enrich — add annotations to canvas
+        # LLM area: canvas_enrich â€” add annotations to canvas
         canvas_content = _llm_area_canvas_enrich(canvas_content, data)
         canvas_path.write_text(canvas_content, encoding="utf-8")
         files_written += 1
@@ -271,7 +271,7 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
 
 
 def maybe_sync_observatory(stats: dict | None = None) -> None:
-    """Cooldown-gated sync — safe to call every bridge cycle."""
+    """Cooldown-gated sync â€” safe to call every bridge cycle."""
     global _last_sync_ts
 
     try:
@@ -286,5 +286,6 @@ def maybe_sync_observatory(stats: dict | None = None) -> None:
         _last_sync_ts = now
         generate_observatory()
     except Exception:
-        # Non-critical — never crash the pipeline
+        # Non-critical â€” never crash the pipeline
         traceback.print_exc()
+
