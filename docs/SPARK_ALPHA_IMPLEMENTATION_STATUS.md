@@ -424,7 +424,7 @@ Branch: feat/spark-alpha
 - Added env kill-switch `SPARK_ADVISORY_ALPHA_COMPAT_ENGINE_LOG=0`.
 - Added alpha test coverage for compat mirroring behavior.
 
-67. `c4f7867` - `docs(alpha): add executable migration playbook`
+67. `abeafae` - `docs(alpha): add executable migration playbook`
 - Added `docs/SPARK_ALPHA_MIGRATION_PLAYBOOK.md` with:
   - preconditions/gates
   - phased runtime/storage/deletion rollout steps

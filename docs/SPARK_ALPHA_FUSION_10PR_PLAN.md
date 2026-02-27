@@ -84,7 +84,7 @@ Completed commits:
 64. `85bafb1` PR-10 follow-up: moved advisory controlled-delta workload execution to alpha orchestrator entrypoints
 65. `ae424ee` PR-07 follow-up: updated replay arena champion route to orchestrator and renamed legacy score fields accordingly
 66. `68750f4` PR-06 follow-up: added alpha compat mirroring to `advisory_engine.jsonl` so legacy observability consumers remain stable during cutover
-67. `c4f7867` docs follow-up: added executable migration playbook (`docs/SPARK_ALPHA_MIGRATION_PLAYBOOK.md`) with phase gates and rollback paths
+67. `abeafae` docs follow-up: added executable migration playbook (`docs/SPARK_ALPHA_MIGRATION_PLAYBOOK.md`) with phase gates and rollback paths
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
