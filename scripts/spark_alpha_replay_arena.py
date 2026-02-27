@@ -469,12 +469,12 @@ def main() -> int:
     run_id = time.strftime("%Y%m%d_%H%M%S", time.localtime())
     trace_prefix = f"arena:{run_id}"
 
-    legacy_results = _run_route(route="orchestrator", run_tag=run_id, episodes=episodes, trace_prefix=trace_prefix)
+    orchestrator_results = _run_route(route="orchestrator", run_tag=run_id, episodes=episodes, trace_prefix=trace_prefix)
     alpha_results = _run_route(route="alpha", run_tag=run_id, episodes=episodes, trace_prefix=trace_prefix)
 
-    legacy_card = _compute_scorecard(
+    orchestrator_card = _compute_scorecard(
         route="orchestrator",
-        results=legacy_results,
+        results=orchestrator_results,
         weights=weights,
         latency_ref_ms=float(args.latency_ref_ms),
     )
@@ -485,9 +485,9 @@ def main() -> int:
         latency_ref_ms=float(args.latency_ref_ms),
     )
 
-    alpha_win_weighted = float(alpha_card.weighted_score) > float(legacy_card.weighted_score)
-    safety_gate = float(alpha_card.safety_rate) >= max(float(args.require_safety_floor), float(legacy_card.safety_rate))
-    trace_gate = float(alpha_card.trace_integrity_rate) >= max(float(args.require_trace_floor), float(legacy_card.trace_integrity_rate))
+    alpha_win_weighted = float(alpha_card.weighted_score) > float(orchestrator_card.weighted_score)
+    safety_gate = float(alpha_card.safety_rate) >= max(float(args.require_safety_floor), float(orchestrator_card.safety_rate))
+    trace_gate = float(alpha_card.trace_integrity_rate) >= max(float(args.require_trace_floor), float(orchestrator_card.trace_integrity_rate))
     promotion_gate_pass = bool(alpha_win_weighted and safety_gate and trace_gate)
 
     ledger_row = {
@@ -499,7 +499,7 @@ def main() -> int:
         "safety_gate": bool(safety_gate),
         "trace_gate": bool(trace_gate),
         "promotion_gate_pass": bool(promotion_gate_pass),
-        "orchestrator_weighted_score": float(legacy_card.weighted_score),
+        "orchestrator_weighted_score": float(orchestrator_card.weighted_score),
         "alpha_weighted_score": float(alpha_card.weighted_score),
     }
     _append_jsonl(PROMOTION_LEDGER, ledger_row)
@@ -529,7 +529,7 @@ def main() -> int:
             "reason": winner_reason,
         },
         "scorecards": {
-            "orchestrator": asdict(legacy_card),
+            "orchestrator": asdict(orchestrator_card),
             "alpha": asdict(alpha_card),
         },
         "promotion": {
@@ -566,7 +566,7 @@ def main() -> int:
         scorecards_json,
         {
             "run_id": run_id,
-            "champion": asdict(legacy_card),
+            "champion": asdict(orchestrator_card),
             "challenger": asdict(alpha_card),
         },
     )
@@ -591,7 +591,7 @@ def main() -> int:
         out_dir / "spark_alpha_replay_scorecards_latest.json",
         {
             "run_id": run_id,
-            "champion": asdict(legacy_card),
+            "champion": asdict(orchestrator_card),
             "challenger": asdict(alpha_card),
         },
     )
@@ -602,7 +602,7 @@ def main() -> int:
                 "ok": True,
                 "run_id": run_id,
                 "winner": winner_route,
-                "orchestrator_weighted": legacy_card.weighted_score,
+                "orchestrator_weighted": orchestrator_card.weighted_score,
                 "alpha_weighted": alpha_card.weighted_score,
                 "promotion_gate_pass": promotion_gate_pass,
                 "consecutive_pass_streak": streak,

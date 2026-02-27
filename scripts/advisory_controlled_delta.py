@@ -217,7 +217,8 @@ def run_workload(
                     "README.md",
                     "docs/reports/2026-02-15_233443_prompt_run_10_2_6.md",
                     "lib/advisor.py",
-                    "lib/advisory_engine.py",
+                    "lib/advisory_orchestrator.py",
+                    "lib/advisory_engine_alpha.py",
                     "scripts/advisory_controlled_delta.py",
                 ]
                 rel = candidates[i % len(candidates)]

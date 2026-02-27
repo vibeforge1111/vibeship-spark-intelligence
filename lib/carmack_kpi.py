@@ -10,7 +10,9 @@ import time
 
 
 SPARK_DIR = Path.home() / ".spark"
-ADVISORY_LOG = SPARK_DIR / "advisory_engine.jsonl"
+_ALPHA_ADVISORY_LOG = SPARK_DIR / "advisory_engine_alpha.jsonl"
+_COMPAT_ADVISORY_LOG = SPARK_DIR / "advisory_engine.jsonl"
+ADVISORY_LOG = _ALPHA_ADVISORY_LOG if _ALPHA_ADVISORY_LOG.exists() else _COMPAT_ADVISORY_LOG
 ADVICE_FEEDBACK_REQUESTS = SPARK_DIR / "advice_feedback_requests.jsonl"
 EFFECTIVENESS_FILE = SPARK_DIR / "advisor" / "effectiveness.json"
 SYNC_STATS_FILE = SPARK_DIR / "sync_stats.json"

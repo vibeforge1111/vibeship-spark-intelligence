@@ -20,7 +20,9 @@ SPARK_DIR = Path.home() / ".spark"
 REPORTS_DIR = Path("docs") / "reports"
 OBSERVATORY_SNAPSHOT = Path("_observatory") / "memory_quality_snapshot.json"
 OBSERVATORY_STATE = Path("_observatory") / ".observatory_snapshot.json"
-ADVISORY_ENGINE_LOG = SPARK_DIR / "advisory_engine.jsonl"
+_ALPHA_ENGINE_LOG = SPARK_DIR / "advisory_engine_alpha.jsonl"
+_COMPAT_ENGINE_LOG = SPARK_DIR / "advisory_engine.jsonl"
+ADVISORY_ENGINE_LOG = _ALPHA_ENGINE_LOG if _ALPHA_ENGINE_LOG.exists() else _COMPAT_ENGINE_LOG
 ADVISORY_DECISION_LEDGER = SPARK_DIR / "advisory_decision_ledger.jsonl"
 
 

@@ -36,7 +36,9 @@ from lib.spark_memory_spine import load_cognitive_insights_runtime_snapshot
 SPARK_DIR = Path.home() / ".spark"
 MEMORY_DB = SPARK_DIR / "memory_store.sqlite"
 SEMANTIC_LOG = SPARK_DIR / "logs" / "semantic_retrieval.jsonl"
-ADVISORY_ENGINE_LOG = SPARK_DIR / "advisory_engine.jsonl"
+_ALPHA_ENGINE_LOG = SPARK_DIR / "advisory_engine_alpha.jsonl"
+_COMPAT_ENGINE_LOG = SPARK_DIR / "advisory_engine.jsonl"
+ADVISORY_ENGINE_LOG = _ALPHA_ENGINE_LOG if _ALPHA_ENGINE_LOG.exists() else _COMPAT_ENGINE_LOG
 MIND_OFFLINE_QUEUE = SPARK_DIR / "mind_offline_queue.jsonl"
 OBSERVATORY_DIR = Path("_observatory")
 REPORTS_DIR = Path("docs") / "reports"
