@@ -95,7 +95,6 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
         "implicit_feedback_interpret": "lib/advisory_engine.py",
         "curriculum_gap_summarize": "lib/eidos_distillation_curriculum.py",
         "policy_autotuner_recommend": "lib/auto_tuner.py",
-        "suppression_triage": "lib/advisory_engine.py",
         "packet_rerank": "lib/advisory_packet_store.py",
         "operator_now_synth": "lib/observatory/__init__.py",
         "drift_diagnose": "scripts/cross_surface_drift_checker.py",

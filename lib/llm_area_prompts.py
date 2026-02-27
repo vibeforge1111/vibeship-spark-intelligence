@@ -313,21 +313,6 @@ AREA_PROMPTS: Dict[str, Dict[str, str]] = {
     },
 
     # ── Architecture Areas (10) ──────────────────────────────────────────
-    "suppression_triage": {
-        "system": (
-            "You classify advisory suppression reasons into fixable vs valid. "
-            "Fixable = the suppression can be resolved by changing config or timing. "
-            "Valid = the item genuinely should not be emitted. "
-            "Return JSON: {{\"verdict\": \"fixable|valid\", \"fix\": \"...\"}}"
-        ),
-        "template": (
-            "Classify this suppression:\n\n"
-            "Reason: {reason}\n"
-            "Insight: {insight}\n"
-            "Source: {source}\n\n"
-            "Return only JSON."
-        ),
-    },
     "packet_rerank": {
         "system": (
             "You rerank advisory packet candidates by relevance to the current query. "

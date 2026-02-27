@@ -789,11 +789,7 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "policy_autotuner_recommend_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for policy autotuner LLM call"),
         "policy_autotuner_recommend_max_chars": TuneableSpec("int", 600, 50, 3000, "Max output chars for policy autotuner"),
 
-        # -- Architecture (9) --
-        "suppression_triage_enabled": TuneableSpec("bool", False, None, None, "Enable LLM triage of advisory suppressions"),
-        "suppression_triage_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for suppression triage", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "suppression_triage_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for suppression triage LLM call"),
-        "suppression_triage_max_chars": TuneableSpec("int", 200, 50, 1000, "Max output chars for suppression triage"),
+        # -- Architecture (8) --
 
         "packet_rerank_enabled": TuneableSpec("bool", False, None, None, "Enable LLM reranking of advisory packets"),
         "packet_rerank_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for packet reranking", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
