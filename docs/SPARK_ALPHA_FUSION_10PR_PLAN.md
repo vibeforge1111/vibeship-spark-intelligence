@@ -67,6 +67,7 @@ Completed commits:
 47. `5cb3c0b` PR-04/09 follow-up: collapsed runtime JSON surface and added workflow_evidence schema/config-authority path
 48. `49d2354` PR-10 follow-up: removed residual requested-route plumbing from orchestrator
 49. `853200f` PR-04 follow-up: retired runtime JSON memory fallback and enforced SQLite-only runtime reads
+50. `b08cb77` PR-04 follow-up: deleted dead runtime snapshot coercion path after fallback retirement
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`

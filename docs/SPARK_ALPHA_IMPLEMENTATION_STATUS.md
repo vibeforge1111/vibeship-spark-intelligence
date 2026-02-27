@@ -310,6 +310,10 @@ Branch: feat/spark-alpha
 - Updated `CognitiveLearner`/production-gates pathing to keep runtime canonical while preserving non-canonical compatibility lanes for tests/explicit legacy mode.
 - JSON consumer audit now reports `runtime_hits=0`.
 
+50. `b08cb77` - `refactor(alpha-pr04): delete dead runtime snapshot coercion after json fallback retirement`
+- Removed unused runtime snapshot coercion path from `lib/spark_memory_spine.py`.
+- Reduced PR-04 residual dead code after SQLite-only runtime cutover.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
