@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -199,6 +200,19 @@ def _hash_text(value: str) -> str:
     return hashlib.sha1(text.encode("utf-8", errors="ignore")).hexdigest()[:16]
 
 
+def _advice_text_sig(value: str) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    if text.startswith("[") and "]" in text[:40]:
+        text = text.split("]", 1)[-1].strip()
+    text = re.sub(r"[^a-z0-9\s]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return ""
+    return hashlib.sha1(text[:240].encode("utf-8", errors="ignore")).hexdigest()[:16]
+
+
 def _safe_ts(value: Any) -> float:
     try:
         return float(value or 0.0)
@@ -247,7 +261,7 @@ def _load_recent_global_dedupe_snapshot(
             by_advice_id[advice_id] = age_s
         text_sig = str(row.get("text_sig") or "").strip()
         if not text_sig:
-            text_sig = _hash_text(str(row.get("text") or row.get("advice_text") or ""))
+            text_sig = _advice_text_sig(str(row.get("text") or row.get("advice_text") or ""))
         if text_sig and text_sig not in by_text_sig:
             by_text_sig[text_sig] = age_s
     return by_advice_id, by_text_sig
@@ -266,7 +280,7 @@ def _record_global_dedupe_rows(
     for item in emitted_items or []:
         advice_id = str(getattr(item, "advice_id", "") or "").strip()
         advice_text = str(getattr(item, "text", "") or "").strip()
-        text_sig = _hash_text(advice_text)
+        text_sig = _advice_text_sig(advice_text)
         if not advice_id and not text_sig:
             continue
         _append_jsonl_capped(
@@ -286,7 +300,7 @@ def _record_global_dedupe_rows(
         )
         if text_sig:
             written_sigs.add(text_sig)
-    effective_sig = _hash_text(effective_text)
+    effective_sig = _advice_text_sig(effective_text)
     if effective_sig and effective_sig not in written_sigs:
         _append_jsonl_capped(
             ADVISORY_GLOBAL_DEDUPE_FILE,
@@ -336,7 +350,7 @@ def _dedupe_advice_items(advice_items: List[Any]) -> List[Any]:
     out: List[Any] = []
     seen: set[str] = set()
     for item in list(advice_items or []):
-        sig = _hash_text(getattr(item, "text", ""))
+        sig = _advice_text_sig(getattr(item, "text", ""))
         if not sig or sig in seen:
             continue
         seen.add(sig)
@@ -538,6 +552,7 @@ def on_pre_tool(
         )
         effective_text = str(synth_text or getattr(emitted_items[0], "text", "") or "").strip()
         text_fingerprint = _hash_text(effective_text)
+        global_text_sig = _advice_text_sig(effective_text)
         if _is_repeat_blocked(state, tool_name, text_fingerprint, context_fingerprint):
             save_state(state)
             _log_alpha(
@@ -550,8 +565,8 @@ def on_pre_tool(
                 extra={"cooldown_s": float(ALPHA_TEXT_REPEAT_COOLDOWN_S)},
             )
             return None
-        if (not bypass_global_dedupe) and text_fingerprint and recent_global_by_text_sig:
-            age_s = recent_global_by_text_sig.get(text_fingerprint)
+        if (not bypass_global_dedupe) and global_text_sig and recent_global_by_text_sig:
+            age_s = recent_global_by_text_sig.get(global_text_sig)
             if age_s is not None:
                 save_state(state)
                 _log_alpha(

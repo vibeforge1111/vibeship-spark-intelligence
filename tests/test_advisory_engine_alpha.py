@@ -264,3 +264,34 @@ def test_on_pre_tool_arena_trace_bypasses_global_dedupe(monkeypatch, tmp_path):
 
     assert out == "Repeat caution text"
     assert emitted_calls["count"] == 1
+
+
+def test_on_pre_tool_blocks_normalized_text_repeat(monkeypatch, tmp_path):
+    _patch_state_and_store(monkeypatch, tmp_path)
+    emitted_calls = _patch_pre_tool_runtime(monkeypatch)
+    dedupe_file = tmp_path / "advisory_global_dedupe.jsonl"
+    monkeypatch.setattr(alpha_engine, "ADVISORY_GLOBAL_DEDUPE_FILE", dedupe_file)
+    monkeypatch.setattr(alpha_engine, "ALPHA_GLOBAL_DEDUPE_COOLDOWN_S", 600.0)
+    dedupe_file.write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "advice_id": "older-advice-id",
+                "text_sig": alpha_engine._advice_text_sig("[Caution] Repeat caution text!!!"),
+                "text": "[Caution] Repeat caution text!!!",
+                "trace_id": "older-trace",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out = alpha_engine.on_pre_tool(
+        "s-alpha-global-dedupe-normalized",
+        "Edit",
+        {"file_path": "src/app.py"},
+        trace_id="trace-global-dedupe-normalized",
+    )
+
+    assert out is None
+    assert emitted_calls["count"] == 0
