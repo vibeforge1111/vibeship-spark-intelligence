@@ -31,7 +31,10 @@ except Exception:
     _alpha_inline_jobs = 1
 ALPHA_INLINE_PREFETCH_MAX_JOBS = max(1, min(20, _alpha_inline_jobs))
 ALPHA_LOG = Path.home() / ".spark" / "advisory_engine_alpha.jsonl"
+ENGINE_COMPAT_LOG = Path.home() / ".spark" / "advisory_engine.jsonl"
 ALPHA_LOG_MAX_LINES = 2000
+_compat_default = "0" if "PYTEST_CURRENT_TEST" in os.environ else "1"
+ALPHA_COMPAT_ENGINE_LOG_ENABLED = os.getenv("SPARK_ADVISORY_ALPHA_COMPAT_ENGINE_LOG", _compat_default) != "0"
 
 
 def _hash_text(value: str) -> str:
@@ -65,6 +68,9 @@ def _log_alpha(
     if isinstance(extra, dict):
         row["extra"] = extra
     _append_jsonl_capped(ALPHA_LOG, row, ALPHA_LOG_MAX_LINES, ensure_ascii=True)
+    if ALPHA_COMPAT_ENGINE_LOG_ENABLED:
+        # Compatibility mirror keeps downstream observability/scripts stable while alpha is primary.
+        _append_jsonl_capped(ENGINE_COMPAT_LOG, row, ALPHA_LOG_MAX_LINES, ensure_ascii=True)
 
 
 def _dedupe_advice_items(advice_items: List[Any]) -> List[Any]:

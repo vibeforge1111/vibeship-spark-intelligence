@@ -79,3 +79,23 @@ def test_on_post_tool_records_outcome_and_invokes_implicit_feedback(monkeypatch,
     assert refreshed.recent_tools[-1]["trace_id"] == "trace-alpha-post"
     assert calls["implicit"] == 1
     assert calls["packet"] == 1
+
+
+def test_log_alpha_can_mirror_to_engine_compat_log(monkeypatch, tmp_path):
+    alpha_log = tmp_path / "advisory_engine_alpha.jsonl"
+    compat_log = tmp_path / "advisory_engine.jsonl"
+    monkeypatch.setattr(alpha_engine, "ALPHA_LOG", alpha_log)
+    monkeypatch.setattr(alpha_engine, "ENGINE_COMPAT_LOG", compat_log)
+    monkeypatch.setattr(alpha_engine, "ALPHA_COMPAT_ENGINE_LOG_ENABLED", True)
+
+    alpha_engine._log_alpha(
+        "emitted",
+        session_id="s1",
+        tool_name="Read",
+        trace_id="t1",
+        emitted=True,
+        elapsed_ms=12.5,
+    )
+
+    assert alpha_log.exists()
+    assert compat_log.exists()
