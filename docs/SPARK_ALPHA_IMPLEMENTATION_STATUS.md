@@ -344,6 +344,18 @@ Branch: feat/spark-alpha
 - Removed the unused `suppression_triage` area from advisory runtime, LLM dispatch/defaults, prompt catalog, tuneables schema, and baseline config.
 - Further reduced architecture LLM-area surface and config authority footprint without changing advisory behavior.
 
+57. `5bcded9` - `feat(alpha-pr04): run bounded ACT-R compaction in periodic context sync`
+- Added runtime ACT-R compaction integration in `lib/context_sync.py`:
+  - builds a compaction plan from live cognitive insights
+  - applies bounded stale-low-activation deletes per run
+  - records delete/update candidate counts + applied deletions in compaction state
+- Added env controls:
+  - `SPARK_COGNITIVE_ACTR_COMPACTION_ENABLED`
+  - `SPARK_COGNITIVE_ACTR_MAX_AGE_DAYS`
+  - `SPARK_COGNITIVE_ACTR_MIN_ACTIVATION`
+  - `SPARK_COGNITIVE_ACTR_MAX_DELETES`
+- Added policy tests for bounded ACT-R deletion behavior in `tests/test_context_sync_policy.py`.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -395,6 +407,8 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_orchestrator.py tests/test_advisory_dual_path_router.py tests/test_advisory_engine_alpha.py -q` -> `49 passed`
 - `pytest tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `48 passed`
 - `pytest tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `48 passed`
+- `pytest tests/test_context_sync_policy.py -q` -> `7 passed`
+- `pytest tests/test_memory_compaction.py tests/test_memory_spine_sqlite.py tests/test_cognitive_learner.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_tuneables_alignment.py -q` -> `93 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after dedupe_optimize llm-area surface removal)
 - `pytest tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_vibeforge_helpers.py tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `76 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after suppression_triage llm-area surface removal)
@@ -421,7 +435,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 
 1. Full advisory collapse (17 modules -> compact 3-module architecture) is not implemented.
 2. Storage consolidation to single SQLite-first memory/advisory store is not implemented.
-3. Memory compaction engine is partially implemented (ACT-R style planner + preview/apply runner for cognitive insights is in place); broader integration across advisory/memory stores and automated scheduling is still pending.
+3. Memory compaction engine is partially implemented (ACT-R style planner + preview/apply runner + bounded periodic ACT-R runtime compaction for cognitive insights are in place); broader integration across advisory stores is still pending.
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).
 5. Large config surface reduction (hard pruning to minimal knobs) is not implemented.
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.

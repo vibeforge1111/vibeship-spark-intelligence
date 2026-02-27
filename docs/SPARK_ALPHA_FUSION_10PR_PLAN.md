@@ -74,6 +74,7 @@ Completed commits:
 54. `64c1f69` PR-10 follow-up: removed LLM-assisted global dedupe scope optimization from runtime (deterministic global scope)
 55. `5ab1d92` PR-09 follow-up: removed unused `dedupe_optimize` LLM-area surface (dispatch + schema + baseline tuneables)
 56. `dec4978` PR-09 follow-up: removed unused `suppression_triage` LLM-area surface (runtime + dispatch + schema + baseline tuneables)
+57. `5bcded9` PR-04 follow-up: integrated bounded ACT-R compaction into periodic runtime context sync with explicit env caps and policy tests
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -94,12 +95,13 @@ Current measured state:
 10. Advisory dedupe deterministic-scope slice (`tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py`): `48 passed`
 11. Config-authority + advisory regression slice after llm-area surface pruning: `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0`; `pytest ...` composite slice -> `76 passed`
 12. Config-authority validation after additional llm-area pruning: `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0`
+13. Runtime compaction regression slice: `pytest tests/test_context_sync_policy.py` -> `7 passed`; `pytest tests/test_memory_compaction.py tests/test_memory_spine_sqlite.py tests/test_cognitive_learner.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_tuneables_alignment.py` -> `93 passed`
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial
 2. Unified noise classifier: done (shadowed, enforce-capable)
 3. Advisory collapse (17 files -> 3): partial
-4. Memory compaction (ACT-R + Mem0 protocol): pending
+4. Memory compaction (ACT-R + Mem0 protocol): partial
 5. Delivery-time retrieval improvement: partial
 6. VibeForge self-improvement loop (goal + oracle + propose/test/promote ledger): partial
 7. Config reduction (576 -> ~70): pending
@@ -130,7 +132,8 @@ Current measured state:
 5. JSON writes are now compatibility mirror only (`SPARK_MEMORY_SPINE_JSON_MIRROR`), not canonical source.
 6. Added JSON consumer inventory tooling (`scripts/memory_json_consumer_audit.py`) and streak gate (`scripts/memory_json_consumer_gate.py`) for explicit retirement readiness.
 7. Added ACT-R style compaction planner (`lib/memory_compaction.py`) and preview/apply runner (`scripts/cognitive_memory_compaction.py`) with Mem0 action labels.
-8. Remaining: optional removal of non-canonical/legacy compatibility lanes after full JSON deprecation sign-off; runtime path is already SQLite-only.
+8. Added bounded periodic ACT-R compaction in runtime context sync with explicit deletion caps.
+9. Remaining: optional removal of non-canonical/legacy compatibility lanes after full JSON deprecation sign-off; runtime path is already SQLite-only.
 
 ### PR-05 Retrieval Fusion (RRF + Contextual Retrieval)  (Done for Current Scope)
 1. Hybrid retrieval now includes deterministic RRF fusion (semantic + lexical + support ranks).
