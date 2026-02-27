@@ -50,7 +50,7 @@ class _Advice:
 
 def _state(**overrides):
     """Build a SessionState for testing."""
-    from lib.advisory_state import SessionState
+    from lib.runtime_session_state import SessionState
     base = {"session_id": "verify_emission"}
     base.update(overrides)
     return SessionState.from_dict(base)

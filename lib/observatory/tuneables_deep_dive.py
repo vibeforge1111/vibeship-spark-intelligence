@@ -641,7 +641,7 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     lines.append("| From Section | To Section | Dependency |")
     lines.append("|---|---|---|")
     lines.append("| `auto_tuner` | `advisor` | `source_boosts` affect `_rank_score()` in advisor |")
-    lines.append("| `advisory_gate` | `advisory_state` | Gate writes shown markers; state tracks cooldowns |")
+    lines.append("| `advisory_gate` | `runtime_session_state` | Gate writes shown markers; state tracks cooldowns |")
     lines.append("| `advisory_engine` | `advisory_gate` | Engine sets budget; gate enforces it |")
     lines.append("| `advisory_engine` | `advisory_packet_store` | Engine routes through packet cache |")
     lines.append("| `advisor` | `semantic` | Advisor uses semantic retrieval config for ranking |")

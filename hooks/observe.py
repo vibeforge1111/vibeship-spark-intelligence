@@ -611,7 +611,7 @@ def _resolve_post_trace_id(session_id: str, tool_name: str, trace_id: Optional[s
     if not tool_name:
         return trace_id
     try:
-        from lib.advisory_state import load_state, resolve_recent_trace_id
+        from lib.runtime_session_state import load_state, resolve_recent_trace_id
 
         state = load_state(session_id)
         resolved = resolve_recent_trace_id(state, tool_name)

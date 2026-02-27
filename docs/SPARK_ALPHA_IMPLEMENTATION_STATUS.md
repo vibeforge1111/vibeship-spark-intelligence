@@ -1023,11 +1023,19 @@ Notable metrics now:
 - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, streak `54`
 
+### Latest advisory collapse delta (2026-02-27, runtime-session-state rename)
+
+- `lib/advisory_state.py` renamed to `lib/runtime_session_state.py` and all runtime/test imports updated
+- `python scripts/alpha_gap_audit.py` -> `advisory_files=9`, `tuneable_keys=279`, `distillation_files=3`
+- `pytest tests/test_advisory_state.py tests/test_advisory_engine_alpha.py tests/test_advisory_gate_evaluate.py tests/test_advisory_calibration.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py -q` -> `119 passed`
+- `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+- `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, streak `57`
+
 ## Not done yet
 
 These are still pending relative to the broader Simplification/Fast-Track goals:
 
-1. Advisory collapse wave 1 is done (`advisory_files=10`), but final 3-module end-state is not yet implemented.
+1. Advisory collapse wave 1 is exceeded (`advisory_files=9`), but final 3-module end-state is not yet implemented.
 2. Storage consolidation to single SQLite-first memory/advisory store is partially implemented (cognitive memory is SQLite-canonical; advisory packet lookup is now SQLite-canonical with no runtime JSON lookup fallback mode).
 3. Memory compaction engine is partially implemented (ACT-R style planner + preview/apply runner + bounded periodic ACT-R runtime compaction for cognitive insights are in place); broader integration across advisory stores is still pending.
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).

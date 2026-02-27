@@ -47,7 +47,7 @@ Latest measured signals:
 ### Verified not done
 
 1. Full advisory collapse not complete:
-   - wave 1 completed (`10` `lib/*advisory*.py` files), final 3-module end-state pending
+   - wave 1 completed and reduced further (`9` `lib/*advisory*.py` files), final 3-module end-state pending
 2. Config surface still large:
    - reduced to `40` sections, `279` keys (target met for wave 1; deeper runtime-specific pruning still pending)
 3. Single-store consolidation still partial:

@@ -629,7 +629,7 @@ SECTION_CONSUMERS: Dict[str, List[str]] = {
         "lib/advisory_engine_alpha.py",
         "lib/advisory_emitter.py",
     ],
-    "advisory_gate": ["lib/advisory_gate.py", "lib/advisory_state.py"],
+    "advisory_gate": ["lib/advisory_gate.py", "lib/runtime_session_state.py"],
     "advisory_packet_store": ["lib/advisory_packet_store.py"],
     "advisory_prefetch": ["lib/advisory_prefetch_worker.py"],
     "advisor": ["lib/advisor.py"],

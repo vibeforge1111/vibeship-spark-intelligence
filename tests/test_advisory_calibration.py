@@ -43,7 +43,7 @@ class _MockAdvice:
 
 def _make_state(**overrides):
     """Build a minimal SessionState for testing."""
-    from lib.advisory_state import SessionState
+    from lib.runtime_session_state import SessionState
     base = {"session_id": "test_calibration"}
     base.update(overrides)
     return SessionState.from_dict(base)

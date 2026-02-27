@@ -298,7 +298,7 @@ def on_pre_tool(
         from .advisor import advise_on_tool, record_recent_delivery
         from .advisory_emitter import emit_advisory
         from .advisory_gate import evaluate, get_tool_cooldown_s
-        from .advisory_state import (
+        from .runtime_session_state import (
             load_state,
             mark_advice_shown,
             record_tool_call,
@@ -521,7 +521,7 @@ def on_post_tool(
     start = time.time()
     resolved_trace_id = str(trace_id or "").strip()
     try:
-        from .advisory_state import load_state, record_tool_call, resolve_recent_trace_id, save_state
+        from .runtime_session_state import load_state, record_tool_call, resolve_recent_trace_id, save_state
 
         state = load_state(session_id)
         if not resolved_trace_id:
@@ -634,7 +634,7 @@ def on_user_prompt(
     resolved_trace_id = str(trace_id or "").strip() or f"spark-alpha-{session_id[:16]}-user-{int(time.time() * 1000)}"
     try:
         from .advisory_packet_store import build_packet, enqueue_prefetch_job, save_packet
-        from .advisory_state import load_state, record_user_intent, save_state
+        from .runtime_session_state import load_state, record_user_intent, save_state
 
         state = load_state(session_id)
         record_user_intent(state, prompt_text)

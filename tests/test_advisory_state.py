@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from lib.advisory_state import (
+from lib.runtime_session_state import (
     SessionState,
     apply_state_gate_config,
     get_shown_advice_ttl_s,

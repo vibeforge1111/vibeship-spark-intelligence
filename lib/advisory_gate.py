@@ -220,7 +220,7 @@ def _shown_ttl_for_advice(category: str, source: str = "") -> Tuple[int, float]:
     combined = cat_scale * src_scale
     base_ttl = int(ADVICE_REPEAT_COOLDOWN_S)
     try:
-        from .advisory_state import get_shown_advice_ttl_s
+        from .runtime_session_state import get_shown_advice_ttl_s
 
         base_ttl = int(get_shown_advice_ttl_s())
     except Exception:
@@ -348,7 +348,7 @@ def apply_gate_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     AUTHORITY_THRESHOLDS[AuthorityLevel.NOTE] = note_threshold
     AUTHORITY_THRESHOLDS[AuthorityLevel.WHISPER] = whisper_threshold
 
-    # Keep advisory_state TTL in sync with gate tuneables.
+    # Keep runtime_session_state TTL in sync with gate tuneables.
     # Explicit shown_advice_ttl_s wins; otherwise repeat cooldown acts as alias.
     state_cfg: Dict[str, Any] = {}
     if "shown_advice_ttl_s" in cfg:
@@ -357,7 +357,7 @@ def apply_gate_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
         state_cfg["advice_repeat_cooldown_s"] = cfg.get("advice_repeat_cooldown_s")
     if state_cfg:
         try:
-            from .advisory_state import apply_state_gate_config
+            from .runtime_session_state import apply_state_gate_config
 
             state_result = apply_state_gate_config(state_cfg)
             applied.extend(
@@ -374,7 +374,7 @@ def apply_gate_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
 def get_gate_config() -> Dict[str, Any]:
     shown_ttl = int(ADVICE_REPEAT_COOLDOWN_S)
     try:
-        from .advisory_state import get_shown_advice_ttl_s
+        from .runtime_session_state import get_shown_advice_ttl_s
 
         shown_ttl = int(get_shown_advice_ttl_s())
     except Exception:
@@ -494,7 +494,7 @@ def evaluate(
 
     Args:
         advice_items: List of Advice objects from advisor.py
-        state: SessionState from advisory_state
+        state: SessionState from runtime_session_state
         tool_name: Current tool being invoked
         tool_input: Tool input dict
         recent_global_emissions: Dict of {advice_id: age_s} for recently emitted
@@ -590,7 +590,7 @@ def _evaluate_single(
     recent_global_emissions: Optional[Dict[str, float]] = None,
 ) -> GateDecision:
     """Evaluate a single advice item through all gate filters."""
-    from .advisory_state import is_tool_suppressed
+    from .runtime_session_state import is_tool_suppressed
 
     advice_id = getattr(advice, "advice_id", "") or ""
     text = getattr(advice, "text", "") or ""
@@ -786,7 +786,7 @@ def _check_obvious_suppression(
     state,
 ) -> Tuple[bool, str]:
     """Check if advice is obvious from context and should be suppressed."""
-    from .advisory_state import had_recent_read
+    from .runtime_session_state import had_recent_read
 
     text_lower = text.lower()
 

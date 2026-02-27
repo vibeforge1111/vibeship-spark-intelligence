@@ -437,7 +437,7 @@ def generate_advisory_reverse_engineering(data: Dict[int, Dict[str, Any]]) -> st
     lines.append("|---|---:|---:|---|---|")
     bucket_total = sum(int(v or 0) for v in (runtime.get("suppression_buckets") or {}).values())
     for key, control, code in [
-        ("shown_ttl", "advisory_gate.shown_advice_ttl_s + category_cooldown_multipliers", "lib/advisory_gate.py + lib/advisory_state.py"),
+        ("shown_ttl", "advisory_gate.shown_advice_ttl_s + category_cooldown_multipliers", "lib/advisory_gate.py + lib/runtime_session_state.py"),
         ("global_dedupe", "advisory_engine.global_dedupe_cooldown_s", "lib/advisory_engine_alpha.py"),
         ("tool_cooldown", "advisory_gate.tool_cooldown_s", "lib/advisory_gate.py"),
         ("budget_exhausted", "advisory_gate.max_emit_per_call", "lib/advisory_gate.py"),

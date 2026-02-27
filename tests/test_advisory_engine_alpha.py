@@ -5,12 +5,12 @@ import json
 import lib.advisory_engine_alpha as alpha_engine
 import lib.advisory_implicit_feedback as implicit_feedback
 import lib.advisory_packet_store as packet_store
-import lib.advisory_state as advisory_state
+import lib.runtime_session_state as runtime_session_state
 
 
 def _patch_state_and_store(monkeypatch, tmp_path):
     state_dir = tmp_path / "state"
-    monkeypatch.setattr(advisory_state, "STATE_DIR", state_dir)
+    monkeypatch.setattr(runtime_session_state, "STATE_DIR", state_dir)
 
     packet_dir = tmp_path / "packets"
     monkeypatch.setattr(packet_store, "PACKET_DIR", packet_dir)
@@ -47,12 +47,12 @@ def test_on_post_tool_records_outcome_and_invokes_implicit_feedback(monkeypatch,
     _patch_state_and_store(monkeypatch, tmp_path)
     monkeypatch.setattr(alpha_engine, "_project_key", lambda: "proj")
 
-    state = advisory_state.load_state("s-alpha-2")
+    state = runtime_session_state.load_state("s-alpha-2")
     state.shown_advice_ids = {"aid-1": 1.0}
     state.last_advisory_packet_id = "pkt-test"
     state.last_advisory_tool = "Edit"
     state.last_advisory_at = 9999999999.0
-    advisory_state.save_state(state)
+    runtime_session_state.save_state(state)
 
     calls = {"implicit": 0, "packet": 0}
 
@@ -73,7 +73,7 @@ def test_on_post_tool_records_outcome_and_invokes_implicit_feedback(monkeypatch,
         trace_id="trace-alpha-post",
     )
 
-    refreshed = advisory_state.load_state("s-alpha-2")
+    refreshed = runtime_session_state.load_state("s-alpha-2")
     assert refreshed.recent_tools
     assert refreshed.recent_tools[-1]["tool_name"] == "Edit"
     assert refreshed.recent_tools[-1]["trace_id"] == "trace-alpha-post"

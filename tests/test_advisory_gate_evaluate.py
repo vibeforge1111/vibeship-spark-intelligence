@@ -126,7 +126,7 @@ def test_shown_ttl_suppresses_recently_shown():
     state = MockState(shown_advice_ids={"test_001": time.time() - 10})
     advice = MockAdvice(advice_id="test_001")
 
-    with patch("lib.advisory_state.is_tool_suppressed", return_value=False):
+    with patch("lib.runtime_session_state.is_tool_suppressed", return_value=False):
         decision = _evaluate_single(advice, state, "Edit", None, "implementation")
 
     assert not decision.emit
@@ -139,7 +139,7 @@ def test_shown_ttl_allows_expired():
     state = MockState(shown_advice_ids={"test_001": time.time() - 10_000})
     advice = MockAdvice(advice_id="test_001")
 
-    with patch("lib.advisory_state.is_tool_suppressed", return_value=False):
+    with patch("lib.runtime_session_state.is_tool_suppressed", return_value=False):
         decision = _evaluate_single(advice, state, "Edit", None, "implementation")
 
     assert "shown" not in decision.reason.lower() or decision.emit
@@ -152,7 +152,7 @@ def test_tool_cooldown_suppresses():
     state = MockState()
     advice = MockAdvice()
 
-    with patch("lib.advisory_state.is_tool_suppressed", return_value=True):
+    with patch("lib.runtime_session_state.is_tool_suppressed", return_value=True):
         decision = _evaluate_single(advice, state, "Edit", None, "implementation")
 
     assert not decision.emit
@@ -164,7 +164,7 @@ def test_tool_cooldown_allows_when_clear():
     state = MockState()
     advice = MockAdvice()
 
-    with patch("lib.advisory_state.is_tool_suppressed", return_value=False):
+    with patch("lib.runtime_session_state.is_tool_suppressed", return_value=False):
         decision = _evaluate_single(advice, state, "Edit", None, "implementation")
 
     # Should be emittable (no cooldown)
@@ -179,7 +179,7 @@ def test_dynamic_budget_base():
     # Keep per-item score below warning threshold so warning boost does not apply.
     items = [MockAdvice(advice_id=f"adv_{i}", confidence=0.6, context_match=0.4) for i in range(5)]
 
-    with patch("lib.advisory_state.is_tool_suppressed", return_value=False):
+    with patch("lib.runtime_session_state.is_tool_suppressed", return_value=False):
         result = evaluate(items, state, "Edit")
 
     # Base budget is 2; effective cap can rise to 3 when internal warning boost applies.
@@ -195,7 +195,7 @@ def test_dynamic_budget_warning_boost():
         MockAdvice(advice_id="note_2", text="Consider connection pooling for better throughput", confidence=0.75, context_match=0.7),
     ]
 
-    with patch("lib.advisory_state.is_tool_suppressed", return_value=False):
+    with patch("lib.runtime_session_state.is_tool_suppressed", return_value=False):
         result = evaluate(items, state, "Edit")
 
     # With a WARNING present, budget increases — should emit more than 2
@@ -259,7 +259,7 @@ def test_debugging_phase_boosts_self_awareness():
         context_match=0.6,
     )
 
-    with patch("lib.advisory_state.is_tool_suppressed", return_value=False):
+    with patch("lib.runtime_session_state.is_tool_suppressed", return_value=False):
         decision = _evaluate_single(advice, state, "Bash", None, "debugging")
 
     # Self-awareness during debugging should get 1.5x boost
@@ -273,7 +273,7 @@ def test_read_before_edit_suppressed_on_bash():
     state = MockState()
     advice = MockAdvice(text="Always read a file before editing to verify current state")
 
-    with patch("lib.advisory_state.is_tool_suppressed", return_value=False):
+    with patch("lib.runtime_session_state.is_tool_suppressed", return_value=False):
         decision = _evaluate_single(advice, state, "Bash", None, "implementation")
 
     assert not decision.emit
@@ -285,7 +285,7 @@ def test_primitive_noise_suppressed():
     state = MockState()
     advice = MockAdvice(text="Read → Edit → Write", confidence=0.9, context_match=0.9)
 
-    with patch("lib.advisory_state.is_tool_suppressed", return_value=False):
+    with patch("lib.runtime_session_state.is_tool_suppressed", return_value=False):
         decision = _evaluate_single(advice, state, "Edit", None, "implementation")
 
     assert not decision.emit
