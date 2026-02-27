@@ -375,6 +375,13 @@ Branch: feat/spark-alpha
   - `lookup_relaxed_candidates(...)` returns `[]` on miss
 - Added explicit packet-store regression coverage for candidate miss semantics.
 
+61. `75dbe34` - `refactor(alpha-pr09): remove dead packet-store llm alias globals`
+- Removed unused packet-store module globals:
+  - `PACKET_LOOKUP_LLM_ENABLED`
+  - `PACKET_LOOKUP_LLM_PROVIDER`
+  - `PACKET_LOOKUP_LLM_FALLBACK_TO_SCORING`
+- Packet-store now relies solely on canonical LLM reranker module state for lookup LLM controls.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -434,6 +441,8 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisor.py tests/test_advisor_retrieval_routing.py -q` -> `116 passed`
 - `python -m py_compile lib/advisory_packet_store.py tests/test_advisory_packet_store.py` -> pass
 - `pytest tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py -q` -> `130 passed`
+- `pytest tests/test_advisory_packet_store.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `32 passed`
+- `python -m py_compile lib/advisory_packet_store.py` -> pass
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after dedupe_optimize llm-area surface removal)
 - `pytest tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_vibeforge_helpers.py tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `76 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after suppression_triage llm-area surface removal)
