@@ -2661,7 +2661,7 @@ def lookup_relaxed_candidates(
         candidates.append((score, updated_ts, str(packet_id or ""), row))
 
     if not candidates:
-        return None
+        return []
     candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
     out: List[Dict[str, Any]] = []
     for score, updated_ts, packet_id, row in candidates[:limit]:

@@ -361,6 +361,18 @@ def test_relaxed_lookup_rejects_plane_only_match(monkeypatch, tmp_path):
     assert chosen is None
 
 
+def test_relaxed_lookup_candidates_returns_empty_list_on_miss(monkeypatch, tmp_path):
+    _patch_store_paths(monkeypatch, tmp_path)
+
+    out = store.lookup_relaxed_candidates(
+        project_key="proj",
+        tool_name="Edit",
+        intent_family="auth_security",
+        task_plane="build_delivery",
+    )
+    assert out == []
+
+
 def test_record_packet_usage_refreshes_fresh_until(monkeypatch, tmp_path):
     _patch_store_paths(monkeypatch, tmp_path)
 
