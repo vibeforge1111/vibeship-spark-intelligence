@@ -117,49 +117,6 @@ def _write_json_mirror(path: Optional[Path], snapshot: Dict[str, Dict[str, Any]]
     return str(target)
 
 
-def _coerce_runtime_snapshot(payload: Any) -> Dict[str, Dict[str, Any]]:
-    if isinstance(payload, dict):
-        if isinstance(payload.get("insights"), dict):
-            return {
-                str(k): dict(v)
-                for k, v in payload.get("insights", {}).items()
-                if isinstance(v, dict)
-            }
-        if isinstance(payload.get("insights"), list):
-            out: Dict[str, Dict[str, Any]] = {}
-            for idx, row in enumerate(payload.get("insights", [])):
-                if not isinstance(row, dict):
-                    continue
-                key = str(
-                    row.get("key")
-                    or row.get("insight_key")
-                    or row.get("id")
-                    or f"insight_{idx:05d}"
-                ).strip()
-                if not key:
-                    continue
-                out[key] = dict(row)
-            return out
-        if payload and all(isinstance(v, dict) for v in payload.values()):
-            return {str(k): dict(v) for k, v in payload.items()}
-    if isinstance(payload, list):
-        out: Dict[str, Dict[str, Any]] = {}
-        for idx, row in enumerate(payload):
-            if not isinstance(row, dict):
-                continue
-            key = str(
-                row.get("key")
-                or row.get("insight_key")
-                or row.get("id")
-                or f"insight_{idx:05d}"
-            ).strip()
-            if not key:
-                continue
-            out[key] = dict(row)
-        return out
-    return {}
-
-
 def write_cognitive_insights_snapshot(
     snapshot: Dict[str, Dict[str, Any]],
     *,
