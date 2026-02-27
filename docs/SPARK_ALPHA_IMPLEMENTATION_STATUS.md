@@ -394,6 +394,13 @@ Branch: feat/spark-alpha
 - Added config-authority knob `advisory_packet_store.packet_sqlite_lookup_enabled` in schema + baseline config.
 - Added packet-store tests for SQLite exact/relaxed lookup behavior when JSON index surfaces are missing.
 
+63. `cd630ae` - `test(alpha-pr09): remove legacy dual-path advisory engine test suites`
+- Deleted legacy mock-heavy advisory test suites tied to retired dual-path behavior:
+  - `tests/test_advisory_dual_path_router.py`
+  - `tests/test_advisory_engine_dedupe.py`
+  - `tests/test_advisory_engine_on_pre_tool.py`
+- Coverage focus shifted to alpha/orchestrator/evidence/lineage + packet/advisor retrieval paths.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -458,6 +465,7 @@ Branch: feat/spark-alpha
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after sqlite packet-spine config integration)
 - `pytest tests/test_advisory_packet_store.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `155 passed`
 - `python -m py_compile lib/advisory_packet_spine.py lib/advisory_packet_store.py` -> pass
+- `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `171 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after dedupe_optimize llm-area surface removal)
 - `pytest tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_vibeforge_helpers.py tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `76 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after suppression_triage llm-area surface removal)
@@ -488,7 +496,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).
 5. Large config surface reduction (hard pruning to minimal knobs) is not implemented.
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
-7. Broad file/function deletion pass to reach Carmack-size target is not done.
+7. Broad file/function deletion pass is in progress (legacy advisory dual-path test suites removed); larger legacy advisory/runtime file deletions are still pending.
 8. Final migration playbook for old paths/deprecated modules is not done.
 9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + optional mirror compatibility); runtime JSON consumer surface is now `0` and retirement gate is passing (`6/3` streak).
 10. PR-05 superseded fallback rank-extension branch deletion is complete, keyword/parser fallback paths are removed, and per-profile/domain weight branching is collapsed to deterministic fusion defaults; broader retrieval simplification outside these branches is still pending.
