@@ -61,6 +61,58 @@ def _safe_sql_identifier(name: str) -> Optional[str]:
     return ident
 
 
+def _quality_score(payload: Any) -> float:
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            payload = {}
+    if isinstance(payload, dict):
+        return float(payload.get("unified_score", 0.0) or 0.0)
+    return 0.0
+
+
+def _quality_dict(payload: Any) -> Dict[str, Any]:
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, str):
+        raw = payload.strip()
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _hydrate_distillation_advisory_projection(distillation: Distillation) -> Distillation:
+    """Ensure distillation carries advisory projection fields.
+
+    This keeps ingestion paths coherent: every persisted distillation has the
+    same transformer contract (quality + refined advisory text), even when
+    callers provide only a raw statement.
+    """
+    try:
+        source_text = str(distillation.refined_statement or distillation.statement or "").strip()
+        if not source_text:
+            return distillation
+        transformed = transform_for_advisory(source_text, source="eidos")
+        projected = transformed.to_dict()
+        projected_score = _quality_score(projected)
+        existing_score = _quality_score(distillation.advisory_quality)
+        if projected_score >= existing_score:
+            distillation.advisory_quality = dict(projected)
+        # Preserve explicit caller-provided refined statement unless blank.
+        advisory_text = str(projected.get("advisory_text") or "").strip()
+        if advisory_text and not str(distillation.refined_statement or "").strip():
+            distillation.refined_statement = advisory_text
+    except Exception:
+        return distillation
+    return distillation
+
+
 class EidosStore:
     """
     SQLite-based persistence for EIDOS intelligence primitives.
@@ -503,29 +555,7 @@ class EidosStore:
 
     def save_distillation(self, distillation: Distillation) -> str:
         """Save a distillation to the database with duplicate-statement collapsing."""
-        def _quality_score(payload: Any) -> float:
-            if isinstance(payload, str):
-                try:
-                    payload = json.loads(payload)
-                except Exception:
-                    payload = {}
-            if isinstance(payload, dict):
-                return float(payload.get("unified_score", 0.0) or 0.0)
-            return 0.0
-
-        def _quality_dict(payload: Any) -> Dict[str, Any]:
-            if isinstance(payload, dict):
-                return payload
-            if isinstance(payload, str):
-                raw = payload.strip()
-                if not raw:
-                    return {}
-                try:
-                    parsed = json.loads(raw)
-                except Exception:
-                    return {}
-                return parsed if isinstance(parsed, dict) else {}
-            return {}
+        distillation = _hydrate_distillation_advisory_projection(distillation)
 
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
