@@ -502,6 +502,19 @@ Branch: feat/spark-alpha
 - Removed distillation transformer cross-test that imported fusion-only readiness helper.
 - Simplification impact: ~1k lines removed from dead advisory surface.
 
+78. `18ff784` - `refactor(alpha-pr10): inline deterministic prefetch planner into worker and remove split module`
+- Inlined deterministic prefetch planning (`plan_prefetch_jobs`) into `lib/advisory_prefetch_worker.py`.
+- Deleted `lib/advisory_prefetch_planner.py` (single-consumer split module).
+- Regression slice: `pytest tests/test_advisory_prefetch_worker.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `9 passed`.
+
+79. `3376cd6` - `refactor(alpha-pr10): fold packet feedback and llm reranker into packet_store and delete split modules`
+- Inlined packet feedback/outcome helpers into `lib/advisory_packet_store.py`.
+- Inlined packet lookup LLM reranker helpers/config into `lib/advisory_packet_store.py`.
+- Deleted split helper modules:
+  - `lib/advisory_packet_feedback.py`
+  - `lib/advisory_packet_llm_reranker.py`
+- Regression slice: `pytest tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_prefetch_worker.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `159 passed`.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -600,6 +613,9 @@ Branch: feat/spark-alpha
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 - `pytest tests/test_distillation_transformer.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisory_preferences.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py tests/test_rehydrate_alpha_baseline.py tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py -q` -> `277 passed`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true` (streak `4`)
+- `pytest tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_prefetch_worker.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `159 passed`
+- `python -m py_compile lib/advisory_packet_store.py lib/advisory_engine_alpha.py lib/advisory_orchestrator.py lib/advisory_prefetch_worker.py scripts/advisory_tag_outcome.py` -> pass
+- `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after packet-store consolidation and split-module deletions)
 
 Notable metrics now:
 - `context.p50`: 230
@@ -619,7 +635,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).
 5. Large config surface reduction (hard pruning to minimal knobs) is not implemented.
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
-7. Broad file/function deletion pass is in progress (legacy advisory dual-path test suites removed); larger legacy advisory/runtime file deletions are still pending.
+7. Broad file/function deletion pass is in progress (legacy advisory dual-path test suites + `advisory_memory_fusion.py` + `advisory_prefetch_planner.py` + `advisory_packet_feedback.py` + `advisory_packet_llm_reranker.py` removed); larger legacy advisory/runtime file deletions are still pending.
 8. Final migration playbook is now documented (`docs/SPARK_ALPHA_MIGRATION_PLAYBOOK.md`); execution and cutover evidence collection remains ongoing.
 9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + optional mirror compatibility); runtime JSON consumer surface is now `0` and retirement gate is passing (`6/3` streak).
 10. PR-05 superseded fallback rank-extension branch deletion is complete, keyword/parser fallback paths are removed, and per-profile/domain weight branching is collapsed to deterministic fusion defaults; broader retrieval simplification outside these branches is still pending.

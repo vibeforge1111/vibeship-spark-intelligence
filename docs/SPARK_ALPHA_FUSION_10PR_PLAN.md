@@ -95,6 +95,8 @@ Completed commits:
 75. `de7a70c` PR-10 follow-up: corrected remaining advisory reverse-engineering “where” pointers to alpha/orchestrator runtime hosts
 76. `02bf620` PR-10 follow-up: rewrote `lib/advisory_engine.py` into compact compatibility module (helpers + config + delegate entrypoints), reducing file size from ~2436 to ~536 lines
 77. `89b2cee` PR-10 follow-up: removed dead non-runtime advisory memory fusion module and its obsolete dedicated test suite (~1k LOC deletion)
+78. `18ff784` PR-10 follow-up: inlined deterministic prefetch planner into `advisory_prefetch_worker` and deleted split module `lib/advisory_prefetch_planner.py`
+79. `3376cd6` PR-10 follow-up: folded packet feedback + packet LLM reranker helpers into `advisory_packet_store` and deleted split modules `lib/advisory_packet_feedback.py` and `lib/advisory_packet_llm_reranker.py`
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -133,6 +135,7 @@ Current measured state:
 28. Tuneables consumer-map alignment regression slice: `pytest tests/test_pr1_config_authority.py tests/test_tuneables_alignment.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py -q` -> `34 passed`
 29. Advisory compat-module rewrite regression slice: broad advisory/runtime/config suite -> `204 passed`; replay smoke (`--episodes 8 --seed 42`) winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`; controlled-delta smoke passed
 30. Post-fusion-module deletion regression slice: distillation+advisory/runtime/config suite -> `277 passed`; replay smoke (`--episodes 8 --seed 42`) winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true` (streak `4`)
+31. Packet-store consolidation regression slice: `pytest tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_prefetch_worker.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `159 passed`; `python -m py_compile lib/advisory_packet_store.py lib/advisory_engine_alpha.py lib/advisory_orchestrator.py lib/advisory_prefetch_worker.py scripts/advisory_tag_outcome.py` -> pass; `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0`
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial (cognitive SQLite-canonical + advisory packet SQLite spine integrated; JSON compatibility/fallback still present)
@@ -240,12 +243,14 @@ Current measured state:
 11. Removed dead route-only diagnostics parameter threading from advisory engine diagnostics envelope/callers.
 12. Removed dead global dedupe helper functions superseded by preloaded dedupe snapshot + quality filter path.
 13. Removed LLM-assisted dedupe-scope optimizer from runtime and made global scope deterministic.
-14. Remaining: larger advisory-stack file deletion set after live canary pass.
-15. Pending broader sweep once PR-03/04/05/06 are proven:
+14. Removed split deterministic prefetch planner module by inlining planning logic into worker.
+15. Removed split packet feedback and packet lookup LLM reranker modules by inlining into packet store.
+16. Remaining: larger advisory-stack file deletion set after live canary pass.
+17. Pending broader sweep once PR-03/04/05/06 are proven:
    - Legacy advisory stack (targeting 17-file collapse from V2)
    - Redundant noise filters no longer used
    - Legacy storage write paths replaced by SQLite spine
-16. Output required: explicit deleted file list + LOC removed + rollback tag.
+18. Output required: explicit deleted file list + LOC removed + rollback tag.
 
 ## Methods Decision (RL Governor vs VibeForge Loop)
 Default path for alpha:
