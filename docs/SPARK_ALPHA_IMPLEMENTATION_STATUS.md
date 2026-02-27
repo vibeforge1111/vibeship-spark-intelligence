@@ -401,6 +401,14 @@ Branch: feat/spark-alpha
   - `tests/test_advisory_engine_on_pre_tool.py`
 - Coverage focus shifted to alpha/orchestrator/evidence/lineage + packet/advisor retrieval paths.
 
+64. `85bafb1` - `refactor(alpha-pr10): route advisory controlled-delta workload through alpha orchestrator`
+- Updated `scripts/advisory_controlled_delta.py` to call:
+  - `lib.advisory_orchestrator.on_user_prompt`
+  - `lib.advisory_orchestrator.on_pre_tool`
+  - `lib.advisory_orchestrator.on_post_tool`
+- Removed direct workload dependence on legacy `lib.advisory_engine` execution path.
+- Script summary now reports `advisory_route` status instead of legacy engine config dump.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -466,6 +474,8 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisory_packet_store.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `155 passed`
 - `python -m py_compile lib/advisory_packet_spine.py lib/advisory_packet_store.py` -> pass
 - `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `171 passed`
+- `python -m py_compile scripts/advisory_controlled_delta.py` -> pass
+- `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after dedupe_optimize llm-area surface removal)
 - `pytest tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_vibeforge_helpers.py tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `76 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after suppression_triage llm-area surface removal)
