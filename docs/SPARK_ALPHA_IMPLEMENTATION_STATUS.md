@@ -634,6 +634,7 @@ Branch: feat/spark-alpha
 - `pytest tests/test_intelligence_llm_preferences.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `157 passed`
 - `python -m py_compile lib/advisory_packet_store.py lib/intelligence_llm_preferences.py lib/observatory/advisory_reverse_engineering.py scripts/intelligence_llm_setup.py` -> pass
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after packet lookup LLM rerank knob retirement)
+- `pytest tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_context_sync_policy.py tests/test_memory_compaction.py tests/test_memory_spine_sqlite.py tests/test_advisory_preferences.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py tests/test_intelligence_llm_preferences.py -q` -> `221 passed`
 
 Notable metrics now:
 - `context.p50`: 230
