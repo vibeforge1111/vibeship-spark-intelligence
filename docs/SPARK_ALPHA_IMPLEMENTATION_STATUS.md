@@ -424,6 +424,13 @@ Branch: feat/spark-alpha
 - Added env kill-switch `SPARK_ADVISORY_ALPHA_COMPAT_ENGINE_LOG=0`.
 - Added alpha test coverage for compat mirroring behavior.
 
+67. `c4f7867` - `docs(alpha): add executable migration playbook`
+- Added `docs/SPARK_ALPHA_MIGRATION_PLAYBOOK.md` with:
+  - preconditions/gates
+  - phased runtime/storage/deletion rollout steps
+  - explicit rollback per phase
+  - post-merge watch protocol
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -527,7 +534,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 5. Large config surface reduction (hard pruning to minimal knobs) is not implemented.
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
 7. Broad file/function deletion pass is in progress (legacy advisory dual-path test suites removed); larger legacy advisory/runtime file deletions are still pending.
-8. Final migration playbook for old paths/deprecated modules is not done.
+8. Final migration playbook is now documented (`docs/SPARK_ALPHA_MIGRATION_PLAYBOOK.md`); execution and cutover evidence collection remains ongoing.
 9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + optional mirror compatibility); runtime JSON consumer surface is now `0` and retirement gate is passing (`6/3` streak).
 10. PR-05 superseded fallback rank-extension branch deletion is complete, keyword/parser fallback paths are removed, and per-profile/domain weight branching is collapsed to deterministic fusion defaults; broader retrieval simplification outside these branches is still pending.
 11. PR-06 alpha ownership expansion for post-tool/user-prompt is complete; broad legacy advisory file removals after canary burn-in are still pending.
