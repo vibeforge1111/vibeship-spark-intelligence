@@ -97,6 +97,7 @@ Completed commits:
 77. `89b2cee` PR-10 follow-up: removed dead non-runtime advisory memory fusion module and its obsolete dedicated test suite (~1k LOC deletion)
 78. `18ff784` PR-10 follow-up: inlined deterministic prefetch planner into `advisory_prefetch_worker` and deleted split module `lib/advisory_prefetch_planner.py`
 79. `3376cd6` PR-10 follow-up: folded packet feedback + packet LLM reranker helpers into `advisory_packet_store` and deleted split modules `lib/advisory_packet_feedback.py` and `lib/advisory_packet_llm_reranker.py`
+80. `e2eaf3f` PR-09 follow-up: retired packet lookup LLM rerank tuneables/preferences surface and removed 8 advisory packet-store config knobs while keeping deterministic retrieval path
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -136,6 +137,7 @@ Current measured state:
 29. Advisory compat-module rewrite regression slice: broad advisory/runtime/config suite -> `204 passed`; replay smoke (`--episodes 8 --seed 42`) winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`; controlled-delta smoke passed
 30. Post-fusion-module deletion regression slice: distillation+advisory/runtime/config suite -> `277 passed`; replay smoke (`--episodes 8 --seed 42`) winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true` (streak `4`)
 31. Packet-store consolidation regression slice: `pytest tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_prefetch_worker.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `159 passed`; `python -m py_compile lib/advisory_packet_store.py lib/advisory_engine_alpha.py lib/advisory_orchestrator.py lib/advisory_prefetch_worker.py scripts/advisory_tag_outcome.py` -> pass; `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0`
+32. Packet-rerank knob retirement regression slice: `pytest tests/test_intelligence_llm_preferences.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `157 passed`; `python -m py_compile lib/advisory_packet_store.py lib/intelligence_llm_preferences.py lib/observatory/advisory_reverse_engineering.py scripts/intelligence_llm_setup.py` -> pass; `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0`
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial (cognitive SQLite-canonical + advisory packet SQLite spine integrated; JSON compatibility/fallback still present)

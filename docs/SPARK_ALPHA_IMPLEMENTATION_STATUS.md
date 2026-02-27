@@ -515,6 +515,21 @@ Branch: feat/spark-alpha
   - `lib/advisory_packet_llm_reranker.py`
 - Regression slice: `pytest tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_prefetch_worker.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `159 passed`.
 
+80. `e2eaf3f` - `refactor(alpha-pr09): retire packet lookup llm rerank knobs and simplify config/preference surface`
+- Retired packet lookup LLM rerank control surface from packet store config/status paths; relaxed lookup remains deterministic.
+- Removed packet lookup LLM tuneables from schema and baseline config:
+  - `packet_lookup_llm_enabled`
+  - `packet_lookup_llm_provider`
+  - `packet_lookup_llm_timeout_s`
+  - `packet_lookup_llm_top_k`
+  - `packet_lookup_llm_min_candidates`
+  - `packet_lookup_llm_context_chars`
+  - `packet_lookup_llm_provider_url`
+  - `packet_lookup_llm_model`
+- Simplified runtime LLM setup/preferences flow by removing packet-lookup LLM preference plumbing.
+- Updated observatory advisory reverse-engineering render output to show `packet_sqlite_lookup_enabled` instead of removed rerank knob.
+- Regression slice: `pytest tests/test_intelligence_llm_preferences.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `157 passed`.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -616,6 +631,9 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_prefetch_worker.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `159 passed`
 - `python -m py_compile lib/advisory_packet_store.py lib/advisory_engine_alpha.py lib/advisory_orchestrator.py lib/advisory_prefetch_worker.py scripts/advisory_tag_outcome.py` -> pass
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after packet-store consolidation and split-module deletions)
+- `pytest tests/test_intelligence_llm_preferences.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `157 passed`
+- `python -m py_compile lib/advisory_packet_store.py lib/intelligence_llm_preferences.py lib/observatory/advisory_reverse_engineering.py scripts/intelligence_llm_setup.py` -> pass
+- `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after packet lookup LLM rerank knob retirement)
 
 Notable metrics now:
 - `context.p50`: 230
@@ -640,7 +658,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + optional mirror compatibility); runtime JSON consumer surface is now `0` and retirement gate is passing (`6/3` streak).
 10. PR-05 superseded fallback rank-extension branch deletion is complete, keyword/parser fallback paths are removed, and per-profile/domain weight branching is collapsed to deterministic fusion defaults; broader retrieval simplification outside these branches is still pending.
 11. PR-06 alpha ownership expansion for post-tool/user-prompt is complete; broad legacy advisory file removals after canary burn-in are still pending.
-12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup, dead fallback removal, and removal of unused `dedupe_optimize` + `suppression_triage` llm-area config surfaces.
+12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup, dead fallback removal, removal of unused `dedupe_optimize` + `suppression_triage` llm-area config surfaces, and retirement of 8 packet-lookup LLM rerank knobs.
 
 ## In progress right now
 
