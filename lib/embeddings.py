@@ -1,9 +1,10 @@
 """Embeddings helper for Spark Intelligence.
 
-Supports three backends (chosen via SPARK_EMBED_BACKEND env var):
-  - "tfidf"     : Lightweight TF-IDF hashing (default). ~0MB RAM, no model download.
-  - "fastembed"  : Neural embeddings via fastembed/ONNX. High quality but 8GB+ RAM.
-  - "none"       : Disabled entirely. All functions return None.
+Supports backends selected by SPARK_EMBED_BACKEND:
+  - "auto"      : Try fastembed first, then fall back to TF-IDF (default).
+  - "tfidf"     : Lightweight TF-IDF hashing. ~0MB RAM, no model download.
+  - "fastembed" : Neural embeddings via fastembed/ONNX.
+  - "none"      : Disabled entirely. All functions return None.
 
 Set SPARK_EMBEDDINGS=0 to force "none" (backwards compatible).
 """
@@ -29,7 +30,10 @@ def _get_backend() -> str:
         _BACKEND = "none"
         return _BACKEND
 
-    _BACKEND = os.environ.get("SPARK_EMBED_BACKEND", "tfidf").lower()
+    requested = os.environ.get("SPARK_EMBED_BACKEND", "auto").strip().lower()
+    if requested not in {"auto", "tfidf", "fastembed", "none"}:
+        requested = "auto"
+    _BACKEND = requested
     return _BACKEND
 
 
@@ -136,6 +140,16 @@ def embed_texts(texts: List[str]) -> Optional[List[List[float]]]:
 
     if backend == "none":
         return None
+
+    if backend == "auto":
+        embedder = _get_fastembed()
+        if embedder is not None:
+            try:
+                vectors = list(embedder.embed(texts))
+                return [list(v) for v in vectors]
+            except Exception:
+                pass
+        backend = "tfidf"
 
     if backend == "fastembed":
         embedder = _get_fastembed()

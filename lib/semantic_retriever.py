@@ -414,8 +414,8 @@ class SemanticRetriever:
         # Runtime guardrail: TF-IDF similarities are lower-range than neural embeddings.
         # Recalibrate only for default-loaded config to avoid overriding explicit test/runtime inputs.
         if config is None:
-            backend = str(os.getenv("SPARK_EMBED_BACKEND", "tfidf")).strip().lower()
-            if backend in {"tfidf", "hash", "hashed"}:
+            backend = str(os.getenv("SPARK_EMBED_BACKEND", "auto")).strip().lower()
+            if backend in {"auto", "tfidf", "hash", "hashed"}:
                 loaded = dict(loaded)
                 loaded["min_similarity"] = min(float(loaded.get("min_similarity", 0.55)), 0.15)
                 loaded["min_fusion_score"] = min(float(loaded.get("min_fusion_score", 0.50)), 0.10)

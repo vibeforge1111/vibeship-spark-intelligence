@@ -360,10 +360,10 @@ def run_bridge_cycle(
     MetaRalph to avoid writing large JSON files on every individual
     insight/roast (the #1 cause of CPU/memory leakage in the loop).
     """
-    # Use lightweight TF-IDF embeddings instead of fastembed/ONNX (which causes 8GB+ RAM spike).
-    # TF-IDF hashing: ~0MB overhead, 0.4ms/embed, no model download needed.
+    # Default to auto backend: use fastembed when available, else TF-IDF fallback.
+    # This avoids hard-locking to TF-IDF while keeping low-overhead behavior on lean installs.
     import os
-    os.environ.setdefault("SPARK_EMBED_BACKEND", "tfidf")
+    os.environ.setdefault("SPARK_EMBED_BACKEND", "auto")
 
     # --- Reconcile stale defaults on first cycle (once per process) ---
     global _reconcile_done
