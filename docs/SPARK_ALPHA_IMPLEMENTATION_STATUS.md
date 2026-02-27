@@ -362,6 +362,13 @@ Branch: feat/spark-alpha
 - Kept legacy-engine compatibility by alias-importing `_record_implicit_feedback` from the shared module.
 - Updated LLM-area observatory host mapping for `implicit_feedback_interpret` to the new module.
 
+59. `e12e3a5` - `feat(alpha-pr05): add readiness-aware relaxed packet lookup scoring`
+- Added readiness-aware scoring/flooring in `lib/advisory_packet_store.py` relaxed lookup:
+  - packet candidates now include readiness bonus in match score
+  - low-readiness packet candidates are filtered before ranking
+  - candidate payload now exposes `readiness_score` for diagnostics
+- Added packet-store tests for readiness-floor behavior in `tests/test_advisory_packet_store.py`.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -417,6 +424,9 @@ Branch: feat/spark-alpha
 - `pytest tests/test_memory_compaction.py tests/test_memory_spine_sqlite.py tests/test_cognitive_learner.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_tuneables_alignment.py -q` -> `93 passed`
 - `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_orchestrator.py tests/test_advisory_dual_path_router.py tests/test_context_sync_policy.py -q` -> `41 passed`
 - `python -m py_compile lib/advisory_implicit_feedback.py lib/advisory_engine.py lib/advisory_engine_alpha.py lib/observatory/llm_areas_status.py` -> pass
+- `pytest tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_tuneables_alignment.py -q` -> `19 passed`
+- `pytest tests/test_advisor.py tests/test_advisor_retrieval_routing.py -q` -> `116 passed`
+- `python -m py_compile lib/advisory_packet_store.py tests/test_advisory_packet_store.py` -> pass
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after dedupe_optimize llm-area surface removal)
 - `pytest tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_vibeforge_helpers.py tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `76 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after suppression_triage llm-area surface removal)
