@@ -496,6 +496,12 @@ Branch: feat/spark-alpha
   - retains compat status/log telemetry surfaces
 - File size reduced from ~2436 lines to ~536 lines while preserving regression coverage.
 
+77. `89b2cee` - `refactor(alpha-pr10): remove dead advisory_memory_fusion module and dependent tests`
+- Deleted non-runtime advisory memory fusion module `lib/advisory_memory_fusion.py` (no live runtime imports remained).
+- Removed obsolete dedicated fusion test suite `tests/test_advisory_memory_fusion.py`.
+- Removed distillation transformer cross-test that imported fusion-only readiness helper.
+- Simplification impact: ~1k lines removed from dead advisory surface.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -592,6 +598,8 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisory_preferences.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py tests/test_rehydrate_alpha_baseline.py tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py -q` -> `204 passed`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
+- `pytest tests/test_distillation_transformer.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisory_preferences.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py tests/test_rehydrate_alpha_baseline.py tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py -q` -> `277 passed`
+- `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true` (streak `4`)
 
 Notable metrics now:
 - `context.p50`: 230
