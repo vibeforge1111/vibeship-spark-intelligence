@@ -823,7 +823,6 @@ SECTION_CONSUMERS: Dict[str, List[str]] = {
     "synthesizer": ["lib/advisory_synthesizer.py"],
     "advisory_engine": [
         "lib/advisory_engine_alpha.py",
-        "lib/advisory_engine.py (compat shim)",
         "lib/advisory_emitter.py",
     ],
     "advisory_gate": ["lib/advisory_gate.py", "lib/advisory_state.py"],

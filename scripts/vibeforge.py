@@ -56,7 +56,7 @@ PRESETS: Dict[str, Dict[str, Any]] = {
             },
         ],
         "evolve_blocks": [
-            "lib/advisory_engine.py",
+            "lib/advisory_engine_alpha.py",
             "lib/noise_classifier.py",
             "lib/cognitive_learner.py",
             "config/tuneables.json",
@@ -78,7 +78,7 @@ PRESETS: Dict[str, Dict[str, Any]] = {
             }
         ],
         "evolve_blocks": [
-            "lib/advisory_engine.py",
+            "lib/advisory_engine_alpha.py",
             "lib/advisory_prefetch_worker.py",
             "config/tuneables.json",
         ],

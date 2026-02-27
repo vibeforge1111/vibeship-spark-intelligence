@@ -551,7 +551,7 @@ def generate_advisory_reverse_engineering(data: Dict[int, Dict[str, Any]]) -> st
     lines.append(f"- Ledger: `{runtime.get('ledger_file', '')}`")
     lines.append(f"- Implicit feedback: `{runtime.get('implicit_file', '')}`")
     lines.append("- Advisory state: `~/.spark/advisory_state/*.json`")
-    lines.append("- Engine traces: `~/.spark/advisory_engine_alpha.jsonl` (primary) and `~/.spark/advisory_engine.jsonl` (compat)")
+    lines.append("- Engine traces: `~/.spark/advisory_engine_alpha.jsonl` (primary)")
     lines.append("- Packet store: `~/.spark/advice_packets/*`")
     lines.append("- Good-but-suppressed sample: `reports/runtime/good_but_suppressed_24h.json`")
     lines.append("")

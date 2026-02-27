@@ -1132,7 +1132,7 @@ def _obsidian_payload(packet: Dict[str, Any]) -> str:
             f"- suppressed events: {suppressed_total}",
             f"- outcomes seen: {outcome_summary}",
             f"- decision event sources: {source_summary_for_events}",
-            "- check `~/.spark/advisory_engine_alpha.jsonl` (primary) / `~/.spark/advisory_engine.jsonl` (compat), `~/.spark/advisory_emit.jsonl`, `~/.spark/advisory_decision_ledger.jsonl`, `~/.spark/advisor/retrieval_router.jsonl` for score trail",
+            "- check `~/.spark/advisory_engine_alpha.jsonl` (primary), `~/.spark/advisory_emit.jsonl`, `~/.spark/advisory_decision_ledger.jsonl`, `~/.spark/advisor/retrieval_router.jsonl` for score trail",
             "",
             "## Advisory Traceability Timeline",
         ]
