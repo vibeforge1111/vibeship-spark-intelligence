@@ -1205,6 +1205,26 @@ Notable metrics now:
   - `benchmarks/out/alpha_start/alpha_start_readiness_20260227_190641.json`
   - `benchmarks/out/alpha_start/alpha_start_readiness_20260227_190641.md`
 
+### Latest distillation flow unification delta (2026-02-27, canonical EIDOS intake)
+
+- Added canonical runtime intake module: `lib/eidos_intake.py`
+  - single path for EIDOS distillation validation, transformer scoring, quarantine, dedupe, and persistence
+  - returns structured intake result (`ok`, `reason`, `duplicate`, quality payload) for deterministic caller behavior
+- Rewired `lib/bridge_cycle.py` to use canonical intake path:
+  - removed duplicated local validator/append logic from bridge cycle
+  - EIDOS update path now executes one intake pass (no dual validation/append divergence)
+  - stats/logging now use intake result reason directly (`duplicate_skipped`, skip reasons, etc.)
+- Added focused tests: `tests/test_eidos_intake.py`
+  - structured keep-path append
+  - duplicate skip behavior
+  - quarantine behavior for validator failures and transformer suppression
+- Validation:
+  - `pytest tests/test_eidos_intake.py tests/test_advisory_engine_alpha.py tests/test_advisory_self_review.py -q` -> `13 passed`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, streak `9`
+  - `python scripts/alpha_gap_audit.py` -> `advisory_files=4`, `tuneable_keys=282`, `distillation_files=3`
+  - `python scripts/alpha_start_readiness.py --strict --emit-report` -> `ready=true` (`replay pass rate=1.0`, `pytest_alpha_core=250 passed`)
+
 ## Not done yet
 
 These are still pending relative to the broader Simplification/Fast-Track goals:
