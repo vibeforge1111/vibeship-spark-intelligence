@@ -18,8 +18,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from lib.action_matcher import FEEDBACK_FILE, OUTCOMES_FILE, match_actions
 from lib.advice_feedback import REQUESTS_FILE
-from lib.advisory_parser import parse_feedback_requests
 from lib.production_gates import evaluate_gates, load_live_metrics
+from lib.runtime_feedback_parser import parse_feedback_requests
 
 
 ROOT = Path(__file__).resolve().parents[1]

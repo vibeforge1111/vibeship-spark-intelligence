@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from lib.action_matcher import match_actions
-from lib.advisory_parser import load_advisories
+from lib.runtime_feedback_parser import load_advisories
 from lib.effect_evaluator import evaluate_effect
 from lib.score_reporter import build_report, render_terminal_summary, write_report
 

@@ -1,4 +1,4 @@
-"""Parse advisories into atomic recommendations for auto-scoring."""
+"""Parse advisory feedback-request logs into atomic recommendation rows."""
 
 from __future__ import annotations
 
@@ -40,7 +40,6 @@ def split_atomic_recommendations(text: str) -> List[str]:
             item = normalize_recommendation(m.group(1))
             if item:
                 out.append(item)
-    # Fallback: include non-empty prose line when no bullets exist.
     if not out:
         compact = normalize_recommendation(str(text or ""))
         if compact:
@@ -51,11 +50,12 @@ def split_atomic_recommendations(text: str) -> List[str]:
 def _read_jsonl(path: Path, limit: Optional[int] = None) -> List[tuple[int, Dict[str, Any]]]:
     if not path.exists():
         return []
-    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    all_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    lines = all_lines
     if limit and limit > 0:
-        lines = lines[-int(limit) :]
+        lines = all_lines[-int(limit) :]
     rows: List[tuple[int, Dict[str, Any]]] = []
-    start_line = max(1, len(path.read_text(encoding="utf-8", errors="replace").splitlines()) - len(lines) + 1)
+    start_line = max(1, len(all_lines) - len(lines) + 1)
     for idx, line in enumerate(lines):
         try:
             row = json.loads(line)
@@ -65,10 +65,7 @@ def _read_jsonl(path: Path, limit: Optional[int] = None) -> List[tuple[int, Dict
     return rows
 
 
-def parse_feedback_requests(
-    path: Path = REQUESTS_FILE,
-    limit: Optional[int] = 2000,
-) -> List[Dict[str, Any]]:
+def parse_feedback_requests(path: Path = REQUESTS_FILE, limit: Optional[int] = 2000) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     for line_no, row in _read_jsonl(path, limit=limit):
         created_at = float(row.get("created_at") or 0.0)
@@ -105,11 +102,8 @@ def parse_feedback_requests(
     return items
 
 
-def load_advisories(
-    *,
-    request_file: Path = REQUESTS_FILE,
-    limit_requests: int = 2000,
-) -> List[Dict[str, Any]]:
+def load_advisories(*, request_file: Path = REQUESTS_FILE, limit_requests: int = 2000) -> List[Dict[str, Any]]:
     advisories = parse_feedback_requests(request_file, limit=limit_requests)
     advisories.sort(key=lambda x: float(x.get("created_at") or 0.0))
     return advisories
+

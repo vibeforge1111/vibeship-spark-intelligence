@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from lib.action_matcher import match_actions
-from lib.advisory_parser import split_atomic_recommendations
+from lib.runtime_feedback_parser import split_atomic_recommendations
 from lib.score_reporter import compute_kpis
 
 
