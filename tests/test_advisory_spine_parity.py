@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lib.advisory_spine_parity import compare_snapshots, evaluate_parity_gate
+from lib.packet_spine_parity import compare_snapshots, evaluate_parity_gate
 
 
 def test_compare_snapshots_tracks_match_and_mismatch():

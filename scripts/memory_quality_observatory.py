@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from lib.memory_capture import importance_score, normalize_memory_text
+from lib.emit_metrics import SUPPRESSION_EVENTS, advisory_engine_emit_metrics
 from lib.metric_contract import (
     METRIC_CONTRACT_VERSION,
     RETRIEVAL_GUARDRAIL_THRESHOLDS,
@@ -143,16 +144,28 @@ def _semantic_stats(window_s: float) -> Dict[str, Any]:
     cutoff = _now_ts() - window_s
     rows = [r for r in _read_jsonl(SEMANTIC_LOG, limit=8000) if float(r.get("ts") or 0.0) >= cutoff]
     sims: List[float] = []
+    top_query_sims: List[float] = []
     keys = Counter()
     for row in rows:
+        row_semantic_sims: List[float] = []
         for res in (row.get("final_results") or []):
             if not isinstance(res, dict):
                 continue
+            source = str(res.get("source") or "")
+            if source == "trigger":
+                continue
             try:
-                sims.append(float(res.get("sim") or 0.0))
+                sim = float(res.get("sim") or 0.0)
             except Exception:
-                pass
+                continue
+            sims.append(sim)
+            row_semantic_sims.append(sim)
             keys[str(res.get("key") or "")] += 1
+        if row_semantic_sims:
+            top_query_sims.append(max(row_semantic_sims))
+        else:
+            # Trigger-only rows still count as weak semantic retrieval quality.
+            top_query_sims.append(0.0)
     total_hits = int(sum(keys.values()))
     dominant_key_ratio = 0.0
     if total_hits > 0:
@@ -162,8 +175,13 @@ def _semantic_stats(window_s: float) -> Dict[str, Any]:
         return {"queries": 0}
     return {
         "queries": len(rows),
-        "sim_avg": round(sum(sims) / len(sims), 3) if sims else 0.0,
-        "sim_lt_0_1_ratio": round((sum(1 for s in sims if s < 0.1) / len(sims)), 3) if sims else 0.0,
+        "sim_avg": round(sum(top_query_sims) / len(top_query_sims), 3) if top_query_sims else 0.0,
+        "sim_lt_0_1_ratio": round(
+            (sum(1 for s in top_query_sims if s < 0.1) / len(top_query_sims)),
+            3,
+        )
+        if top_query_sims
+        else 0.0,
         "dominant_key_ratio": dominant_key_ratio,
         "top_keys": keys.most_common(6),
     }
@@ -174,17 +192,27 @@ def _advisory_suppression_stats(window_s: float) -> Dict[str, Any]:
     rows = [r for r in _read_jsonl(ADVISORY_ENGINE_LOG, limit=3000) if float(r.get("ts") or 0.0) >= cutoff]
     if not rows:
         return {"events": 0}
-    no_emit = [r for r in rows if r.get("event") == "no_emit"]
-    emitted = [r for r in rows if r.get("event") == "emitted"]
-    reasons = Counter(str(r.get("gate_reason") or "") for r in no_emit)
+    metrics = advisory_engine_emit_metrics(rows)
+    suppressed_rows = [r for r in rows if str(r.get("event") or "") in SUPPRESSION_EVENTS]
+    reasons = Counter(str(r.get("gate_reason") or r.get("reason") or "") for r in suppressed_rows)
     return {
         "events": len(rows),
-        "emit_rate": round(len(emitted) / len(rows), 3),
-        "no_emit": len(no_emit),
+        "emit_rate": float(metrics.get("emit_rate", 0.0) or 0.0),
+        "no_emit": int(metrics.get("suppressed", 0) or 0),
         "top_no_emit_reasons": reasons.most_common(8),
         "global_dedupe_ratio": round(
-            (sum(1 for r in no_emit if "global_dedupe" in str(r.get("gate_reason") or "")) / len(no_emit)), 3
-        ) if no_emit else 0.0,
+            (
+                sum(
+                    1
+                    for r in suppressed_rows
+                    if "global_dedupe" in str(r.get("gate_reason") or r.get("reason") or "")
+                )
+                / len(suppressed_rows)
+            ),
+            3,
+        )
+        if suppressed_rows
+        else 0.0,
     }
 
 

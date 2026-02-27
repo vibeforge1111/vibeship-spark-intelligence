@@ -405,7 +405,7 @@ def main() -> int:
     ap.add_argument(
         "--max-advisory-files",
         type=int,
-        default=5,
+        default=4,
         help="Strict alpha-gap max advisory module files.",
     )
     ap.add_argument(

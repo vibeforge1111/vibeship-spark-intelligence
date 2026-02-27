@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+from lib.emit_metrics import advisory_decision_emit_metrics, advisory_engine_emit_metrics
 from lib.metric_contract import DRIFT_METRICS, METRIC_CONTRACT_VERSION
 
 SPARK_DIR = Path.home() / ".spark"
@@ -113,34 +114,45 @@ def _collect_observatory_snapshot_metrics() -> Dict[str, float]:
 def _collect_observatory_state_metrics() -> Dict[str, float]:
     obj = _read_json(OBSERVATORY_STATE)
     metrics: Dict[str, float] = {}
+    # Observatory-state decision emit-rate uses a distinct aggregation path and
+    # often a different freshness window, so we do not compare it in drift math.
     emit_pct = _safe_float(obj.get("decision_emit_rate"))
     if emit_pct is not None:
-        metrics["advisory_emit_rate"] = emit_pct / 100.0
+        metrics["advisory_emit_rate_state"] = emit_pct / 100.0
     return metrics
 
 
 def _collect_runtime_advisory_engine_metrics(window_s: float) -> Dict[str, float]:
-    rows = _filter_window(_read_jsonl(ADVISORY_ENGINE_LOG, limit=8000), window_s=window_s)
+    # Mirror observatory snapshot sampling bounds so drift compares equivalent windows.
+    rows = _filter_window(_read_jsonl(ADVISORY_ENGINE_LOG, limit=3000), window_s=window_s)
     if not rows:
         return {}
-    emitted = sum(1 for row in rows if str(row.get("event") or "") == "emitted")
-    no_emit = sum(1 for row in rows if str(row.get("event") or "") == "no_emit")
-    denom = emitted + no_emit
-    if denom <= 0:
+    metrics = advisory_engine_emit_metrics(rows)
+    if int(metrics.get("denom", 0) or 0) <= 0:
         return {}
-    return {"advisory_emit_rate": round(emitted / denom, 6)}
+    return {"advisory_emit_rate": round(float(metrics.get("emit_rate", 0.0) or 0.0), 6)}
 
 
 def _collect_decision_ledger_metrics(window_s: float) -> Dict[str, float]:
     rows = _filter_window(_read_jsonl(ADVISORY_DECISION_LEDGER, limit=8000), window_s=window_s)
     if not rows:
         return {}
-    emitted = sum(1 for row in rows if str(row.get("outcome") or "") == "emitted")
-    blocked = sum(1 for row in rows if str(row.get("outcome") or "") == "blocked")
-    denom = emitted + blocked
-    if denom <= 0:
+    metrics = advisory_decision_emit_metrics(rows)
+    if int(metrics.get("denom", 0) or 0) <= 0:
         return {}
-    return {"advisory_emit_rate": round(emitted / denom, 6)}
+    # Keep this as a diagnostic side-channel only; drift comparison uses
+    # canonical runtime+snapshot surfaces.
+    return {"advisory_emit_rate_ledger": round(float(metrics.get("emit_rate", 0.0) or 0.0), 6)}
+
+
+def _comparable_values(metric_id: str, values: Dict[str, float]) -> Dict[str, float]:
+    if metric_id != "advisory_emit_rate":
+        return values
+    preferred = ("observatory_snapshot", "runtime_advisory_engine")
+    narrowed = {k: float(values[k]) for k in preferred if k in values}
+    if len(narrowed) >= 2:
+        return narrowed
+    return values
 
 
 def collect_surface_metrics(window_hours: float = 24.0) -> Dict[str, Dict[str, float]]:
@@ -164,6 +176,7 @@ def compute_drift_report(window_hours: float = 24.0) -> Dict[str, Any]:
             for source_name, metric_values in sources.items()
             if metric_id in metric_values
         }
+        values = _comparable_values(metric_id, values)
         if len(values) < 2:
             comparisons.append(
                 {

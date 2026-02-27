@@ -12,7 +12,7 @@ from typing import Any, Dict
 
 from lib.jsonl_utils import append_jsonl_capped
 
-from lib.advisory_spine_parity import compare_snapshots, evaluate_parity_gate
+from lib.packet_spine_parity import compare_snapshots, evaluate_parity_gate
 
 
 LEDGER_PATH = Path.home() / ".spark" / "advisory_spine_parity_ledger.jsonl"

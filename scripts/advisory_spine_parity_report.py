@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict
 
-from lib.advisory_spine_parity import compare_snapshots, evaluate_parity_gate
+from lib.packet_spine_parity import compare_snapshots, evaluate_parity_gate
 
 
 def _default_index_path() -> Path:
