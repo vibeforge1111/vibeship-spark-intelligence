@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT_DIR = ROOT / "benchmarks" / "out" / "alpha_start"
 SEARCH_DIRS = ["lib", "scripts", "hooks", "tests"]
 SCHEMA_PATH = "lib/tuneables_schema.py"
+_DYNAMIC_KEY_SECTIONS = {"llm_areas", "production_gates"}
 
 
 def _iter_source_files() -> List[Path]:
@@ -90,6 +91,11 @@ def _audit() -> Dict[str, Any]:
         for key in keys:
             key_hits, key_files = _key_usage_count(text_map, key)
             external_hits, external_files = _key_usage_count(external_text_map, key)
+            if section_name in _DYNAMIC_KEY_SECTIONS:
+                # Some sections are consumed through dynamic key assembly
+                # (`llm_dispatch` and production gate dataclass fields), so
+                # literal per-key references are not a reliable usage signal.
+                external_hits = max(1, int(external_hits))
             total_keys += 1
             total_hits += key_hits
             total_external_hits += external_hits
