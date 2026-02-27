@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, alpha runtime decoupling + orchestrator-first observability alignment)
+Last updated: 2026-02-27 (local branch snapshot, alpha log-path centralization + observatory runtime reference alignment)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -454,6 +454,23 @@ Branch: feat/spark-alpha
 - Updated doctor advisory runtime check to prefer `SPARK_ADVISORY_ALPHA_ENABLED` and only use `SPARK_ADVISORY_ENGINE` as legacy alias fallback.
 - Updated doctor pass/warn messages to reflect alpha-primary runtime semantics.
 
+71. `e5d2123` - `refactor(alpha-pr09/pr10): centralize advisory log paths and switch readers to alpha-first`
+- Added shared advisory runtime log-path helper module `lib/advisory_log_paths.py`.
+- Migrated runtime readers to the shared alpha-first log default:
+  - `lib/carmack_kpi.py`
+  - `scripts/advisory_day_trial.py`
+  - `scripts/advisory_self_review.py`
+  - `scripts/cross_surface_drift_checker.py`
+  - `scripts/memory_quality_observatory.py`
+  - `scripts/openclaw_realtime_e2e_benchmark.py`
+  - `lib/advisory_packet_store.py`
+- Kept compatibility lane explicit in advisory diagnostics/reporting where needed.
+
+72. `23ed037` - `refactor(alpha-pr10): update observatory flow references to orchestrator/alpha runtime`
+- Updated observatory reverse-engineering and readability narratives to reflect alpha-primary runtime (`advisory_orchestrator` + `advisory_engine_alpha`) instead of legacy engine path wording.
+- Updated controlled-delta timestamp comment to reflect alpha/compat log reality.
+- Added alpha advisory log to baseline rehydrate target set for cutover-era recovery.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -540,6 +557,8 @@ Branch: feat/spark-alpha
 - `pytest tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_context_sync_policy.py tests/test_memory_compaction.py tests/test_memory_spine_sqlite.py tests/test_advisory_preferences.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py -q` -> `220 passed`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
+- `pytest tests/test_advisory_packet_store.py tests/test_advisory_day_trial.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py -q` -> `31 passed`
+- `pytest tests/test_rehydrate_alpha_baseline.py -q` -> `2 passed`
 
 Notable metrics now:
 - `context.p50`: 230
