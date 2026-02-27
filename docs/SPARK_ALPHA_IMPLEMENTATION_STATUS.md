@@ -606,6 +606,14 @@ Branch: feat/spark-alpha
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `9`
 
+89. `dc8a518` - `refactor(alpha-pr10): remove advisory_engine compat log rehydrate lane`
+- Removed obsolete `advisory_engine.jsonl` restore target from `scripts/rehydrate_alpha_baseline.py`.
+- Updated controlled-delta log timestamp comment to alpha-log-only wording.
+- Regression + gate evidence:
+  - `pytest tests/test_rehydrate_alpha_baseline.py tests/test_cross_surface_drift_checker.py tests/test_advisory_self_review.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py tests/test_memory_quality_observatory.py tests/test_run_alpha_replay_evidence_helpers.py tests/test_spark_alpha_replay_arena.py tests/test_advisory_packet_store.py tests/test_production_loop_gates.py -q` -> `52 passed`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `10`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
