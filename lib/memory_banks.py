@@ -18,6 +18,7 @@ Design constraints
 from __future__ import annotations
 
 import json
+import importlib
 import re
 import time
 import hashlib
@@ -64,6 +65,12 @@ class BankEntry:
 def _ensure_dirs():
     BANK_DIR.mkdir(parents=True, exist_ok=True)
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _cognitive_learner_symbols() -> Tuple[Any, Any]:
+    """Load cognitive learner symbols at runtime to reduce static coupling."""
+    mod = importlib.import_module("lib.cognitive_learner")
+    return getattr(mod, "get_cognitive_learner"), getattr(mod, "CognitiveCategory")
 
 
 def _load_memory_emotion_config() -> Dict[str, Any]:
@@ -519,26 +526,27 @@ def sync_insights_to_banks(
     Returns:
         Stats about syncing: processed, synced, skipped, duplicates
     """
-    from lib.cognitive_learner import get_cognitive_learner, CognitiveCategory
+    get_cognitive_learner, cognitive_category = _cognitive_learner_symbols()
 
     if categories is None:
         categories = ["user_understanding", "communication", "wisdom"]
 
     # Map string categories to enum values
     category_map = {
-        "user_understanding": CognitiveCategory.USER_UNDERSTANDING,
-        "communication": CognitiveCategory.COMMUNICATION,
-        "wisdom": CognitiveCategory.WISDOM,
-        "reasoning": CognitiveCategory.REASONING,
-        "context": CognitiveCategory.CONTEXT,
-        "meta_learning": CognitiveCategory.META_LEARNING,
-        "self_awareness": CognitiveCategory.SELF_AWARENESS,
+        "user_understanding": getattr(cognitive_category, "USER_UNDERSTANDING", None),
+        "communication": getattr(cognitive_category, "COMMUNICATION", None),
+        "wisdom": getattr(cognitive_category, "WISDOM", None),
+        "reasoning": getattr(cognitive_category, "REASONING", None),
+        "context": getattr(cognitive_category, "CONTEXT", None),
+        "meta_learning": getattr(cognitive_category, "META_LEARNING", None),
+        "self_awareness": getattr(cognitive_category, "SELF_AWARENESS", None),
     }
 
     target_categories = set()
     for cat in categories:
-        if cat in category_map:
-            target_categories.add(category_map[cat])
+        mapped = category_map.get(cat)
+        if mapped is not None:
+            target_categories.add(mapped)
 
     cog = get_cognitive_learner()
 

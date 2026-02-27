@@ -18,6 +18,7 @@ Learning Categories:
 """
 
 import json
+import importlib
 import logging
 import os
 import re
@@ -68,6 +69,12 @@ def _normalize_signal(signal: str) -> str:
     # Remove any remaining parenthetical numbers
     s = re.sub(r'\s*\(\d+\)', '', s)
     return s.strip()
+
+
+def _semantic_retriever_index_insight() -> Any:
+    """Load semantic index entrypoint at runtime to reduce static module coupling."""
+    mod = importlib.import_module("lib.semantic_retriever")
+    return getattr(mod, "index_insight")
 
 
 def _normalize_struggle_text(text: str) -> str:
@@ -1829,7 +1836,7 @@ class CognitiveLearner:
 
         # Index for semantic retrieval (best-effort)
         try:
-            from lib.semantic_retriever import index_insight
+            index_insight = _semantic_retriever_index_insight()
             index_insight(key, insight, normalized_context)
         except Exception as e:
             logging.getLogger(__name__).debug("Semantic indexing unavailable: %s", e)
