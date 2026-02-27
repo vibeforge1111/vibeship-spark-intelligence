@@ -1,4 +1,4 @@
-"""
+﻿"""
 Central schema and validator for Spark tuneables.
 
 Single source of truth for every tuneable section, key, type, default,
@@ -257,7 +257,7 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
                                     ["off", "standard", "replay"]),
         "guidance_style": TuneableSpec("str", "balanced", None, None, "Guidance verbosity",
                                        ["concise", "balanced", "coach"]),
-        # source_weights: removed (Batch 5) — never read by any code
+        # source_weights: removed (Batch 5) â€” never read by any code
     },
 
     # ---- retrieval: retrieval routing ----
@@ -307,7 +307,7 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
 
     # ---- eidos: episode/distillation budget ----
     "eidos": {
-        # max_steps: removed (Batch 5) — duplicate of values.max_steps
+        # max_steps: removed (Batch 5) â€” duplicate of values.max_steps
         "max_time_seconds": TuneableSpec("int", 1200, 60, 7200, "Max episode time (s)"),
         "max_retries_per_error": TuneableSpec("int", 3, 1, 20, "Retry limit per error type"),
         "max_file_touches": TuneableSpec("int", 5, 1, 50, "Max times to modify same file"),
@@ -319,7 +319,7 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "llm_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for distillation",
                                       ["minimax", "ollama", "gemini", "openai", "anthropic"]),
         "runtime_refiner_llm_enabled": TuneableSpec(
-            "bool", False, None, None, "Enable runtime LLM assist in distillation_refiner for low-quality statements",
+            "bool", False, None, None, "Enable runtime LLM assist in eidos_refiner for low-quality statements",
         ),
         "runtime_refiner_llm_min_unified_score": TuneableSpec(
             "float", 0.45, 0.0, 1.0, "Invoke runtime LLM refiner when unified score is below this threshold",
@@ -346,9 +346,9 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "max_change_per_run": TuneableSpec("float", 0.15, 0.01, 0.5, "Max boost change per run"),
         "source_boosts": TuneableSpec("dict", {}, None, None, "Per-source boost multipliers"),
         "min_boost": TuneableSpec("float", 0.2, 0.0, 2.0,
-            "Floor for source boost — prevents auto-tuner from dampening proven sources below this value"),
+            "Floor for source boost â€” prevents auto-tuner from dampening proven sources below this value"),
         "max_boost": TuneableSpec("float", 2.0, 0.5, 2.0,
-            "Ceiling for source boost — prevents runaway amplification of any single source"),
+            "Ceiling for source boost â€” prevents runaway amplification of any single source"),
         "source_effectiveness": TuneableSpec("dict", {}, None, None, "Computed effectiveness rates"),
         "tuning_log": TuneableSpec("list", [], None, None, "Recent tuning events (max 50)"),
         "max_changes_per_cycle": TuneableSpec("int", 4, 1, 20, "Max source adjustments per cycle"),
@@ -462,29 +462,7 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
     },
 
     # ---- openclaw_tailer ----
-    "openclaw_tailer": {
-        "skip_successful_tool_results": TuneableSpec(
-            "bool", False, None, None, "Skip successful tool results per capture policy",
-        ),
-        "skip_read_only_tool_calls": TuneableSpec(
-            "bool", True, None, None, "Skip assistant messages that only contain Read tool calls",
-        ),
-        "max_tool_result_chars": TuneableSpec(
-            "int", 6000, 200, 50000, "Max chars retained for tool result capture and truncation",
-        ),
-        "keep_large_tool_results_on_error_only": TuneableSpec(
-            "bool", False, None, None, "When true, large successful tool results are skipped and errors are retained",
-        ),
-        "min_tool_result_chars_for_capture": TuneableSpec(
-            "int", 0, 0, 20000, "Minimum successful tool result text length required for capture",
-        ),
-        "workflow_summary_enabled": TuneableSpec(
-            "bool", True, None, None, "Emit compact workflow summary report artifacts for ingestion",
-        ),
-        "workflow_summary_min_interval_s": TuneableSpec(
-            "int", 120, 10, 86400, "Minimum seconds between workflow summary report emissions per session",
-        ),
-    },
+    "openclaw_tailer": {},
 
     # ---- workflow_evidence ----
     "workflow_evidence": {
@@ -513,29 +491,7 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
     },
 
     # ---- observatory: Obsidian pipeline visualization ----
-    "observatory": {
-        "enabled": TuneableSpec("bool", True, None, None, "Enable observatory generation"),
-        "auto_sync": TuneableSpec("bool", True, None, None, "Auto-sync on bridge cycle"),
-        "sync_cooldown_s": TuneableSpec("int", 120, 10, 3600, "Min seconds between auto-syncs"),
-        "vault_dir": TuneableSpec("str", "", None, None, "Obsidian vault directory path"),
-        "generate_canvas": TuneableSpec("bool", True, None, None, "Generate .canvas spatial view"),
-        "max_recent_items": TuneableSpec("int", 20, 5, 100, "Max recent items per stage page"),
-        "explore_cognitive_max": TuneableSpec("int", 200, 1, 5000, "Max cognitive insights to export as detail pages"),
-        "explore_distillations_max": TuneableSpec("int", 200, 1, 5000, "Max EIDOS distillations to export"),
-        "explore_episodes_max": TuneableSpec("int", 100, 1, 2000, "Max EIDOS episodes to export"),
-        "explore_verdicts_max": TuneableSpec("int", 100, 1, 5000, "Max Meta-Ralph verdicts to export"),
-        "explore_promotions_max": TuneableSpec("int", 200, 1, 5000, "Max promotion log entries to export"),
-        "explore_advice_max": TuneableSpec("int", 200, 1, 5000, "Max advisory log entries to export"),
-        "explore_routing_max": TuneableSpec("int", 100, 1, 5000, "Max retrieval routing decisions to export"),
-        "explore_tuning_max": TuneableSpec("int", 200, 1, 5000, "Max tuneable evolution entries to export"),
-        "explore_decisions_max": TuneableSpec("int", 200, 1, 5000, "Max advisory decision ledger entries to export"),
-        "explore_feedback_max": TuneableSpec("int", 200, 1, 5000, "Max implicit feedback entries to export"),
-        "eidos_curriculum_enabled": TuneableSpec("bool", True, None, None, "Enable EIDOS curriculum export into observatory"),
-        "eidos_curriculum_interval_s": TuneableSpec("int", 86400, 600, 604800, "Min seconds between curriculum rebuilds"),
-        "eidos_curriculum_max_rows": TuneableSpec("int", 300, 20, 5000, "Max EIDOS rows scanned per curriculum run"),
-        "eidos_curriculum_max_cards": TuneableSpec("int", 120, 10, 1000, "Max curriculum cards retained in latest report"),
-        "eidos_curriculum_include_archive": TuneableSpec("bool", True, None, None, "Include archived distillations in curriculum"),
-    },
+    "observatory": {},
 
     # ---- feature_flags: cross-module boolean toggles ----
     "feature_flags": {
@@ -576,30 +532,7 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
     },
 
     # ---- opportunity_scanner: self-evolution scanner ----
-    "opportunity_scanner": {
-        "enabled": TuneableSpec("bool", True, None, None, "Enable opportunity scanner"),
-        "self_max_items": TuneableSpec("int", 3, 1, 20, "Max self-scan items per cycle"),
-        "user_max_items": TuneableSpec("int", 2, 1, 20, "Max user-facing items per cycle"),
-        "max_history_lines": TuneableSpec("int", 500, 50, 10000, "Max history lines to scan"),
-        "self_dedup_window_s": TuneableSpec("float", 14400.0, 0.0, 604800.0, "Self dedup window (s)"),
-        "self_recent_lookback": TuneableSpec("int", 240, 20, 5000, "Self recent lookback count"),
-        "self_category_cap": TuneableSpec("int", 1, 1, 10, "Max items per self category"),
-        "user_scan_enabled": TuneableSpec("bool", False, None, None, "Enable user-facing scan"),
-        "scan_event_limit": TuneableSpec("int", 120, 0, 10000, "Max events per scan"),
-        "outcome_window_s": TuneableSpec("float", 21600.0, 300.0, 604800.0, "Outcome observation window (s)"),
-        "outcome_lookback": TuneableSpec("int", 200, 20, 10000, "Outcome lookback count"),
-        "promotion_min_successes": TuneableSpec("int", 2, 1, 50, "Min successes for promotion"),
-        "promotion_min_effectiveness": TuneableSpec("float", 0.66, 0.0, 1.0, "Min effectiveness for promotion"),
-        "promotion_lookback": TuneableSpec("int", 400, 20, 10000, "Promotion lookback count"),
-        "llm_enabled": TuneableSpec("bool", True, None, None, "Enable LLM-assisted scanning"),
-        "llm_provider": TuneableSpec("str", "", None, None, "LLM provider override"),
-        "llm_timeout_s": TuneableSpec("float", 2.5, 0.3, 30.0, "LLM call timeout (s)"),
-        "llm_max_items": TuneableSpec("int", 3, 1, 20, "Max LLM items per call"),
-        "llm_min_context_chars": TuneableSpec("int", 140, 0, 5000, "Min context chars for LLM"),
-        "llm_cooldown_s": TuneableSpec("float", 300.0, 0.0, 86400.0, "LLM call cooldown (s)"),
-        "decision_lookback": TuneableSpec("int", 500, 50, 10000, "Decision lookback count"),
-        "dismiss_ttl_s": TuneableSpec("float", 604800.0, 0.0, 2592000.0, "Dismiss TTL (s, default 7d)"),
-    },
+    "opportunity_scanner": {},
 
     # ---- prediction: prediction loop budget + auto-link ----
     "prediction": {
@@ -660,7 +593,12 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
 
 # Sections with internal _doc keys that should not trigger unknown-key warnings
 _DOC_KEY_SECTIONS: set = {"source_roles", "scheduler"}
-_DYNAMIC_KEY_SECTIONS: set = {"llm_areas"}
+_DYNAMIC_KEY_SECTIONS: set = {
+    "llm_areas",
+    "observatory",
+    "openclaw_tailer",
+    "opportunity_scanner",
+}
 
 # Keys intentionally retired from active tuneables schema.
 # If present in runtime/user tuneables, they are silently dropped.
@@ -912,15 +850,15 @@ def generate_reference_doc() -> str:
     # Table of contents
     for section_name in SCHEMA:
         consumers = SECTION_CONSUMERS.get(section_name, [])
-        consumer_str = ", ".join(f"`{c}`" for c in consumers) if consumers else "—"
+        consumer_str = ", ".join(f"`{c}`" for c in consumers) if consumers else "â€”"
         key_count = len(SCHEMA[section_name])
-        lines.append(f"- [`{section_name}`](#{section_name}) ({key_count} keys) — {consumer_str}")
+        lines.append(f"- [`{section_name}`](#{section_name}) ({key_count} keys) â€” {consumer_str}")
     lines.append("")
 
     # Section details
     for section_name, section_spec in SCHEMA.items():
         consumers = SECTION_CONSUMERS.get(section_name, [])
-        consumer_str = ", ".join(f"`{c}`" for c in consumers) if consumers else "—"
+        consumer_str = ", ".join(f"`{c}`" for c in consumers) if consumers else "â€”"
 
         lines.append(f"## `{section_name}`")
         lines.append("")
@@ -930,8 +868,8 @@ def generate_reference_doc() -> str:
         lines.append("|-----|------|---------|-----|-----|-------------|")
 
         for key, spec in section_spec.items():
-            min_str = str(spec.min_val) if spec.min_val is not None else "—"
-            max_str = str(spec.max_val) if spec.max_val is not None else "—"
+            min_str = str(spec.min_val) if spec.min_val is not None else "â€”"
+            max_str = str(spec.max_val) if spec.max_val is not None else "â€”"
             desc = spec.description
             if spec.enum_values:
                 desc += f" ({', '.join(spec.enum_values)})"
@@ -957,3 +895,4 @@ if __name__ == "__main__":
             print(f"  [WARN] {w}")
     else:
         print(f"Config not found: {config_path}")
+

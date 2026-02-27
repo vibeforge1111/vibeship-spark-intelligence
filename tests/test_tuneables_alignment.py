@@ -47,5 +47,8 @@ def test_critical_defaults_align_schema_and_config():
         assert section in cfg, f"missing config section: {section}"
         assert section in SCHEMA, f"missing schema section: {section}"
         assert key in cfg[section], f"missing config key: {section}.{key}"
-        assert key in SCHEMA[section], f"missing schema key: {section}.{key}"
-        assert cfg[section][key] == SCHEMA[section][key].default
+        if key in SCHEMA[section]:
+            assert cfg[section][key] == SCHEMA[section][key].default
+        else:
+            # Dynamic sections intentionally keep key validation in consumer modules.
+            assert SCHEMA[section] == {}, f"missing schema key: {section}.{key}"

@@ -230,19 +230,20 @@ class TestPredictionAutoLinkConfig:
 class TestPR2SchemaAlignment:
 
     def test_opportunity_scanner_in_schema(self):
-        """opportunity_scanner section exists in schema."""
-        from lib.tuneables_schema import SCHEMA
+        """opportunity_scanner section exists in schema as a dynamic section."""
+        from lib.tuneables_schema import SCHEMA, validate_tuneables
         assert "opportunity_scanner" in SCHEMA
-        osc = SCHEMA["opportunity_scanner"]
-        for key in ("enabled", "self_max_items", "user_max_items", "max_history_lines",
-                     "self_dedup_window_s", "self_recent_lookback", "self_category_cap",
-                     "user_scan_enabled", "scan_event_limit",
-                     "outcome_window_s", "outcome_lookback",
-                     "promotion_min_successes", "promotion_min_effectiveness", "promotion_lookback",
-                     "llm_enabled", "llm_provider", "llm_timeout_s", "llm_max_items",
-                     "llm_min_context_chars", "llm_cooldown_s",
-                     "decision_lookback", "dismiss_ttl_s"):
-            assert key in osc, f"Missing key: {key}"
+        assert SCHEMA["opportunity_scanner"] == {}
+        payload = {
+            "opportunity_scanner": {
+                "enabled": False,
+                "self_max_items": 7,
+                "llm_timeout_s": 5.0,
+            }
+        }
+        result = validate_tuneables(payload)
+        warnings = [w for w in result.warnings if "opportunity_scanner" in w]
+        assert warnings == []
 
     def test_prediction_in_schema(self):
         """prediction section exists in schema."""

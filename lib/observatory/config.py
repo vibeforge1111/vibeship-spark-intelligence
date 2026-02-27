@@ -12,6 +12,27 @@ _BASELINE_FILE = Path(__file__).resolve().parent.parent.parent / "config" / "tun
 _DEFAULT_VAULT = str(Path.home() / "Documents" / "Obsidian Vault" / "Spark-Intelligence-Observatory")
 
 
+def _to_bool(value: object, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return bool(default)
+
+
+def _to_int(value: object, default: int, *, minimum: int, maximum: int) -> int:
+    try:
+        out = int(value)  # type: ignore[arg-type]
+    except Exception:
+        out = int(default)
+    return max(int(minimum), min(int(maximum), int(out)))
+
+
 @dataclass
 class ObservatoryConfig:
     enabled: bool = True
@@ -49,27 +70,27 @@ def load_config() -> ObservatoryConfig:
     if not isinstance(section, dict):
         return ObservatoryConfig()
     return ObservatoryConfig(
-        enabled=bool(section.get("enabled", True)),
-        auto_sync=bool(section.get("auto_sync", True)),
-        sync_cooldown_s=int(section.get("sync_cooldown_s", 120)),
+        enabled=_to_bool(section.get("enabled", True), True),
+        auto_sync=_to_bool(section.get("auto_sync", True), True),
+        sync_cooldown_s=_to_int(section.get("sync_cooldown_s", 120), 120, minimum=10, maximum=3600),
         vault_dir=str(section.get("vault_dir") or _DEFAULT_VAULT),
-        generate_canvas=bool(section.get("generate_canvas", True)),
-        max_recent_items=int(section.get("max_recent_items", 20)),
-        explore_cognitive_max=int(section.get("explore_cognitive_max", 200)),
-        explore_distillations_max=int(section.get("explore_distillations_max", 200)),
-        explore_episodes_max=int(section.get("explore_episodes_max", 100)),
-        explore_verdicts_max=int(section.get("explore_verdicts_max", 100)),
-        explore_promotions_max=int(section.get("explore_promotions_max", 200)),
-        explore_advice_max=int(section.get("explore_advice_max", 200)),
-        explore_routing_max=int(section.get("explore_routing_max", 100)),
-        explore_tuning_max=int(section.get("explore_tuning_max", 200)),
-        explore_decisions_max=int(section.get("explore_decisions_max", 200)),
-        explore_feedback_max=int(section.get("explore_feedback_max", 200)),
-        eidos_curriculum_enabled=bool(section.get("eidos_curriculum_enabled", True)),
-        eidos_curriculum_interval_s=int(section.get("eidos_curriculum_interval_s", 86400)),
-        eidos_curriculum_max_rows=int(section.get("eidos_curriculum_max_rows", 300)),
-        eidos_curriculum_max_cards=int(section.get("eidos_curriculum_max_cards", 120)),
-        eidos_curriculum_include_archive=bool(section.get("eidos_curriculum_include_archive", True)),
+        generate_canvas=_to_bool(section.get("generate_canvas", True), True),
+        max_recent_items=_to_int(section.get("max_recent_items", 20), 20, minimum=5, maximum=100),
+        explore_cognitive_max=_to_int(section.get("explore_cognitive_max", 200), 200, minimum=1, maximum=5000),
+        explore_distillations_max=_to_int(section.get("explore_distillations_max", 200), 200, minimum=1, maximum=5000),
+        explore_episodes_max=_to_int(section.get("explore_episodes_max", 100), 100, minimum=1, maximum=2000),
+        explore_verdicts_max=_to_int(section.get("explore_verdicts_max", 100), 100, minimum=1, maximum=5000),
+        explore_promotions_max=_to_int(section.get("explore_promotions_max", 200), 200, minimum=1, maximum=5000),
+        explore_advice_max=_to_int(section.get("explore_advice_max", 200), 200, minimum=1, maximum=5000),
+        explore_routing_max=_to_int(section.get("explore_routing_max", 100), 100, minimum=1, maximum=5000),
+        explore_tuning_max=_to_int(section.get("explore_tuning_max", 200), 200, minimum=1, maximum=5000),
+        explore_decisions_max=_to_int(section.get("explore_decisions_max", 200), 200, minimum=1, maximum=5000),
+        explore_feedback_max=_to_int(section.get("explore_feedback_max", 200), 200, minimum=1, maximum=5000),
+        eidos_curriculum_enabled=_to_bool(section.get("eidos_curriculum_enabled", True), True),
+        eidos_curriculum_interval_s=_to_int(section.get("eidos_curriculum_interval_s", 86400), 86400, minimum=600, maximum=604800),
+        eidos_curriculum_max_rows=_to_int(section.get("eidos_curriculum_max_rows", 300), 300, minimum=20, maximum=5000),
+        eidos_curriculum_max_cards=_to_int(section.get("eidos_curriculum_max_cards", 120), 120, minimum=10, maximum=1000),
+        eidos_curriculum_include_archive=_to_bool(section.get("eidos_curriculum_include_archive", True), True),
     )
 
 
