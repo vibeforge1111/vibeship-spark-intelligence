@@ -32,10 +32,10 @@ class TestAreaRegistry:
         assert len(LEARNING_AREAS) == 20
 
     def test_architecture_areas_count(self):
-        assert len(ARCHITECTURE_AREAS) == 7
+        assert len(ARCHITECTURE_AREAS) == 6
 
     def test_all_areas_count(self):
-        assert len(ALL_AREAS) == 27
+        assert len(ALL_AREAS) == 26
 
     def test_no_duplicates(self):
         assert len(set(ALL_AREAS)) == len(ALL_AREAS)
@@ -61,7 +61,7 @@ class TestAreaConfig:
 
     def test_all_configs_returns_all(self):
         configs = get_all_area_configs()
-        assert len(configs) == 27
+        assert len(configs) == 26
         for area_id in ALL_AREAS:
             assert area_id in configs
 

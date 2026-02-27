@@ -96,7 +96,6 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
         "curriculum_gap_summarize": "lib/eidos_distillation_curriculum.py",
         "policy_autotuner_recommend": "lib/auto_tuner.py",
         "operator_now_synth": "lib/observatory/__init__.py",
-        "drift_diagnose": "scripts/cross_surface_drift_checker.py",
         "dead_widget_plan": "lib/observatory/stage_pages.py",
         "error_translate": "lib/error_translator.py",
         "config_advise": "lib/observatory/tuneables_deep_dive.py",

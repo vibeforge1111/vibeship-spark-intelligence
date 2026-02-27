@@ -326,22 +326,6 @@ AREA_PROMPTS: Dict[str, Dict[str, str]] = {
             "Operator briefing:"
         ),
     },
-    "drift_diagnose": {
-        "system": (
-            "You explain metric mismatches between surfaces (CLI vs Pulse vs Observatory) "
-            "with root-cause hints. Consider: caching, timing, stale data, real bugs. "
-            "Return JSON: {{\"root_cause\": \"...\", \"authoritative_surface\": \"...\", "
-            "\"fix\": \"...\"}}"
-        ),
-        "template": (
-            "Explain this metric drift:\n\n"
-            "Metric: {metric}\n"
-            "CLI value: {cli_value}\n"
-            "Pulse value: {pulse_value}\n"
-            "Observatory value: {observatory_value}\n\n"
-            "Return only JSON."
-        ),
-    },
     "dead_widget_plan": {
         "system": (
             "You map a dead dashboard widget to an available live endpoint or file "

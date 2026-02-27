@@ -1,6 +1,6 @@
 """Central LLM dispatch for all configurable LLM-assisted areas.
 
-Every area in the system (27 total) calls through this module.
+Every area in the system (26 total) calls through this module.
 Each area is individually enable/disable with its own provider,
 timeout, and max output length — all configured in tuneables.json
 under the ``llm_areas`` section.
@@ -41,7 +41,7 @@ class LLMAreaResult:
 
 
 # ---------------------------------------------------------------------------
-# Area registry — canonical list of all 27 area IDs
+# Area registry — canonical list of all 26 area IDs
 # ---------------------------------------------------------------------------
 
 LEARNING_AREAS = (
@@ -69,7 +69,6 @@ LEARNING_AREAS = (
 
 ARCHITECTURE_AREAS = (
     "operator_now_synth",
-    "drift_diagnose",
     "dead_widget_plan",
     "error_translate",
     "config_advise",
@@ -108,7 +107,6 @@ _AREA_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "policy_autotuner_recommend":   {"provider": "minimax",   "timeout_s": 10.0, "max_chars": 600},
     # --- Architecture ---
     "operator_now_synth":           {"provider": "minimax",   "timeout_s": 10.0, "max_chars": 600},
-    "drift_diagnose":               {"provider": "minimax",   "timeout_s": 10.0, "max_chars": 500},
     "dead_widget_plan":             {"provider": "minimax",   "timeout_s": 8.0,  "max_chars": 400},
     "error_translate":              {"provider": "minimax",   "timeout_s": 6.0,  "max_chars": 300},
     "config_advise":                {"provider": "minimax",   "timeout_s": 8.0,  "max_chars": 400},

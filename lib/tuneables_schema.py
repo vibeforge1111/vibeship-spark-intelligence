@@ -783,11 +783,6 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "operator_now_synth_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for operator synthesis LLM call"),
         "operator_now_synth_max_chars": TuneableSpec("int", 600, 50, 3000, "Max output chars for operator synthesis"),
 
-        "drift_diagnose_enabled": TuneableSpec("bool", False, None, None, "Enable LLM diagnosis of cross-surface metric drift"),
-        "drift_diagnose_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for drift diagnosis", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "drift_diagnose_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for drift diagnosis LLM call"),
-        "drift_diagnose_max_chars": TuneableSpec("int", 500, 50, 3000, "Max output chars for drift diagnosis"),
-
         "dead_widget_plan_enabled": TuneableSpec("bool", False, None, None, "Enable LLM planning for dead widget remediation"),
         "dead_widget_plan_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for dead widget planning", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
         "dead_widget_plan_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for dead widget planning LLM call"),
