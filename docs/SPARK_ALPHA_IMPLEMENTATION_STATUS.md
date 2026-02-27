@@ -614,6 +614,22 @@ Branch: feat/spark-alpha
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `10`
 
+90. `44420bb` - `refactor(alpha-pr09): retire non-core architecture llm areas`
+- Retired non-core architecture LLM areas from dispatch/schema/config surface:
+  - `operator_now_synth`
+  - `dead_widget_plan`
+  - `error_translate`
+  - `config_advise`
+  - `canary_decide`
+  - `canvas_enrich`
+- Simplified corresponding helper modules to deterministic behavior (no llm-area dispatch dependency).
+- Reduced LLM area registry surface to learning-core only (20 areas total, architecture areas=0).
+- Regression + gate evidence:
+  - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0`
+  - `pytest tests/test_llm_dispatch.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_observatory_tuneables_deep_dive.py tests/test_observatory_stage7_curriculum_page.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_production_loop_gates.py tests/test_intelligence_llm_preferences.py tests/test_vibeforge_helpers.py -q` -> `208 passed`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `11`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
