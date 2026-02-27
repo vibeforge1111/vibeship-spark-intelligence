@@ -681,6 +681,23 @@ Branch: feat/spark-alpha
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `15`
 
+96. `28391aa` - `refactor(alpha-pr09): retire fallback emit analytics from kpi and review surfaces`
+- Removed explicit fallback-only analytics fields from KPI/review reporting surfaces:
+  - removed `fallback_burden` metric from `lib/carmack_kpi.py` scorecards
+  - removed fallback-burden rendering from `scripts/carmack_kpi_scorecard.py`
+  - removed fallback-burden reporting from `scripts/tune_replay.py`
+  - removed `fallback_share_pct` from `scripts/advisory_self_review.py` and `scripts/advisory_controlled_delta.py`
+- Kept backward compatibility for historical logs by counting legacy `fallback_emit` rows into delivered totals without exposing a dedicated fallback KPI.
+- Updated regression tests accordingly:
+  - `tests/test_carmack_kpi.py`
+  - `tests/test_advisory_self_review.py`
+- Regression + gate evidence:
+  - `python -m py_compile lib/carmack_kpi.py scripts/carmack_kpi_scorecard.py scripts/tune_replay.py scripts/advisory_self_review.py scripts/advisory_controlled_delta.py` -> pass
+  - `pytest tests/test_carmack_kpi.py tests/test_advisory_self_review.py tests/test_advisory_engine_alpha.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_production_loop_gates.py -q` -> `174 passed`
+  - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `16`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
