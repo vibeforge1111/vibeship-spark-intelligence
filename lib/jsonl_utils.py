@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
+from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -12,32 +12,17 @@ def tail_jsonl_objects(path: Path, count: int) -> List[Dict[str, Any]]:
     """Return up to ``count`` parsed JSON-object rows from the end of a JSONL file."""
     if count <= 0 or not path.exists():
         return []
-    chunk_size = 64 * 1024
     try:
-        with path.open("rb") as f:
-            f.seek(0, os.SEEK_END)
-            pos = f.tell()
-            buffer = b""
-            lines: List[bytes] = []
-            while pos > 0 and len(lines) <= count:
-                read_size = min(chunk_size, pos)
-                pos -= read_size
-                f.seek(pos)
-                data = f.read(read_size)
-                buffer = data + buffer
-                if b"\n" in buffer:
-                    parts = buffer.split(b"\n")
-                    buffer = parts[0]
-                    lines = parts[1:] + lines
-            if buffer:
-                lines = [buffer] + lines
+        rows: deque[str] = deque(maxlen=int(count))
+        with path.open("r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    rows.append(line)
         out: List[Dict[str, Any]] = []
-        for ln in lines[-count:]:
-            ln = ln.strip()
-            if not ln:
-                continue
+        for ln in rows:
             try:
-                row = json.loads(ln.decode("utf-8", errors="ignore"))
+                row = json.loads(ln)
             except Exception:
                 continue
             if isinstance(row, dict):

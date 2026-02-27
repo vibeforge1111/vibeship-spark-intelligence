@@ -393,6 +393,29 @@ def test_telemetry_snapshot_includes_forwarding_flags(tmp_path):
     assert payload["shadow_in_production"] is False
 
 
+def test_telemetry_snapshot_caps_rows(tmp_path, monkeypatch):
+    telemetry_file = tmp_path / "telemetry.jsonl"
+    runtime = bridge.BridgeRuntime()
+    monkeypatch.setattr(bridge, "TELEMETRY_MAX_LINES", 2)
+
+    for idx in range(3):
+        bridge._write_telemetry_snapshot(
+            telemetry_file=telemetry_file,
+            mode="observe",
+            runtime=runtime,
+            active_files=idx + 1,
+            observe_forwarding_enabled=True,
+            shadow_mode_warning_emitted=False,
+            environment="dev",
+            shadow_in_production=False,
+        )
+
+    rows = [json.loads(line) for line in telemetry_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(rows) == 2
+    assert rows[0]["active_files"] == 2
+    assert rows[1]["active_files"] == 3
+
+
 def test_emit_shadow_mode_warning_writes_event(tmp_path):
     telemetry_file = tmp_path / "telemetry.jsonl"
 

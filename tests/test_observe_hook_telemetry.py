@@ -55,6 +55,32 @@ def test_emit_observe_telemetry_writes_jsonl(tmp_path, monkeypatch):
     assert payload["tool_input_truncated"] is True
 
 
+def test_emit_observe_telemetry_caps_rows(tmp_path, monkeypatch):
+    telemetry_file = tmp_path / "observe_hook_telemetry.jsonl"
+    monkeypatch.setattr(observe, "OBSERVE_TELEMETRY_ENABLED", True)
+    monkeypatch.setattr(observe, "OBSERVE_TELEMETRY_MAX_LINES", 2)
+
+    for hook_event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
+        row = observe._build_observe_telemetry_row(
+            session_id="s-cap",
+            source="claude_code",
+            hook_event=hook_event,
+            event_type=EventType.PRE_TOOL,
+            tool_name="Edit",
+            payload_truncated=False,
+            tool_input_truncated=False,
+            tool_result_captured=False,
+            tool_result_truncated=False,
+            captured=True,
+        )
+        observe._emit_observe_telemetry(row, telemetry_file=telemetry_file)
+
+    rows = [json.loads(line) for line in telemetry_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(rows) == 2
+    assert rows[0]["hook_event"] == "PostToolUse"
+    assert rows[1]["hook_event"] == "PostToolUseFailure"
+
+
 def test_persist_tool_result_reference(tmp_path, monkeypatch):
     monkeypatch.setattr(observe, "CLAUDE_TOOL_RESULT_REF_DIR", tmp_path / "refs")
     out = observe._persist_tool_result_reference("large output text")

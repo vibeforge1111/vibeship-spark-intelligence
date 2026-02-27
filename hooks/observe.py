@@ -39,6 +39,7 @@ from lib.queue import quick_capture, EventType
 from lib.cognitive_learner import get_cognitive_learner
 from lib.feedback import update_skill_effectiveness, update_self_awareness_reliability
 from lib.diagnostics import log_debug
+from lib.jsonl_utils import append_jsonl_capped
 from lib.outcome_checkin import record_checkin_request
 # EIDOS Integration - resolve from config-authority
 try:
@@ -99,6 +100,10 @@ OBSERVE_TELEMETRY_FILE = Path(
 OBSERVE_TELEMETRY_ENABLED = str(
     os.environ.get("SPARK_OBSERVE_TELEMETRY", "1")
 ).strip().lower() not in ("0", "false", "no", "off")
+OBSERVE_TELEMETRY_MAX_LINES = max(
+    1000,
+    min(500000, int(os.environ.get("SPARK_OBSERVE_TELEMETRY_MAX_LINES", "20000") or "20000")),
+)
 CODEX_FAST_MODE_ENABLED = str(
     os.environ.get("SPARK_CODEX_OBSERVE_FAST_MODE", "1")
 ).strip().lower() not in ("0", "false", "no", "off")
@@ -642,9 +647,12 @@ def _normalize_source(raw_source: Any) -> str:
 
 
 def _append_jsonl(path: Path, row: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    append_jsonl_capped(
+        path=path,
+        entry=row,
+        max_lines=int(OBSERVE_TELEMETRY_MAX_LINES),
+        ensure_ascii=False,
+    )
 
 
 def _has_truncated_tool_input_fields(tool_input_payload: Any) -> bool:

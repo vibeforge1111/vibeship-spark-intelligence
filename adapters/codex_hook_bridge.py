@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from lib.jsonl_utils import append_jsonl_capped
+
 
 STATE_DIR = Path.home() / ".spark" / "adapters"
 DEFAULT_STATE_FILE = STATE_DIR / "codex_hook_bridge_state.json"
@@ -69,6 +71,7 @@ HOOK_OUTPUT_TEXT_LIMIT = _env_int("SPARK_CODEX_HOOK_OUTPUT_TEXT_LIMIT", 12000, 5
 PENDING_CALL_TTL_S = 1800
 WORKFLOW_SUMMARY_ENABLED = _env_bool("SPARK_CODEX_WORKFLOW_SUMMARY_ENABLED", True)
 WORKFLOW_SUMMARY_MIN_INTERVAL_S = _env_int("SPARK_CODEX_WORKFLOW_SUMMARY_MIN_INTERVAL_S", 120, 10, 86400)
+TELEMETRY_MAX_LINES = _env_int("SPARK_CODEX_TELEMETRY_MAX_LINES", 20000, 1000, 500000)
 
 
 def _now() -> float:
@@ -94,9 +97,12 @@ def _parse_ts(raw: Any) -> float:
 
 
 def _append_jsonl(path: Path, row: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    append_jsonl_capped(
+        path=path,
+        entry=row,
+        max_lines=int(TELEMETRY_MAX_LINES),
+        ensure_ascii=False,
+    )
 
 
 def _is_pid_running(pid: int) -> bool:
