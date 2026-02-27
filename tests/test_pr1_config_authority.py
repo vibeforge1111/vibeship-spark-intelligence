@@ -90,7 +90,7 @@ class TestAdvisoryEmitter:
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         for var in ("SPARK_ADVISORY_EMIT", "SPARK_ADVISORY_MAX_CHARS", "SPARK_ADVISORY_FORMAT"):
             monkeypatch.delenv(var, raising=False)
-        import lib.advisory_emitter as em
+        import lib.emitter as em
         em._load_emitter_config()
         assert em.EMIT_ENABLED is True
         assert em.MAX_EMIT_CHARS == 500
@@ -102,7 +102,7 @@ class TestAdvisoryEmitter:
         monkeypatch.setenv("SPARK_ADVISORY_EMIT", "0")
         monkeypatch.setenv("SPARK_ADVISORY_MAX_CHARS", "200")
         monkeypatch.setenv("SPARK_ADVISORY_FORMAT", "block")
-        import lib.advisory_emitter as em
+        import lib.emitter as em
         em._load_emitter_config()
         assert em.EMIT_ENABLED is False
         assert em.MAX_EMIT_CHARS == 200
@@ -238,7 +238,7 @@ class TestSchemaAlignment:
         from lib.tuneables_schema import SECTION_CONSUMERS
         assert "feature_flags" in SECTION_CONSUMERS
         assert "lib/feature_flags.py" in SECTION_CONSUMERS["feature_flags"]
-        assert "lib/advisory_emitter.py" in SECTION_CONSUMERS["advisory_engine"]
+        assert "lib/emitter.py" in SECTION_CONSUMERS["advisory_engine"]
 
 
 # ---------------------------------------------------------------------------

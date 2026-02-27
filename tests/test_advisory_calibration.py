@@ -504,27 +504,27 @@ class TestSynthesisFormat:
     """Verify synthesis output meets quality standards."""
 
     def test_note_has_spark_prefix(self):
-        from lib.advisory_emitter import format_advisory
+        from lib.emitter import format_advisory
         text = format_advisory("Use batch mode for saves.", "note")
         assert text.startswith("[SPARK]"), f"NOTE should start with [SPARK], got: {text[:30]}"
 
     def test_warning_has_advisory_prefix(self):
-        from lib.advisory_emitter import format_advisory
+        from lib.emitter import format_advisory
         text = format_advisory("Don't skip validation.", "warning")
         assert "[SPARK ADVISORY]" in text, f"WARNING should have [SPARK ADVISORY], got: {text[:30]}"
 
     def test_whisper_has_parenthetical(self):
-        from lib.advisory_emitter import format_advisory
+        from lib.emitter import format_advisory
         text = format_advisory("Consider adding types.", "whisper")
         assert text.startswith("(spark:"), f"WHISPER should start with (spark:, got: {text[:30]}"
 
     def test_silent_produces_nothing(self):
-        from lib.advisory_emitter import format_advisory
+        from lib.emitter import format_advisory
         text = format_advisory("This should be empty.", "silent")
         assert text == "", f"SILENT should produce empty string, got: {text[:30]}"
 
     def test_whisper_truncation(self):
-        from lib.advisory_emitter import format_advisory
+        from lib.emitter import format_advisory
         long_text = "x" * 200
         text = format_advisory(long_text, "whisper")
         assert len(text) <= 160, f"WHISPER should truncate to ~150 chars, got {len(text)}"

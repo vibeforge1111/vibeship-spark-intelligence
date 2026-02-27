@@ -296,7 +296,7 @@ def on_pre_tool(
 
     try:
         from .advisor import advise_on_tool, record_recent_delivery
-        from .advisory_emitter import emit_advisory
+        from .emitter import emit_advisory
         from .advisory_gate import evaluate, get_tool_cooldown_s
         from .runtime_session_state import (
             load_state,

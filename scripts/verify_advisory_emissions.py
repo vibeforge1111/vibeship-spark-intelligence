@@ -258,7 +258,7 @@ def _scenarios():
 
     # --- I: Synthesis quality ---
     def i01():
-        from lib.advisory_emitter import format_advisory
+        from lib.emitter import format_advisory
         text = format_advisory("Use parameterized queries for safety.", "note")
         assert text.startswith("[SPARK]"), f"NOTE should have [SPARK] prefix, got: {text[:20]}"
         assert len(text) < 500, f"Should be concise, got {len(text)} chars"
@@ -266,7 +266,7 @@ def _scenarios():
     add("I01", "NOTE format has [SPARK] prefix", i01)
 
     def i02():
-        from lib.advisory_emitter import format_advisory
+        from lib.emitter import format_advisory
         text = format_advisory("[Caution] Never store passwords in plaintext.", "warning")
         assert "[SPARK ADVISORY]" in text, f"WARNING should have [SPARK ADVISORY], got: {text[:30]}"
         return f"formatted correctly"

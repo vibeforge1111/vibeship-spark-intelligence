@@ -1077,6 +1077,22 @@ Notable metrics now:
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, streak `67`
 
+### Latest advisory collapse delta (2026-02-27, emitter rename)
+
+- Renamed `lib/advisory_emitter.py` -> `lib/emitter.py` to reduce advisory module surface while preserving emission behavior.
+- Updated alpha engine + tests + verification scripts:
+  - `lib/advisory_engine_alpha.py` now imports `emit_advisory` from `lib/emitter.py`
+  - `tests/test_advisory_calibration.py`
+  - `tests/test_pr1_config_authority.py`
+  - `scripts/verify_advisory_emissions.py`
+- Updated tuneables consumer mapping:
+  - `lib/tuneables_schema.py` now tracks `lib/emitter.py` under `advisory_engine`
+- Validation:
+  - `pytest tests/test_advisory_calibration.py tests/test_pr1_config_authority.py tests/test_advisory_engine_alpha.py tests/test_tuneables_alignment.py -q` -> `86 passed`
+  - `python scripts/alpha_gap_audit.py` -> `advisory_files=5`, `tuneable_keys=286`, `distillation_files=3`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, streak `68`
+
 ### Latest compaction unification delta (2026-02-27, packet compaction lane)
 
 - Added packet compaction planner: `lib/packet_compaction.py` (action contract `update/delete/noop`)
@@ -1115,7 +1131,7 @@ Notable metrics now:
 
 These are still pending relative to the broader Simplification/Fast-Track goals:
 
-1. Advisory collapse wave 1 is exceeded (`advisory_files=6`), but final 3-module end-state is not yet implemented.
+1. Advisory collapse wave 1 is exceeded (`advisory_files=5`), but final 3-module end-state is not yet implemented.
 2. Storage consolidation to single SQLite-first memory/advisory store is partially implemented (cognitive memory is SQLite-canonical; advisory packet lookup is now SQLite-canonical with no runtime JSON lookup fallback mode).
 3. Memory compaction engine is partially implemented (ACT-R cognitive compaction + packet compaction preview/apply lane + sync-integrated bounded packet apply lane are in place); deeper unified policy across all advisory/memory stores is still pending.
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).

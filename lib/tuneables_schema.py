@@ -1,4 +1,4 @@
-﻿"""
+"""
 Central schema and validator for Spark tuneables.
 
 Single source of truth for every tuneable section, key, type, default,
@@ -257,7 +257,7 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
                                     ["off", "standard", "replay"]),
         "guidance_style": TuneableSpec("str", "balanced", None, None, "Guidance verbosity",
                                        ["concise", "balanced", "coach"]),
-        # source_weights: removed (Batch 5) â€” never read by any code
+        # source_weights: removed (Batch 5) — never read by any code
     },
 
     # ---- retrieval: retrieval routing ----
@@ -307,7 +307,7 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
 
     # ---- eidos: episode/distillation budget ----
     "eidos": {
-        # max_steps: removed (Batch 5) â€” duplicate of values.max_steps
+        # max_steps: removed (Batch 5) — duplicate of values.max_steps
         "max_time_seconds": TuneableSpec("int", 1200, 60, 7200, "Max episode time (s)"),
         "max_retries_per_error": TuneableSpec("int", 3, 1, 20, "Retry limit per error type"),
         "max_file_touches": TuneableSpec("int", 5, 1, 50, "Max times to modify same file"),
@@ -346,9 +346,9 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "max_change_per_run": TuneableSpec("float", 0.15, 0.01, 0.5, "Max boost change per run"),
         "source_boosts": TuneableSpec("dict", {}, None, None, "Per-source boost multipliers"),
         "min_boost": TuneableSpec("float", 0.2, 0.0, 2.0,
-            "Floor for source boost â€” prevents auto-tuner from dampening proven sources below this value"),
+            "Floor for source boost — prevents auto-tuner from dampening proven sources below this value"),
         "max_boost": TuneableSpec("float", 2.0, 0.5, 2.0,
-            "Ceiling for source boost â€” prevents runaway amplification of any single source"),
+            "Ceiling for source boost — prevents runaway amplification of any single source"),
         "source_effectiveness": TuneableSpec("dict", {}, None, None, "Computed effectiveness rates"),
         "tuning_log": TuneableSpec("list", [], None, None, "Recent tuning events (max 50)"),
         "max_changes_per_cycle": TuneableSpec("int", 4, 1, 20, "Max source adjustments per cycle"),
@@ -634,7 +634,7 @@ SECTION_CONSUMERS: Dict[str, List[str]] = {
     "synthesizer": ["lib/advisory_synthesizer.py"],
     "advisory_engine": [
         "lib/advisory_engine_alpha.py",
-        "lib/advisory_emitter.py",
+        "lib/emitter.py",
     ],
     "advisory_gate": ["lib/advisory_gate.py", "lib/runtime_session_state.py"],
     "advisory_packet_store": ["lib/advisory_packet_store.py"],
@@ -857,15 +857,15 @@ def generate_reference_doc() -> str:
     # Table of contents
     for section_name in SCHEMA:
         consumers = SECTION_CONSUMERS.get(section_name, [])
-        consumer_str = ", ".join(f"`{c}`" for c in consumers) if consumers else "â€”"
+        consumer_str = ", ".join(f"`{c}`" for c in consumers) if consumers else "—"
         key_count = len(SCHEMA[section_name])
-        lines.append(f"- [`{section_name}`](#{section_name}) ({key_count} keys) â€” {consumer_str}")
+        lines.append(f"- [`{section_name}`](#{section_name}) ({key_count} keys) — {consumer_str}")
     lines.append("")
 
     # Section details
     for section_name, section_spec in SCHEMA.items():
         consumers = SECTION_CONSUMERS.get(section_name, [])
-        consumer_str = ", ".join(f"`{c}`" for c in consumers) if consumers else "â€”"
+        consumer_str = ", ".join(f"`{c}`" for c in consumers) if consumers else "—"
 
         lines.append(f"## `{section_name}`")
         lines.append("")
@@ -875,8 +875,8 @@ def generate_reference_doc() -> str:
         lines.append("|-----|------|---------|-----|-----|-------------|")
 
         for key, spec in section_spec.items():
-            min_str = str(spec.min_val) if spec.min_val is not None else "â€”"
-            max_str = str(spec.max_val) if spec.max_val is not None else "â€”"
+            min_str = str(spec.min_val) if spec.min_val is not None else "—"
+            max_str = str(spec.max_val) if spec.max_val is not None else "—"
             desc = spec.description
             if spec.enum_values:
                 desc += f" ({', '.join(spec.enum_values)})"
