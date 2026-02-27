@@ -21,10 +21,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 def test_bridge_cycle_empty_events():
     """run_bridge_cycle should handle empty event list without crashing."""
     with patch("lib.bridge_cycle.read_recent_events", return_value=[]):
-        with patch("lib.bridge_cycle.update_spark_context", return_value=(True, {}, None)):
-            with patch("lib.bridge_cycle.process_recent_memory_events", return_value={"auto_saved": 0, "suggested": 0}):
-                from lib.bridge_cycle import run_bridge_cycle
-                stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
+        with patch("lib.bridge_cycle.process_recent_memory_events", return_value={"auto_saved": 0, "suggested": 0}):
+            from lib.bridge_cycle import run_bridge_cycle
+            stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
 
     assert isinstance(stats, dict)
     assert "errors" in stats
@@ -36,10 +35,9 @@ def test_bridge_cycle_empty_events():
 def test_bridge_cycle_returns_expected_keys():
     """Stats dict should contain all expected keys."""
     with patch("lib.bridge_cycle.read_recent_events", return_value=[]):
-        with patch("lib.bridge_cycle.update_spark_context", return_value=(True, {}, None)):
-            with patch("lib.bridge_cycle.process_recent_memory_events", return_value={"auto_saved": 0, "suggested": 0}):
-                from lib.bridge_cycle import run_bridge_cycle
-                stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
+        with patch("lib.bridge_cycle.process_recent_memory_events", return_value={"auto_saved": 0, "suggested": 0}):
+            from lib.bridge_cycle import run_bridge_cycle
+            stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
 
     expected_keys = ["timestamp", "context_updated", "memory", "errors"]
     for key in expected_keys:
@@ -48,27 +46,23 @@ def test_bridge_cycle_returns_expected_keys():
 
 # ── Fail-open behavior ───────────────────────────────────────────────
 
-def test_bridge_cycle_survives_context_failure():
-    """If context update fails, cycle should continue (fail-open)."""
+def test_bridge_cycle_has_no_legacy_context_fail_open_error():
+    """Legacy context execution path is removed; cycle should not emit context errors."""
     with patch("lib.bridge_cycle.read_recent_events", return_value=[]):
-        with patch("lib.bridge_cycle.update_spark_context", side_effect=Exception("context boom")):
-            with patch("lib.bridge_cycle.process_recent_memory_events", return_value={"auto_saved": 0, "suggested": 0}):
-                with patch("lib.bridge_cycle.BRIDGE_LEGACY_CONTEXT_UPDATE_ENABLED", True):
-                    from lib.bridge_cycle import run_bridge_cycle
-                    stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
+        with patch("lib.bridge_cycle.process_recent_memory_events", return_value={"auto_saved": 0, "suggested": 0}):
+            from lib.bridge_cycle import run_bridge_cycle
+            stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
 
-    # Should not crash — fail-open behavior
     assert isinstance(stats, dict)
-    assert "context" in stats.get("errors", [])
+    assert "context" not in stats.get("errors", [])
 
 
 def test_bridge_cycle_survives_memory_failure():
     """If memory capture fails, cycle should continue (fail-open)."""
     with patch("lib.bridge_cycle.read_recent_events", return_value=[]):
-        with patch("lib.bridge_cycle.update_spark_context", return_value=(True, {}, None)):
-            with patch("lib.bridge_cycle.process_recent_memory_events", side_effect=Exception("memory boom")):
-                from lib.bridge_cycle import run_bridge_cycle
-                stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
+        with patch("lib.bridge_cycle.process_recent_memory_events", side_effect=Exception("memory boom")):
+            from lib.bridge_cycle import run_bridge_cycle
+            stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
 
     assert isinstance(stats, dict)
 
@@ -81,13 +75,12 @@ def test_bridge_cycle_calls_batch_mode():
     mock_ralph = MagicMock()
 
     with patch("lib.bridge_cycle.read_recent_events", return_value=[]):
-        with patch("lib.bridge_cycle.update_spark_context", return_value=(True, {}, None)):
-            with patch("lib.bridge_cycle.process_recent_memory_events", return_value={"auto_saved": 0, "suggested": 0}):
-                # These are imported inside run_bridge_cycle via `from lib.cognitive_learner import ...`
-                with patch("lib.cognitive_learner.get_cognitive_learner", return_value=mock_cognitive):
-                    with patch("lib.meta_ralph.get_meta_ralph", return_value=mock_ralph):
-                        from lib.bridge_cycle import run_bridge_cycle
-                        run_bridge_cycle(memory_limit=5, pattern_limit=5)
+        with patch("lib.bridge_cycle.process_recent_memory_events", return_value={"auto_saved": 0, "suggested": 0}):
+            # These are imported inside run_bridge_cycle via `from lib.cognitive_learner import ...`
+            with patch("lib.cognitive_learner.get_cognitive_learner", return_value=mock_cognitive):
+                with patch("lib.meta_ralph.get_meta_ralph", return_value=mock_ralph):
+                    from lib.bridge_cycle import run_bridge_cycle
+                    run_bridge_cycle(memory_limit=5, pattern_limit=5)
 
     # begin_batch should have been called
     mock_cognitive.begin_batch.assert_called()
@@ -174,13 +167,12 @@ def test_chip_events_no_project_path_keeps_all():
 
 def test_bridge_cycle_marks_llm_sidecars_disabled():
     with patch("lib.bridge_cycle.read_recent_events", return_value=[]):
-        with patch("lib.bridge_cycle.update_spark_context", return_value=(True, {}, None)):
-            with patch("lib.bridge_cycle.process_recent_memory_events", return_value={"auto_saved": 0, "suggested": 0}):
-                with patch("lib.bridge_cycle.BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED", False):
-                    with patch("lib.bridge_cycle.BRIDGE_LLM_EIDOS_SIDECAR_ENABLED", False):
-                        from lib.bridge_cycle import run_bridge_cycle
+        with patch("lib.bridge_cycle.process_recent_memory_events", return_value={"auto_saved": 0, "suggested": 0}):
+            with patch("lib.bridge_cycle.BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED", False):
+                with patch("lib.bridge_cycle.BRIDGE_LLM_EIDOS_SIDECAR_ENABLED", False):
+                    from lib.bridge_cycle import run_bridge_cycle
 
-                        stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
+                    stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
 
     assert stats.get("llm_advisory_sidecar", {}).get("enabled") is False
     assert stats.get("eidos_llm_sidecar", {}).get("enabled") is False
@@ -189,9 +181,8 @@ def test_bridge_cycle_marks_llm_sidecars_disabled():
 def test_bridge_cycle_marks_legacy_context_disabled_by_default():
     with patch("lib.bridge_cycle.read_recent_events", return_value=[]):
         with patch("lib.bridge_cycle.process_recent_memory_events", return_value={"auto_saved": 0, "suggested": 0}):
-            with patch("lib.bridge_cycle.BRIDGE_LEGACY_CONTEXT_UPDATE_ENABLED", False):
-                from lib.bridge_cycle import run_bridge_cycle
+            from lib.bridge_cycle import run_bridge_cycle
 
-                stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
+            stats = run_bridge_cycle(memory_limit=5, pattern_limit=5)
 
     assert stats.get("context_legacy", {}).get("enabled") is False
