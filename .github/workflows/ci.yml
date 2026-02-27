@@ -40,6 +40,11 @@ jobs:
         run: |
           python -m pytest -q tests/test_safety_guardrails.py tests/test_sparkd_hardening.py tests/test_production_hardening.py
 
+      - name: Alpha Guardrail Checks
+        if: matrix.python-version == '3.11'
+        run: |
+          python scripts/alpha_guardrail_ci.py --max-advisory-files 4 --max-tuneable-keys 320 --max-distillation-files 3 --max-lib-jsonl-runtime-ext-refs 140
+
   integration-smoke:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
