@@ -110,7 +110,6 @@ def _summarize_engine(engine_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     selective_ai_eligibility = Counter()
     emitted_authority_counts = Counter()
     trace_rows = 0
-    fallback_events = 0
     suppression_events = 0
     delivered = 0
     elapsed_ms: List[float] = []
@@ -136,11 +135,9 @@ def _summarize_engine(engine_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             emitted_synth_policy_counts[synth_policy] += 1
         if row.get("trace_id"):
             trace_rows += 1
-        if ev == "fallback_emit" or str(row.get("delivery_mode") or "") == "fallback":
-            fallback_events += 1
         if ev in ALPHA_SUPPRESSION_EVENTS:
             suppression_events += 1
-        if ev in {"emitted", "fallback_emit"}:
+        if ev == "emitted":
             delivered += 1
             ems = _safe_float(row.get("elapsed_ms"), 0.0)
             if ems > 0:
@@ -165,7 +162,6 @@ def _summarize_engine(engine_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "emitted_synth_policy_counts": dict(emitted_synth_policy_counts),
         "selective_ai_eligibility": dict(selective_ai_eligibility),
         "emitted_authority_counts": dict(emitted_authority_counts),
-        "fallback_share_pct": round((fallback_events / max(1, delivered)) * 100.0, 2),
         "suppression_share_pct": round((suppression_events / max(1, len(engine_rows))) * 100.0, 2),
         "latency": {
             "n": len(elapsed_ms),

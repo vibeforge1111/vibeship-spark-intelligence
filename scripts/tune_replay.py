@@ -204,7 +204,6 @@ def render_markdown(payload: Dict[str, Any]) -> str:
         lines.append(f"- emitted: **{cur.get('emitted', 0)}**\n")
         lines.append(f"- no_emit: **{cur.get('no_emit', 0)}**\n")
         lines.append(f"- noise_burden: **{cur.get('noise_burden', 0)}**\n")
-        lines.append(f"- fallback_burden: **{cur.get('fallback_burden', 0)}**\n")
         if evt:
             lines.append("\nEvent counts:\n")
             for k in sorted(evt.keys()):

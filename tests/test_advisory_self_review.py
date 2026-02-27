@@ -66,8 +66,8 @@ def test_summarize_engine_and_outcomes(tmp_path):
     engine_path = tmp_path / "advisory_engine.jsonl"
     engine_rows = [
         {"ts": now - 10, "event": "emitted", "route": "live", "trace_id": "t1"},
-        {"ts": now - 9, "event": "fallback_emit", "route": "packet_relaxed_fallback"},
-        {"ts": now - 8, "event": "fallback_emit", "route": "packet_relaxed_fallback"},
+        {"ts": now - 9, "event": "gate_no_emit", "route": "packet_miss"},
+        {"ts": now - 8, "event": "context_repeat_blocked", "route": "packet_relaxed"},
     ]
     engine_path.write_text(
         "\n".join(json.dumps(r) for r in engine_rows) + "\n",
@@ -76,10 +76,10 @@ def test_summarize_engine_and_outcomes(tmp_path):
 
     eng = mod.summarize_engine(engine_path, window_s=3600, now_ts=now)
     assert eng["rows"] == 3
-    assert eng["events"]["fallback_emit"] == 2
-    assert eng["fallback_share_pct"] > 60.0
-    assert eng["suppression_events"] == 0
-    assert eng["suppression_share_pct"] == 0.0
+    assert eng["events"]["gate_no_emit"] == 1
+    assert eng["events"]["context_repeat_blocked"] == 1
+    assert eng["suppression_events"] == 2
+    assert eng["suppression_share_pct"] > 60.0
 
     outcome_path = tmp_path / "outcome_tracking.json"
     records = [

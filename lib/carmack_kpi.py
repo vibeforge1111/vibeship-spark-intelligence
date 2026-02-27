@@ -82,8 +82,9 @@ def _count_advisory_events(rows: List[Dict[str, Any]], start_ts: float, end_ts: 
         total += 1
         counts[str(row.get("event") or "unknown")] += 1
     emitted = int(counts.get("emitted", 0))
-    fallback_emit = int(counts.get("fallback_emit", 0))
-    delivered = emitted + fallback_emit
+    # Legacy log compatibility: historical windows may still contain fallback_emit rows.
+    # Treat those rows as delivered emissions without keeping a separate fallback KPI.
+    delivered = emitted + int(counts.get("fallback_emit", 0))
     alpha_suppressed = sum(int(counts.get(ev, 0) or 0) for ev in ALPHA_SUPPRESSION_EVENTS)
     no_emit = int(counts.get("no_emit", 0)) + int(alpha_suppressed)
     synth_empty = int(counts.get("synth_empty", 0))
@@ -98,14 +99,12 @@ def _count_advisory_events(rows: List[Dict[str, Any]], start_ts: float, end_ts: 
         "event_counts": dict(counts),
         "total_events": total,
         "emitted": emitted,
-        "fallback_emit": fallback_emit,
         "delivered": delivered,
         "alpha_suppressed": int(alpha_suppressed),
         "alpha_suppression_events": alpha_suppression_counts,
         "no_emit": no_emit,
         "synth_empty": synth_empty,
         "duplicate_suppressed": duplicate_suppressed,
-        "fallback_burden": _safe_ratio(fallback_emit, delivered),
         "suppression_burden": _safe_ratio(alpha_suppressed, total),
         "noise_burden": _safe_ratio(noise_num, total),
     }
@@ -299,7 +298,6 @@ def _sample_failure_snapshot(limit: int = 12) -> Dict[str, Any]:
     rows = _read_jsonl(ADVISORY_LOG, limit=max(40, int(limit * 4)))
     interesting = {
         "engine_error",
-        "fallback_emit_failed",
         "global_dedupe_suppressed",
         "low_auth_global_suppressed",
         "synth_empty",
@@ -380,10 +378,6 @@ def build_scorecard(window_hours: float = 4.0, now_ts: Optional[float] = None) -
         "gaur_all": {
             "current": current.get("gaur"),
             "previous": previous.get("gaur"),
-        },
-        "fallback_burden": {
-            "current": current.get("fallback_burden"),
-            "previous": previous.get("fallback_burden"),
         },
         "noise_burden": {
             "current": current.get("noise_burden"),

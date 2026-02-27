@@ -157,8 +157,6 @@ def summarize_engine(path: Path, window_s: float, now_ts: float) -> Dict[str, An
 
     events = Counter(str(r.get("event") or "unknown") for r in rows)
     routes = Counter(str(r.get("route") or "unknown") for r in rows)
-    delivered = events.get("emitted", 0) + events.get("fallback_emit", 0)
-    fallback_share_pct = _pct(events.get("fallback_emit", 0), delivered)
     suppression_events = sum(int(events.get(ev, 0) or 0) for ev in ALPHA_SUPPRESSION_EVENTS)
     suppression_share_pct = _pct(suppression_events, len(rows))
     trace_rows = sum(1 for r in rows if r.get("trace_id"))
@@ -174,7 +172,6 @@ def summarize_engine(path: Path, window_s: float, now_ts: float) -> Dict[str, An
         "trace_coverage_pct": _pct(trace_rows, len(rows)),
         "events": dict(events),
         "routes": dict(routes),
-        "fallback_share_pct": fallback_share_pct,
         "suppression_events": int(suppression_events),
         "suppression_share_pct": suppression_share_pct,
         "suppression_breakdown": suppression_breakdown,
@@ -283,11 +280,10 @@ def build_report(summary: Dict[str, Any], window_hours: float, now_ts: float) ->
 
     rep = ra["repeated_texts"][:6]
     repeated_share = round(sum(float(r["share_pct_of_items"]) for r in rep), 2)
-    high_fallback = float(en.get("fallback_share_pct") or 0.0) >= 60.0
     high_suppression = float(en.get("suppression_share_pct") or 0.0) >= 60.0
 
     improvement_state = "improving" if (oc.get("strict_effectiveness_rate") or 0) >= 0.9 else "unclear"
-    if high_fallback or high_suppression:
+    if high_suppression:
         improvement_state = "noisy"
 
     lines = [
@@ -309,7 +305,6 @@ def build_report(summary: Dict[str, Any], window_hours: float, now_ts: float) ->
         ),
         f"- Engine events: {en['rows']}",
         f"- Engine trace coverage: {en['trace_rows']}/{en['rows']} ({en['trace_coverage_pct']}%)",
-        f"- Fallback share (delivered): {en['fallback_share_pct']}%",
         f"- Suppression share (all events): {en.get('suppression_share_pct', 0.0)}%",
         f"- Strict action rate: {oc['strict_action_rate']}",
         f"- Strict effectiveness rate: {oc['strict_effectiveness_rate']}",

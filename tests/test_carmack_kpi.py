@@ -47,7 +47,7 @@ def test_window_metrics_computes_aligned_gaur_and_burdens():
     )
 
     assert out["delivered"] == 2
-    assert round(out["fallback_burden"], 4) == 0.5
+    assert "fallback_burden" not in out
     assert out["emitted_advice_items"] == 3
     assert out["good_advice_used"] == 2
     assert round(out["gaur"], 4) == round(2.0 / 3.0, 4)
@@ -130,7 +130,7 @@ def test_build_scorecard_reads_files_and_computes_core_reliability(tmp_path, mon
     score = ck.build_scorecard(window_hours=0.111111111, now_ts=2000.0)  # ~400s window
 
     assert score["current"]["emitted"] == 1
-    assert score["current"]["fallback_emit"] == 1
+    assert "fallback_emit" not in score["current"]
     assert score["current"]["emitted_advice_items"] == 2
     assert score["current"]["good_advice_used"] == 1
     assert round(score["metrics"]["gaur"]["current"], 4) == 0.5

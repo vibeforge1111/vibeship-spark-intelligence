@@ -65,13 +65,6 @@ def _render_text(score: Dict[str, Any]) -> str:
         f"{_fmt_delta(gaur_all.get('delta'))} | {gaur_all.get('trend', 'unknown')}"
     )
 
-    fb = metrics.get("fallback_burden") or {}
-    rows.append(
-        "Fallback Burden | "
-        f"{_fmt_ratio(fb.get('current'))} | {_fmt_ratio(fb.get('previous'))} | "
-        f"{_fmt_delta(fb.get('delta'))} | {fb.get('trend', 'unknown')}"
-    )
-
     nb = metrics.get("noise_burden") or {}
     rows.append(
         "Noise Burden | "
