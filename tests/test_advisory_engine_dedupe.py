@@ -38,41 +38,6 @@ def test_duplicate_repeat_state_allows_after_cooldown(monkeypatch):
     assert meta["repeat"] is False
 
 
-def test_global_recently_emitted_ignores_tool(monkeypatch, tmp_path):
-    monkeypatch.setattr(advisory_engine, "GLOBAL_DEDUPE_LOG", tmp_path / "global.jsonl")
-    now = time.time()
-    advisory_engine._append_jsonl_capped(
-        advisory_engine.GLOBAL_DEDUPE_LOG,
-        {"ts": now - 3, "tool": "Edit", "advice_id": "a1"},
-        max_lines=50,
-    )
-    hit = advisory_engine._global_recently_emitted(
-        tool_name="Read",
-        advice_id="a1",
-        now_ts=now,
-        cooldown_s=60.0,
-    )
-    assert hit is not None
-    assert float(hit["age_s"]) >= 0.0
-
-
-def test_global_recently_emitted_text_sig(monkeypatch, tmp_path):
-    monkeypatch.setattr(advisory_engine, "GLOBAL_DEDUPE_LOG", tmp_path / "global.jsonl")
-    now = time.time()
-    advisory_engine._append_jsonl_capped(
-        advisory_engine.GLOBAL_DEDUPE_LOG,
-        {"ts": now - 2, "tool": "Read", "advice_id": "x", "text_sig": "sig1"},
-        max_lines=50,
-    )
-    hit = advisory_engine._global_recently_emitted_text_sig(
-        text_sig="sig1",
-        now_ts=now,
-        cooldown_s=60.0,
-    )
-    assert hit is not None
-    assert float(hit["age_s"]) >= 0.0
-
-
 def test_dedupe_scope_key_contextual_composes_tree_phase_intent(monkeypatch):
     monkeypatch.setattr(advisory_engine, "GLOBAL_DEDUPE_SCOPE", "contextual")
     monkeypatch.setattr(

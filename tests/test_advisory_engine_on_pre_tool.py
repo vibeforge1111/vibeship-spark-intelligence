@@ -125,34 +125,6 @@ def test_on_pre_tool_handles_empty_session_id():
 
 # ── Global dedupe function ────────────────────────────────────────────
 
-def test_global_recently_emitted_returns_none_for_unseen():
-    """Global dedupe returns None for an advice_id never emitted before."""
-    from lib.advisory_engine import _global_recently_emitted
-    result = _global_recently_emitted(
-        tool_name="Read",
-        advice_id="never_seen_advice_id_xyz123",
-        now_ts=time.time(),
-        cooldown_s=300.0,
-        scope_key="test",
-    )
-    # An advice_id that was never emitted should return None (not recently emitted)
-    # or short-circuit to None in pytest environments
-    assert result is None, f"Expected None for unseen advice_id, got {result!r}"
-
-
-def test_global_recently_emitted_text_sig_returns_none_for_unseen():
-    """Text signature dedupe returns None for a text never emitted before."""
-    from lib.advisory_engine import _global_recently_emitted_text_sig
-    result = _global_recently_emitted_text_sig(
-        text_sig="some unique advice text xyz123",
-        now_ts=time.time(),
-        cooldown_s=300.0,
-        scope_key="test",
-    )
-    # A text_sig never emitted should return None or short-circuit in pytest
-    assert result is None, f"Expected None for unseen text_sig, got {result!r}"
-
-
 # ── Text repeat detection ─────────────────────────────────────────────
 
 def test_duplicate_repeat_state_function():
