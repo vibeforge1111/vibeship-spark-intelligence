@@ -471,6 +471,15 @@ Branch: feat/spark-alpha
 - Updated controlled-delta timestamp comment to reflect alpha/compat log reality.
 - Added alpha advisory log to baseline rehydrate target set for cutover-era recovery.
 
+73. `fe9f2bb` - `refactor(alpha-pr10): collapse legacy advisory engine entrypoints into alpha compat shim`
+- Replaced legacy heavy runtime entrypoints in `lib/advisory_engine.py` with thin compatibility forwards to alpha runtime:
+  - `on_pre_tool(...)` -> `advisory_engine_alpha.on_pre_tool(...)`
+  - `on_post_tool(...)` -> `advisory_engine_alpha.on_post_tool(...)`
+  - `on_user_prompt(...)` -> `advisory_engine_alpha.on_user_prompt(...)`
+- Added explicit compat-forward error telemetry/rejection counters for shim failures.
+- Updated `get_engine_status()` to expose alpha runtime status under compat mode.
+- Net deletion in legacy runtime surface: ~1k lines removed from `lib/advisory_engine.py`.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -559,6 +568,9 @@ Branch: feat/spark-alpha
 - `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 - `pytest tests/test_advisory_packet_store.py tests/test_advisory_day_trial.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py -q` -> `31 passed`
 - `pytest tests/test_rehydrate_alpha_baseline.py -q` -> `2 passed`
+- `pytest tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `172 passed`
+- `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`
+- `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 
 Notable metrics now:
 - `context.p50`: 230

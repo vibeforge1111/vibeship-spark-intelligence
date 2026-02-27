@@ -90,6 +90,7 @@ Completed commits:
 70. `068203b` PR-09 follow-up: switched doctor advisory runtime health check to alpha-first env semantics (legacy alias retained)
 71. `e5d2123` PR-09/PR-10 follow-up: added shared advisory log-path helper and migrated core runtime readers/observability scripts to alpha-first log resolution
 72. `23ed037` PR-10 follow-up: aligned observatory reverse-engineering/readability references with orchestrator+alpha runtime and added alpha log to baseline rehydrate target set
+73. `fe9f2bb` PR-10 follow-up: collapsed legacy advisory_engine runtime entrypoints into thin alpha compatibility forwards (pre/post/prompt), removing ~1k lines from legacy hot path
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -124,6 +125,7 @@ Current measured state:
 24. Broad post-alignment regression slice: `pytest tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_context_sync_policy.py tests/test_memory_compaction.py tests/test_memory_spine_sqlite.py tests/test_advisory_preferences.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py -q` -> `220 passed`
 25. Live smoke evidence refresh: replay arena smoke (`--episodes 8 --seed 42`) winner `alpha` with promotion gate pass; controlled-delta alpha-route smoke (`--rounds 2`) passed and wrote `benchmarks/out/advisory_delta_smoke_alpha.json`
 26. Log-path centralization regression slice: `pytest tests/test_advisory_packet_store.py tests/test_advisory_day_trial.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py -q` -> `31 passed`; `pytest tests/test_rehydrate_alpha_baseline.py -q` -> `2 passed`
+27. Legacy entrypoint shim-collapse regression slice: `pytest tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `172 passed`; replay smoke (`--episodes 8 --seed 42`) winner `alpha` with promotion gate pass
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial (cognitive SQLite-canonical + advisory packet SQLite spine integrated; JSON compatibility/fallback still present)
