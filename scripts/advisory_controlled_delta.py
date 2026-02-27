@@ -35,7 +35,7 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
 
 def _row_ts(row: Dict[str, Any]) -> float:
     # Different Spark logs use different timestamp keys.
-    # - advisory_engine.jsonl: typically "ts"
+    # - advisory_engine_alpha.jsonl / advisory_engine.jsonl: typically "ts"
     # - advice_feedback_requests.jsonl: typically "created_at"
     for key in ("ts", "created_at", "timestamp"):
         if key in row:

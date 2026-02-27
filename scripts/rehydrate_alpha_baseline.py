@@ -31,6 +31,7 @@ TARGET_SPECS: List[TargetSpec] = [
     TargetSpec("memory_store.sqlite", "sqlite_memory_db"),
     TargetSpec("cognitive_insights.json", "json_container"),
     TargetSpec("advisory_decision_ledger.jsonl", "jsonl"),
+    TargetSpec("advisory_engine_alpha.jsonl", "jsonl"),
     TargetSpec("advisory_engine.jsonl", "jsonl"),
     TargetSpec("advisor/effectiveness.json", "effectiveness"),
     TargetSpec("logs/semantic_retrieval.jsonl", "jsonl"),

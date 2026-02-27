@@ -189,7 +189,7 @@ def generate_topic_finder() -> str:
 def generate_glossary() -> str:
     """Create a glossary for observatory/system terms."""
     terms = [
-        ("Advisory Engine", "The pre-tool orchestrator (`lib/advisory_engine.py`) that retrieves, gates, dedupes, synthesizes, and emits advice."),
+        ("Advisory Engine", "The advisory runtime (`lib/advisory_orchestrator.py` + `lib/advisory_engine_alpha.py`) that retrieves, gates, dedupes, synthesizes, and emits advice."),
         ("Advisory Gate", "Policy layer (`lib/advisory_gate.py`) that decides emit vs suppress based on phase, score, cooldowns, and relevance."),
         ("Advisory Decision Ledger", "JSONL audit of advisory outcomes (`emitted`, `blocked`, etc.) at `~/.spark/advisory_decision_ledger.jsonl`."),
         ("Advice Source", "Origin of an advisory item (for example: `cognitive`, `eidos`, `mind`, `bank`, `baseline`, `chip`)."),
@@ -202,7 +202,7 @@ def generate_glossary() -> str:
         ("EIDOS", "Episodic intelligence subsystem storing episodes/steps/distillations in `~/.spark/eidos.db`."),
         ("Emit Rate", "Share of advisory decisions that result in emitted guidance."),
         ("Follow Rate", "Share of implicit feedback marked as followed/helpful after advisory delivery."),
-        ("Global Dedupe", "Cross-session anti-repeat mechanism in `lib/advisory_engine.py`."),
+        ("Global Dedupe", "Cross-session anti-repeat mechanism in advisory runtime tuneables (`advisory_engine.global_dedupe_*`)."),
         ("Hook", "Claude Code event callback (`hooks/observe.py`) for pre/post tool and prompt events."),
         ("Implicit Feedback", "Post-tool success/failure signals linked to recent advisory exposure."),
         ("Memory Capture", "Extraction of high-signal memory candidates from events (`lib/memory_capture.py`)."),
