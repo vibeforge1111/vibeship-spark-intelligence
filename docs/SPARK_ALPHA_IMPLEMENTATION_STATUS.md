@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, alpha suppression observability alignment + LLM-area surface reduction)
+Last updated: 2026-02-27 (local branch snapshot, alpha observability alignment + LLM-area/config pruning + packet-store readiness stabilization)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -563,6 +563,19 @@ Branch: feat/spark-alpha
 - Updated LLM dispatch registry tests for the new reduced total.
 - Regression slice: `pytest tests/test_llm_dispatch.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_intelligence_llm_preferences.py tests/test_cross_surface_drift_checker.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `184 passed`.
 
+84. `75d6aa7` - `refactor(alpha-pr10): stop advisory alpha compat-log mirroring`
+- Removed duplicate alpha runtime mirror writes to `~/.spark/advisory_engine.jsonl`.
+- Advisory runtime now writes only canonical `~/.spark/advisory_engine_alpha.jsonl`.
+- Kept compatibility readers/fallback paths for historical logs while shrinking live write surface.
+- Updated alpha log test coverage to assert single-log behavior.
+- Regression slice: `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_packet_store.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `69 passed`.
+
+85. `0bab9b0` - `feat(alpha-pr04): stabilize packet store readiness via refreshable stale window`
+- Updated packet-store status scoring to treat recently updated stale packets as refreshable capacity even before first usage.
+- Expanded refreshable stale grace horizon to 24h for daily-cycle stability in readiness/freshness gates.
+- Added regression coverage for refreshable stale packets with zero usage counters.
+- Regression slice: `pytest tests/test_advisory_packet_store.py tests/test_production_loop_gates.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `50 passed`.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -668,6 +681,9 @@ Branch: feat/spark-alpha
 - `python -m py_compile lib/advisory_packet_store.py lib/intelligence_llm_preferences.py lib/observatory/advisory_reverse_engineering.py scripts/intelligence_llm_setup.py` -> pass
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after packet lookup LLM rerank knob retirement)
 - `pytest tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_lineage.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_context_sync_policy.py tests/test_memory_compaction.py tests/test_memory_spine_sqlite.py tests/test_advisory_preferences.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py tests/test_intelligence_llm_preferences.py -q` -> `221 passed`
+- `python scripts/production_loop_report.py` -> `READY (19/19 passed)` (after packet readiness/freshness status stabilization)
+- `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `6`
+- `python scripts/advisory_controlled_delta.py --rounds 2 --label smoke_alpha --out benchmarks/out/advisory_delta_smoke_alpha.json` -> pass
 
 Notable metrics now:
 - `context.p50`: 230
