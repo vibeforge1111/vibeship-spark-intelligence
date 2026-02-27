@@ -79,6 +79,7 @@ Completed commits:
 59. `e12e3a5` PR-05 follow-up: added readiness-aware relaxed packet lookup scoring/flooring and candidate readiness diagnostics
 60. `de6222c` PR-05 follow-up: made packet lookup miss-path contracts deterministic (`lookup_relaxed -> None`, `lookup_relaxed_candidates -> []`)
 61. `75dbe34` PR-09 follow-up: removed dead packet-store LLM alias globals to reduce duplicated config surface
+62. `7418601` PR-04 follow-up: added SQLite advisory packet spine and integrated exact/relaxed packet lookup with JSON fallback safety
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -104,9 +105,10 @@ Current measured state:
 15. Retrieval/readiness regression slice: `pytest tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_tuneables_alignment.py` -> `19 passed`; `pytest tests/test_advisor.py tests/test_advisor_retrieval_routing.py` -> `116 passed`
 16. Retrieval miss-path regression slice: `pytest tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py` -> `130 passed`; `python -m py_compile lib/advisory_packet_store.py tests/test_advisory_packet_store.py` -> pass
 17. Config/packet-store cleanup regression slice: `pytest tests/test_advisory_packet_store.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py` -> `32 passed`; `python -m py_compile lib/advisory_packet_store.py` -> pass
+18. SQLite packet-spine integration slice: `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0`; `pytest tests/test_advisory_packet_store.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py` -> `155 passed`; `python -m py_compile lib/advisory_packet_spine.py lib/advisory_packet_store.py` -> pass
 
 ## Gap vs V2 Simplification Scope
-1. Storage consolidation (128 files -> single spine): partial
+1. Storage consolidation (128 files -> single spine): partial (cognitive SQLite-canonical + advisory packet SQLite spine integrated; JSON compatibility/fallback still present)
 2. Unified noise classifier: done (shadowed, enforce-capable)
 3. Advisory collapse (17 files -> 3): partial
 4. Memory compaction (ACT-R + Mem0 protocol): partial

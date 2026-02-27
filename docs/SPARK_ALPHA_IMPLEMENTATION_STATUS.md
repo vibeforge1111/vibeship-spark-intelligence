@@ -382,6 +382,18 @@ Branch: feat/spark-alpha
   - `PACKET_LOOKUP_LLM_FALLBACK_TO_SCORING`
 - Packet-store now relies solely on canonical LLM reranker module state for lookup LLM controls.
 
+62. `7418601` - `feat(alpha-pr04): add sqlite advisory packet spine and lookup integration`
+- Added SQLite advisory packet spine module `lib/advisory_packet_spine.py`:
+  - metadata upsert path
+  - exact-key alias table
+  - relaxed candidate query path
+- Integrated packet-store with SQLite spine (default-on outside pytest):
+  - `save_packet(...)` dual-writes packet metadata + exact alias to SQLite spine
+  - `lookup_exact(...)` resolves via SQLite alias first, then JSON index fallback
+  - `lookup_relaxed_candidates(...)` queries SQLite candidates first, then JSON meta fallback
+- Added config-authority knob `advisory_packet_store.packet_sqlite_lookup_enabled` in schema + baseline config.
+- Added packet-store tests for SQLite exact/relaxed lookup behavior when JSON index surfaces are missing.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -443,6 +455,9 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py -q` -> `130 passed`
 - `pytest tests/test_advisory_packet_store.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `32 passed`
 - `python -m py_compile lib/advisory_packet_store.py` -> pass
+- `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after sqlite packet-spine config integration)
+- `pytest tests/test_advisory_packet_store.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `155 passed`
+- `python -m py_compile lib/advisory_packet_spine.py lib/advisory_packet_store.py` -> pass
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after dedupe_optimize llm-area surface removal)
 - `pytest tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_vibeforge_helpers.py tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `76 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after suppression_triage llm-area surface removal)
@@ -468,7 +483,7 @@ Notable metrics now:
 These are still pending relative to the broader Simplification/Fast-Track goals:
 
 1. Full advisory collapse (17 modules -> compact 3-module architecture) is not implemented.
-2. Storage consolidation to single SQLite-first memory/advisory store is not implemented.
+2. Storage consolidation to single SQLite-first memory/advisory store is partially implemented (cognitive memory is SQLite-canonical; advisory packet metadata now has SQLite spine + default lookup integration with JSON fallback still retained).
 3. Memory compaction engine is partially implemented (ACT-R style planner + preview/apply runner + bounded periodic ACT-R runtime compaction for cognitive insights are in place); broader integration across advisory stores is still pending.
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).
 5. Large config surface reduction (hard pruning to minimal knobs) is not implemented.
