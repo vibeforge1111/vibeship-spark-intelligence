@@ -417,6 +417,13 @@ Branch: feat/spark-alpha
 - Updated replay output/report fields from `legacy_*` to `orchestrator_*`.
 - Updated replay evidence helper test expectations for winner labels.
 
+66. `68750f4` - `feat(alpha-pr06): mirror alpha events to advisory_engine compat log`
+- Added alpha compatibility mirror in `lib/advisory_engine_alpha.py`:
+  - writes to `~/.spark/advisory_engine_alpha.jsonl` (primary)
+  - mirrors to `~/.spark/advisory_engine.jsonl` (compat) by default outside pytest
+- Added env kill-switch `SPARK_ADVISORY_ALPHA_COMPAT_ENGINE_LOG=0`.
+- Added alpha test coverage for compat mirroring behavior.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -487,6 +494,8 @@ Branch: feat/spark-alpha
 - `python -m py_compile scripts/spark_alpha_replay_arena.py scripts/run_alpha_replay_evidence.py` -> pass
 - `pytest tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py -q` -> `6 passed`
 - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> pass
+- `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_evidence.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `169 passed`
+- `python -m py_compile lib/advisory_engine_alpha.py tests/test_advisory_engine_alpha.py` -> pass
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after dedupe_optimize llm-area surface removal)
 - `pytest tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_vibeforge_helpers.py tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py -q` -> `76 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (after suppression_triage llm-area surface removal)
