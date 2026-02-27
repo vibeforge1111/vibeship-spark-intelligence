@@ -144,6 +144,45 @@ def test_service_status_detects_watchdog_wrapper_command(monkeypatch):
     assert status["watchdog"]["running"] is True
 
 
+def test_service_status_detects_codex_bridge_process(monkeypatch):
+    monkeypatch.setattr(service_control, "_http_ok", lambda *a, **k: False)
+    monkeypatch.setattr(service_control, "_pulse_ok", lambda: False)
+    monkeypatch.setattr(service_control, "_bridge_heartbeat_age", lambda: None)
+    monkeypatch.setattr(service_control, "_scheduler_heartbeat_age", lambda: None)
+    monkeypatch.setattr(service_control, "_codex_bridge_telemetry_age", lambda: 5.0)
+    monkeypatch.setattr(service_control, "_read_pid", lambda name: None)
+    monkeypatch.setattr(
+        service_control,
+        "_process_snapshot",
+        lambda: [(56789, "python adapters/codex_hook_bridge.py --mode observe --poll 2 --max-per-tick 200")],
+    )
+
+    status = service_control.service_status()
+    assert status["codex_bridge"]["running"] is True
+    assert status["codex_bridge"]["process_running"] is True
+    assert status["codex_bridge"]["telemetry_fresh"] is True
+
+
+def test_service_cmds_includes_codex_bridge_by_default(monkeypatch, tmp_path):
+    repo_root = tmp_path / "repo"
+    bridge_script = repo_root / "adapters" / "codex_hook_bridge.py"
+    bridge_script.parent.mkdir(parents=True, exist_ok=True)
+    bridge_script.write_text("print('bridge')\n", encoding="utf-8")
+
+    monkeypatch.setattr(service_control, "ROOT_DIR", repo_root)
+    monkeypatch.delenv("SPARK_CODEX_BRIDGE_MODE", raising=False)
+    monkeypatch.delenv("SPARK_CODEX_BRIDGE_POLL", raising=False)
+    monkeypatch.delenv("SPARK_CODEX_BRIDGE_MAX_PER_TICK", raising=False)
+
+    cmds = service_control._service_cmds(include_mind=False, include_pulse=False)
+    codex = cmds.get("codex_bridge")
+    assert codex is not None
+    assert "--mode" in codex
+    assert codex[codex.index("--mode") + 1] == "observe"
+    assert codex[codex.index("--poll") + 1] == "2"
+    assert codex[codex.index("--max-per-tick") + 1] == "200"
+
+
 def test_load_repo_env_parses_basic_env_file(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text(

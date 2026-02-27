@@ -1083,6 +1083,7 @@ def cmd_up(args):
         include_mind=not args.no_mind,
         include_pulse=(not args.no_pulse) and (not lite),
         include_watchdog=include_watchdog,
+        include_codex_bridge=not args.no_codex_bridge,
         bridge_stale_s=args.bridge_stale_s,
     )
 
@@ -3191,6 +3192,7 @@ Examples:
         p.add_argument("--no-mind", action="store_true", help="do not start mind server")
         p.add_argument("--no-watchdog", action="store_true", help="do not start watchdog")
         p.add_argument("--no-pulse", action="store_true", help="do not start spark pulse")
+        p.add_argument("--no-codex-bridge", action="store_true", help="do not start codex bridge")
         p.add_argument("--sync-context", action="store_true", help="run sync-context after start")
         p.add_argument("--project", "-p", default=None, help="project root for sync-context")
 
@@ -3253,7 +3255,7 @@ Examples:
 
     # logs - unified log access
     logs_parser = subparsers.add_parser("logs", help="View service logs")
-    logs_parser.add_argument("--service", "-s", choices=["sparkd", "bridge_worker", "mind", "pulse", "watchdog", "scheduler"],
+    logs_parser.add_argument("--service", "-s", choices=["sparkd", "bridge_worker", "codex_bridge", "mind", "pulse", "watchdog", "scheduler"],
                              help="Show logs for specific service")
     logs_parser.add_argument("--tail", "-n", type=int, default=50, help="Number of lines to show (default: 50)")
     logs_parser.add_argument("--follow", "-f", action="store_true", help="Follow log output (live tail)")

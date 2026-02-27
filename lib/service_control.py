@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ruff: noqa: S603,S607
-"""Service control helpers for Spark daemons (mind, sparkd, bridge_worker, pulse, watchdog)."""
+"""Service control helpers for Spark daemons (mind, sparkd, bridge_worker, codex_bridge, pulse, watchdog)."""
 
 from __future__ import annotations
 
@@ -49,6 +49,7 @@ def _resolve_pulse_dir() -> Path:
 SPARK_PULSE_DIR = _resolve_pulse_dir()
 STARTUP_READY_TIMEOUT_S = float(os.environ.get("SPARK_STARTUP_READY_TIMEOUT_S", "12"))
 STARTUP_READY_POLL_S = float(os.environ.get("SPARK_STARTUP_READY_POLL_S", "0.4"))
+CODEX_BRIDGE_TELEMETRY = Path.home() / ".spark" / "logs" / "codex_hook_bridge_telemetry.jsonl"
 
 
 def _get_pulse_command() -> list[str]:
@@ -298,6 +299,33 @@ def _scheduler_heartbeat_age() -> Optional[float]:
         return None
 
 
+def _codex_bridge_telemetry_age() -> Optional[float]:
+    if not CODEX_BRIDGE_TELEMETRY.exists():
+        return None
+    try:
+        lines = CODEX_BRIDGE_TELEMETRY.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return None
+    for raw in reversed(lines[-200:]):
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(row, dict):
+            continue
+        try:
+            ts = float(row.get("ts"))
+        except Exception:
+            continue
+        if ts <= 0:
+            continue
+        return max(0.0, time.time() - ts)
+    return None
+
+
 def _load_repo_env(path: Path | None = None) -> dict[str, str]:
     """Load simple KEY=VALUE pairs from repo .env file.
 
@@ -390,6 +418,12 @@ def _is_service_ready(name: str, bridge_stale_s: int = 90) -> bool:
     if name == "scheduler":
         hb_age = _scheduler_heartbeat_age()
         return hb_age is not None and hb_age <= bridge_stale_s * 2
+    if name == "codex_bridge":
+        pid = _read_pid("codex_bridge")
+        if pid is not None:
+            return _pid_alive(pid)
+        hb_age = _codex_bridge_telemetry_age()
+        return hb_age is not None and hb_age <= bridge_stale_s * 2
     if name == "watchdog":
         pid = _read_pid("watchdog")
         return _pid_alive(pid)
@@ -461,7 +495,15 @@ def _service_cmds(
     watchdog_interval: int = 60,
     include_pulse: bool = True,
     include_mind: bool = True,
+    include_codex_bridge: bool = True,
 ) -> dict[str, Optional[list[str]]]:
+    codex_mode = str(os.environ.get("SPARK_CODEX_BRIDGE_MODE", "observe") or "observe").strip().lower()
+    if codex_mode not in {"shadow", "observe"}:
+        codex_mode = "observe"
+    codex_poll = str(os.environ.get("SPARK_CODEX_BRIDGE_POLL", "2") or "2").strip() or "2"
+    codex_max_per_tick = str(os.environ.get("SPARK_CODEX_BRIDGE_MAX_PER_TICK", "200") or "200").strip() or "200"
+    codex_bridge_script = ROOT_DIR / "adapters" / "codex_hook_bridge.py"
+
     cmds = {
         "sparkd": [sys.executable, "-m", "sparkd"],
         "bridge_worker": [
@@ -480,6 +522,20 @@ def _service_cmds(
             str(watchdog_interval),
         ],
     }
+    if include_codex_bridge:
+        if codex_bridge_script.exists():
+            cmds["codex_bridge"] = [
+                sys.executable,
+                str(codex_bridge_script),
+                "--mode",
+                codex_mode,
+                "--poll",
+                codex_poll,
+                "--max-per-tick",
+                codex_max_per_tick,
+            ]
+        else:
+            cmds["codex_bridge"] = None
     if include_mind:
         cmds["mind"] = [sys.executable, str(ROOT_DIR / "mind_server.py")]
     if include_pulse:
@@ -504,6 +560,7 @@ def service_status(bridge_stale_s: int = 90, include_pulse_probe: bool = True) -
     sparkd_pid = _read_pid("sparkd")
     pulse_pid = _read_pid("pulse")
     bridge_pid = _read_pid("bridge_worker")
+    codex_bridge_pid = _read_pid("codex_bridge")
     scheduler_pid = _read_pid("scheduler")
     watchdog_pid = _read_pid("watchdog")
 
@@ -512,6 +569,7 @@ def service_status(bridge_stale_s: int = 90, include_pulse_probe: bool = True) -
     sparkd_keys = [["-m sparkd"], ["sparkd.py"]]
     pulse_keys = _pulse_process_patterns()
     bridge_keys = [["-m bridge_worker"], ["bridge_worker.py"]]
+    codex_bridge_keys = [["codex_hook_bridge.py"]]
     scheduler_keys = [["spark_scheduler.py"]]
     watchdog_keys = [["-m spark_watchdog"], ["spark_watchdog.py"], ["scripts/watchdog.py"]]
 
@@ -539,6 +597,16 @@ def service_status(bridge_stale_s: int = 90, include_pulse_probe: bool = True) -
     )
     bridge_heartbeat_fresh = (hb_age is not None and hb_age <= bridge_stale_s)
     bridge_running = bridge_process_running or bridge_heartbeat_fresh
+    codex_telemetry_age = _codex_bridge_telemetry_age()
+    codex_telemetry_fresh = (
+        codex_telemetry_age is not None and codex_telemetry_age <= bridge_stale_s * 2
+    )
+    codex_bridge_process_running = (
+        _pid_matches(codex_bridge_pid, codex_bridge_keys, snapshot)
+        or _any_process_matches(codex_bridge_keys, snapshot)
+        or _pid_alive_fallback(codex_bridge_pid, snapshot)
+    )
+    codex_bridge_running = codex_bridge_process_running or codex_telemetry_fresh
 
     scheduler_process_running = (
         _pid_matches(scheduler_pid, scheduler_keys, snapshot)
@@ -578,6 +646,13 @@ def service_status(bridge_stale_s: int = 90, include_pulse_probe: bool = True) -
             "process_running": bridge_process_running,
             "heartbeat_fresh": bridge_heartbeat_fresh,
         },
+        "codex_bridge": {
+            "running": codex_bridge_running,
+            "telemetry_age_s": codex_telemetry_age,
+            "pid": codex_bridge_pid,
+            "process_running": codex_bridge_process_running,
+            "telemetry_fresh": codex_telemetry_fresh,
+        },
         "scheduler": {
             "running": scheduler_running,
             "heartbeat_age_s": sched_hb_age,
@@ -600,6 +675,7 @@ def start_services(
     include_mind: bool = True,
     include_pulse: bool = True,
     include_watchdog: bool = True,
+    include_codex_bridge: bool = True,
     bridge_stale_s: int = 90,
 ) -> dict[str, str]:
     cmds = _service_cmds(
@@ -608,17 +684,20 @@ def start_services(
         watchdog_interval=watchdog_interval,
         include_mind=include_mind,
         include_pulse=include_pulse,
+        include_codex_bridge=include_codex_bridge,
     )
     statuses = service_status(bridge_stale_s=bridge_stale_s)
     results: dict[str, str] = {}
 
-    order = ["mind", "sparkd", "bridge_worker", "scheduler", "pulse", "watchdog"]
+    order = ["mind", "sparkd", "bridge_worker", "codex_bridge", "scheduler", "pulse", "watchdog"]
     if not include_mind:
         order.remove("mind")
     if not include_pulse:
         order.remove("pulse")
     if not include_watchdog:
         order.remove("watchdog")
+    if not include_codex_bridge:
+        order.remove("codex_bridge")
 
     for name in order:
         current = statuses.get(name, {})
@@ -654,6 +733,7 @@ def ensure_services(
     include_mind: bool = True,
     include_pulse: bool = True,
     include_watchdog: bool = True,
+    include_codex_bridge: bool = True,
     bridge_stale_s: int = 90,
 ) -> dict[str, str]:
     return start_services(
@@ -663,18 +743,20 @@ def ensure_services(
         include_mind=include_mind,
         include_pulse=include_pulse,
         include_watchdog=include_watchdog,
+        include_codex_bridge=include_codex_bridge,
         bridge_stale_s=bridge_stale_s,
     )
 
 
 def stop_services() -> dict[str, str]:
     results: dict[str, str] = {}
-    for name in ["watchdog", "pulse", "scheduler", "bridge_worker", "sparkd", "mind"]:
+    for name in ["watchdog", "pulse", "scheduler", "codex_bridge", "bridge_worker", "sparkd", "mind"]:
         pid = _read_pid(name)
         patterns = {
             "mind": [["mind_server.py"], ["lite_tier"], ["mind.serve"]],
             "sparkd": [["-m sparkd"], ["sparkd.py"]],
             "bridge_worker": [["-m bridge_worker"], ["bridge_worker.py"]],
+            "codex_bridge": [["codex_hook_bridge.py"]],
             "scheduler": [["spark_scheduler.py"]],
             "pulse": _pulse_process_patterns(),
             "watchdog": [["-m spark_watchdog"], ["spark_watchdog.py"], ["scripts/watchdog.py"]],
@@ -730,6 +812,11 @@ def stop_services() -> dict[str, str]:
                 (spark_root / "scheduler" / "heartbeat.json").unlink(missing_ok=True)
             except Exception:
                 pass
+        if name == "codex_bridge":
+            try:
+                (Path.home() / ".spark" / "adapters" / "codex_hook_bridge.lock").unlink(missing_ok=True)
+            except Exception:
+                pass
     return results
 
 
@@ -738,6 +825,7 @@ def format_status_lines(status: dict[str, dict], bridge_stale_s: int = 90) -> li
     sparkd = status.get("sparkd", {})
     pulse = status.get("pulse", {})
     bridge = status.get("bridge_worker", {})
+    codex_bridge = status.get("codex_bridge", {})
     scheduler = status.get("scheduler", {})
     watchdog = status.get("watchdog", {})
 
@@ -763,6 +851,16 @@ def format_status_lines(status: dict[str, dict], bridge_stale_s: int = 90) -> li
     else:
         status_label = "RUNNING" if hb_age <= bridge_stale_s else "STALE"
         lines.append(f"[spark] bridge_worker: {status_label} (last {int(hb_age)}s ago)")
+    codex_age = codex_bridge.get("telemetry_age_s")
+    if codex_age is None:
+        lines.append(
+            "[spark] codex_bridge: RUNNING (no telemetry)"
+            if codex_bridge.get("running")
+            else "[spark] codex_bridge: STOPPED"
+        )
+    else:
+        codex_label = "RUNNING" if codex_age <= bridge_stale_s * 2 else "STALE"
+        lines.append(f"[spark] codex_bridge: {codex_label} (last {int(codex_age)}s ago)")
     sched_hb = scheduler.get("heartbeat_age_s")
     if sched_hb is None:
         if scheduler.get("running"):
