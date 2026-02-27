@@ -18,25 +18,25 @@ import json
 import os
 import re
 import secrets
+import sqlite3
+import sys
 import time
 from collections import defaultdict, deque
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from threading import Lock
-from threading import Thread
+from threading import Lock, Thread
 from urllib.parse import urlparse
 
-import sys
 sys.path.insert(0, str(Path(__file__).parent))
 
-from lib.events import SparkEventV1, validate_event_dict
-from lib.queue import quick_capture, EventType
-from lib.orchestration import register_agent, recommend_agent, record_handoff, get_orchestrator
 from lib.bridge_cycle import read_bridge_heartbeat, run_bridge_cycle, write_bridge_heartbeat
-from lib.pattern_detection.worker import get_pattern_backlog
-from lib.validation_loop import get_validation_backlog
 from lib.diagnostics import setup_component_logging
+from lib.events import SparkEventV1, validate_event_dict
+from lib.orchestration import get_orchestrator, recommend_agent, record_handoff, register_agent
+from lib.pattern_detection.worker import get_pattern_backlog
 from lib.ports import SPARKD_PORT
+from lib.queue import EventType, quick_capture
+from lib.validation_loop import get_validation_backlog
 
 PORT = SPARKD_PORT
 TOKEN_FILE = Path.home() / ".spark" / "sparkd.token"
@@ -60,6 +60,10 @@ _REDACT_PATTERNS = (
     (re.compile(r"(?i)\b(api[_-]?key|token|secret|password)\s*[:=]\s*([A-Za-z0-9._\-]{8,})"), r"\1=[REDACTED]"),
     (re.compile(r"\bsk-[A-Za-z0-9_\-]{8,}\b"), "[REDACTED_SK]"),
 )
+COGNITIVE_FILE = Path.home() / ".spark" / "cognitive_insights.json"
+EIDOS_DB_FILE = Path.home() / ".spark" / "eidos.db"
+MIND_SYNC_STATE_FILE = Path.home() / ".spark" / "mind_sync_state.json"
+CHIP_INSIGHTS_DIR = Path.home() / ".spark" / "chip_insights"
 
 _RATE_LIMIT_BUCKETS = defaultdict(deque)
 _RATE_LIMIT_LOCK = Lock()
@@ -284,6 +288,162 @@ def _quarantine_invalid(payload, reason: str) -> None:
         _trim_jsonl_tail(INVALID_EVENTS_FILE, INVALID_EVENTS_MAX_LINES)
     except Exception:
         return
+
+
+def _count_jsonl_lines(path: Path) -> int:
+    if not path.exists():
+        return 0
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as f:
+            return sum(1 for _ in f)
+    except Exception:
+        return 0
+
+
+def _memory_health_snapshot(*, now_ts: float | None = None) -> dict:
+    now = float(now_ts if now_ts is not None else time.time())
+    issues = []
+
+    cognitive = {
+        "path": str(COGNITIVE_FILE),
+        "exists": COGNITIVE_FILE.exists(),
+        "insights": 0,
+        "readable": False,
+    }
+    if cognitive["exists"]:
+        try:
+            raw = json.loads(COGNITIVE_FILE.read_text(encoding="utf-8"))
+            if isinstance(raw, dict) and isinstance(raw.get("insights"), list):
+                cognitive["insights"] = len(raw.get("insights") or [])
+            elif isinstance(raw, dict):
+                cognitive["insights"] = len(raw)
+            elif isinstance(raw, list):
+                cognitive["insights"] = len(raw)
+            cognitive["readable"] = True
+        except json.JSONDecodeError:
+            issues.append({
+                "code": "memory_store_malformed",
+                "store": "cognitive",
+                "severity": "error",
+                "detail": "cognitive_insights.json is not valid JSON",
+            })
+        except Exception as e:
+            issues.append({
+                "code": "memory_store_unreadable",
+                "store": "cognitive",
+                "severity": "error",
+                "detail": str(e)[:200],
+            })
+    else:
+        issues.append({
+            "code": "memory_store_missing",
+            "store": "cognitive",
+            "severity": "info",
+            "detail": "cognitive_insights.json not found (cold start or no captured learnings yet)",
+        })
+
+    eidos = {
+        "path": str(EIDOS_DB_FILE),
+        "exists": EIDOS_DB_FILE.exists(),
+        "readable": False,
+        "distillations": 0,
+    }
+    if eidos["exists"]:
+        try:
+            conn = sqlite3.connect(str(EIDOS_DB_FILE))
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table'")
+                _ = int((cur.fetchone() or [0])[0] or 0)
+                try:
+                    cur.execute("SELECT count(*) FROM distillations")
+                    eidos["distillations"] = int((cur.fetchone() or [0])[0] or 0)
+                except Exception:
+                    eidos["distillations"] = 0
+            finally:
+                conn.close()
+            eidos["readable"] = True
+        except Exception as e:
+            issues.append({
+                "code": "memory_store_sqlite_error",
+                "store": "eidos",
+                "severity": "error",
+                "detail": str(e)[:200],
+            })
+    else:
+        issues.append({
+            "code": "memory_store_missing",
+            "store": "eidos",
+            "severity": "info",
+            "detail": "eidos.db not found (cold start or EIDOS not initialized yet)",
+        })
+
+    mind_sync = {
+        "path": str(MIND_SYNC_STATE_FILE),
+        "exists": MIND_SYNC_STATE_FILE.exists(),
+        "readable": False,
+        "pending_queue": 0,
+    }
+    if mind_sync["exists"]:
+        try:
+            data = json.loads(MIND_SYNC_STATE_FILE.read_text(encoding="utf-8"))
+            pending = 0
+            if isinstance(data, dict):
+                queue_items = data.get("queue") or []
+                if isinstance(queue_items, list):
+                    pending = len(queue_items)
+                pending = max(pending, int(data.get("pending_queue") or 0))
+            mind_sync["pending_queue"] = int(max(0, pending))
+            mind_sync["readable"] = True
+        except Exception as e:
+            issues.append({
+                "code": "memory_optional_unreadable",
+                "store": "mind_sync_state",
+                "severity": "warning",
+                "detail": str(e)[:200],
+            })
+
+    chip_stats = {
+        "path": str(CHIP_INSIGHTS_DIR),
+        "exists": CHIP_INSIGHTS_DIR.exists(),
+        "files": 0,
+        "rows": 0,
+    }
+    if chip_stats["exists"]:
+        try:
+            files = list(CHIP_INSIGHTS_DIR.glob("*.jsonl"))
+            chip_stats["files"] = len(files)
+            chip_stats["rows"] = sum(_count_jsonl_lines(path) for path in files)
+        except Exception as e:
+            issues.append({
+                "code": "memory_optional_unreadable",
+                "store": "chip_insights",
+                "severity": "warning",
+                "detail": str(e)[:200],
+            })
+
+    has_error = any(str(i.get("severity")) == "error" for i in issues)
+    has_warning = any(str(i.get("severity")) == "warning" for i in issues)
+    cold_start = (
+        not cognitive["exists"]
+        and not eidos["exists"]
+        and cognitive["insights"] == 0
+        and eidos["distillations"] == 0
+    )
+    status = "degraded" if has_error else ("warning" if has_warning else ("cold_start" if cold_start else "healthy"))
+
+    return {
+        "ok": status != "degraded",
+        "status": status,
+        "now": now,
+        "stores": {
+            "cognitive": cognitive,
+            "eidos": eidos,
+            "mind_sync_state": mind_sync,
+            "chip_insights": chip_stats,
+        },
+        "issues": issues,
+    }
 
 
 def _parse_bool(value, default: bool = True) -> bool:
@@ -569,6 +729,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/health":
             return _text(self, 200, "ok")
+        if path == "/api/memory/health":
+            return _json(self, 200, _memory_health_snapshot())
         if path == "/status":
             heartbeat = read_bridge_heartbeat() or {}
             # Include pipeline health if available
