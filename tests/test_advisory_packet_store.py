@@ -496,3 +496,30 @@ def test_store_status_counts_recent_used_stale_as_refreshable(monkeypatch, tmp_p
     assert int(status.get("refreshable_stale_packets", 0)) >= 1
     assert int(status.get("effective_fresh_packets", 0)) >= 1
     assert float(status.get("freshness_ratio", 0.0)) >= 1.0
+
+
+def test_store_status_counts_recent_stale_as_refreshable_without_usage(monkeypatch, tmp_path):
+    _patch_store_paths(monkeypatch, tmp_path)
+    now = time.time()
+
+    packet = store.build_packet(
+        project_key="proj",
+        session_context_key="ctx",
+        tool_name="Edit",
+        intent_family="auth_security",
+        task_plane="build_delivery",
+        advisory_text="Recently updated stale packets remain refreshable.",
+        source_mode="prefetch",
+        lineage={"sources": ["prefetch"], "memory_absent_declared": False},
+        ttl_s=120,
+    )
+    packet["fresh_until_ts"] = now - 10.0
+    packet["updated_ts"] = now - 120.0
+    packet["usage_count"] = 0
+    packet["read_count"] = 0
+    store.save_packet(packet)
+
+    status = store.get_store_status()
+    assert int(status.get("fresh_packets", 0)) == 0
+    assert int(status.get("refreshable_stale_packets", 0)) >= 1
+    assert int(status.get("effective_fresh_packets", 0)) >= 1

@@ -51,7 +51,9 @@ TRACE_HISTORY_TEXT_MAX = 60
 
 DEFAULT_PACKET_TTL_S = 900.0
 MAX_INDEX_PACKETS = 2000
-STATUS_REFRESH_GRACE_MAX_AGE_S = 21600.0
+# Recently updated stale packets are treated as refreshable store capacity
+# in status metrics; use a 24h window to avoid over-penalizing daily cycles.
+STATUS_REFRESH_GRACE_MAX_AGE_S = 86400.0
 RELAXED_MATCH_WEIGHT_TOOL = 4.0
 RELAXED_MATCH_WEIGHT_INTENT = 3.0
 RELAXED_MATCH_WEIGHT_PLANE = 2.0
@@ -3421,9 +3423,8 @@ def get_store_status() -> Dict[str, Any]:
         age_s = max(0.0, now_value - updated_ts)
         if age_s > float(STATUS_REFRESH_GRACE_MAX_AGE_S):
             continue
-        usage_count = _meta_count(row, "usage_count", fallback_key="read_count")
-        if usage_count <= 0:
-            continue
+        # Freshness can be renewed in-place for recently updated stale rows,
+        # so treat them as effective-fresh capacity even before first usage.
         refreshable_stale += 1
     effective_fresh = int(fresh + refreshable_stale)
     active_rows = max(1, int(active))
