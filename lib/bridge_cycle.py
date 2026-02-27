@@ -39,7 +39,7 @@ from lib.validation_loop import process_outcome_validation, process_validation_e
 BRIDGE_HEARTBEAT_FILE = Path.home() / ".spark" / "bridge_worker_heartbeat.json"
 _reconcile_done = False
 
-# --- Defaults — overridden by config-authority resolution below ---
+# --- Defaults â€” overridden by config-authority resolution below ---
 SPARK_OPENCLAW_NOTIFY: bool = True
 _NOTIFY_COOLDOWN_S = 300  # 5 minutes
 _last_notify_time: float = 0.0
@@ -756,146 +756,16 @@ def run_bridge_cycle(
         except Exception as e:
             log_debug("bridge_worker", f"auto-tuner failed ({e})", None)
 
-        # --- LLM-powered intelligence (Claude OAuth) ---
-        # Only run when we have meaningful data to analyze
-        patterns_found = stats.get("pattern_processed", 0)
-        insights_merged = (stats.get("chip_merge") or {}).get("merged", 0)
-        content_learned = int(stats.get("content_learned", 0) or 0)
-
-        if (
-            BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED
-            and (patterns_found >= 5 or insights_merged >= 2 or content_learned >= 2)
-        ):
-            try:
-                from lib.llm import synthesize_advisory
-
-                # 1. Build rich pattern summaries from actual event data
-                pattern_summaries = _build_pattern_summaries(
-                    user_prompt_events or [], edit_write_events or [], stats
-                )
-
-                # 2. Get filtered, relevant insights (no benchmark noise)
-                # Detect dominant source from this batch of events
-                _source_counts: dict = {}
-                for ev in (user_prompt_events or []) + (edit_write_events or []):
-                    s = (ev.data or {}).get("source", "")
-                    if s:
-                        _source_counts[s] = _source_counts.get(s, 0) + 1
-                dominant_source = max(_source_counts, key=_source_counts.get) if _source_counts else ""
-                recent_insights = _get_filtered_insights(source=dominant_source)
-
-                if recent_insights or pattern_summaries:
-                    advisory = synthesize_advisory(
-                        patterns=pattern_summaries,
-                        insights=recent_insights[:10],
-                    )
-                    if advisory:
-                        pruned_advisory, dropped = _prune_redundant_advisory(advisory, events or [])
-                        if dropped:
-                            log_debug("bridge_worker", f"Pruned {dropped} redundant advisory items", None)
-                        if pruned_advisory.strip():
-                            stats["llm_advisory"] = pruned_advisory
-                            # Write advisory to SPARK_CONTEXT for agent consumption
-                            _write_llm_advisory(pruned_advisory)
-                            log_debug("bridge_worker", f"LLM advisory generated ({len(pruned_advisory)} chars)", None)
-                        else:
-                            log_debug("bridge_worker", "Skipped advisory after redundancy pruning (no actionable items)", None)
-
-            except Exception as e:
-                log_debug("bridge_worker", f"LLM advisory failed ({e})", None)
-                stats["errors"].append("llm_advisory")
-        else:
-            stats["llm_advisory_sidecar"] = {
-                "enabled": False,
-                "reason": "alpha_advisory_engine_authoritative",
-            }
-
-        # EIDOS distillation (less frequent — every 10th cycle with patterns)
-        try:
-            distill_eidos = None
-            if BRIDGE_LLM_EIDOS_SIDECAR_ENABLED:
-                from lib.llm import distill_eidos
-            # Use a simple file counter
-            _eidos_counter_file = Path.home() / ".spark" / "eidos_llm_counter.txt"
-            counter = 0
-            if BRIDGE_LLM_EIDOS_SIDECAR_ENABLED:
-                if _eidos_counter_file.exists():
-                    try:
-                        counter = int(_eidos_counter_file.read_text().strip())
-                    except Exception:
-                        counter = 0
-                counter += 1
-                _eidos_counter_file.write_text(str(counter))
-            else:
-                stats["eidos_llm_sidecar"] = {
-                    "enabled": False,
-                    "reason": "canonical_eidos_store_pipeline_authoritative",
-                }
-
-            opp_stats = stats.get("opportunity_scanner") or {}
-            opp_promotions = (opp_stats.get("promoted_candidates") or []) if isinstance(opp_stats, dict) else []
-            if (
-                BRIDGE_LLM_EIDOS_SIDECAR_ENABLED
-                and counter % 5 == 0
-                and (patterns_found > 0 or opp_promotions or content_learned > 0)
-            ):
-                # Gather behavioral observations
-                observations = []
-                if stats.get("llm_advisory"):
-                    observations.append(f"Advisory: {stats['llm_advisory'][:200]}")
-                if content_learned > 0:
-                    observations.append(f"Content learning captured {content_learned} item(s) this cycle")
-                chip_stats = stats.get("chips", {})
-                if chip_stats.get("insights_captured"):
-                    observations.append(f"Captured {chip_stats['insights_captured']} chip insights")
-                if stats.get("auto_tuner", {}).get("health_recs"):
-                    observations.append(f"Auto-tuner made {stats['auto_tuner']['health_recs']} recommendations")
-                for cand in opp_promotions[:3]:
-                    obs = str(cand.get("eidos_observation") or cand.get("statement") or "").strip()
-                    if obs:
-                        observations.append(obs[:240])
-
-                if observations:
-                    eidos_update = distill_eidos(observations)
-                    if eidos_update:
-                        intake = _append_eidos_update(eidos_update)
-                        if intake.ok:
-                            stats["eidos_distillation"] = eidos_update
-                            structured = intake.structured if isinstance(intake.structured, dict) else None
-                            if isinstance(structured, dict):
-                                kept = [
-                                    it for it in (structured.get("insights") or [])
-                                    if isinstance(it, dict) and str(it.get("decision", "keep")).lower() == "keep"
-                                ]
-                                if kept:
-                                    top = kept[0]
-                                    try:
-                                        stats["eidos_priority_top"] = float(top.get("priority_score") or 0.0)
-                                    except Exception:
-                                        stats["eidos_priority_top"] = 0.0
-                                    emo = top.get("emotional_signal") if isinstance(top.get("emotional_signal"), dict) else {}
-                                    stats["eidos_emotion_top"] = str(emo.get("type") or "neutral")
-                            if intake.duplicate:
-                                stats["eidos_distillation_note"] = "duplicate_skipped"
-                            log_debug("bridge_worker", f"EIDOS distillation complete ({intake.reason})", None)
-                        else:
-                            stats["eidos_distillation_skipped"] = intake.reason
-                            log_debug("bridge_worker", f"EIDOS distillation skipped ({intake.reason})", None)
-
-            # Periodic EIDOS pruning (every 50th cycle)
-            if BRIDGE_LLM_EIDOS_SIDECAR_ENABLED and counter % 50 == 0:
-                try:
-                    from lib.eidos.store import get_store
-                    pruned = get_store().prune_distillations()
-                    total_pruned = sum(pruned.values())
-                    if total_pruned > 0:
-                        stats["eidos_pruned"] = pruned
-                        log_debug("bridge_worker", f"EIDOS pruned {total_pruned} distillations: {pruned}", None)
-                except Exception as prune_err:
-                    log_debug("bridge_worker", f"EIDOS pruning failed ({prune_err})", None)
-        except Exception as e:
-            log_debug("bridge_worker", f"EIDOS distillation failed ({e})", None)
-
+        # Advisory and EIDOS LLM sidecars are intentionally disabled.
+        # The alpha advisory engine + canonical EIDOS intake remain authoritative.
+        stats["llm_advisory_sidecar"] = {
+            "enabled": False,
+            "reason": "alpha_advisory_engine_authoritative",
+        }
+        stats["eidos_llm_sidecar"] = {
+            "enabled": False,
+            "reason": "canonical_eidos_store_pipeline_authoritative",
+        }
     finally:
         # --- Flush all deferred saves (single write per file) ---
         if cognitive:
@@ -983,13 +853,13 @@ def _is_noise_insight(text: str) -> bool:
     for pattern in _INSIGHT_NOISE_PATTERNS:
         if pattern.lower() in t:
             return True
-    # Skip very short insights — too vague to be useful
+    # Skip very short insights â€” too vague to be useful
     if len(text.strip()) < 30:
         return True
     # Skip raw transcript fragments
     if _looks_like_raw_transcript(text):
         return True
-    # Skip insights with code blocks — usually raw examples, not distilled wisdom
+    # Skip insights with code blocks â€” usually raw examples, not distilled wisdom
     if "```" in text:
         return True
     # Skip insights that are just "Prefer X over Y" with raw data fragments
@@ -1024,7 +894,7 @@ def _get_filtered_insights(limit: int = 10, source: str = "") -> list:
     cog = get_cognitive_learner()
     filtered = []
 
-    # Prefer wisdom, context, and meta_learning categories — these are most actionable
+    # Prefer wisdom, context, and meta_learning categories â€” these are most actionable
     preferred_categories = [
         CognitiveCategory.WISDOM,
         CognitiveCategory.CONTEXT,
@@ -1078,12 +948,12 @@ def _build_pattern_summaries(
 
     Instead of just "16 patterns detected", produces things like:
     - "User edited lib/bridge_cycle.py, lib/llm.py (Python refactoring session)"
-    - "Heavy use of exec tool (12 calls) — debugging/testing workflow"
+    - "Heavy use of exec tool (12 calls) â€” debugging/testing workflow"
     - "Error patterns: 3 failed tool calls (Read, exec)"
     """
     summaries = []
 
-    # 1. Files being edited — shows what the session is about
+    # 1. Files being edited â€” shows what the session is about
     edited_files = set()
     for ev in edit_events:
         ti = ev.tool_input or {}
@@ -1102,7 +972,7 @@ def _build_pattern_summaries(
             files_str += f" (+{len(edited_files)-5} more)"
         summaries.append(f"Files being edited: {files_str}")
 
-    # 2. User prompt themes — what the human is asking about
+    # 2. User prompt themes â€” what the human is asking about
     prompt_snippets = []
     for ev in user_prompts[-5:]:
         payload = (ev.data or {}).get("payload") or {}
@@ -1331,7 +1201,7 @@ def _maybe_notify_openclaw(stats: Dict[str, Any]) -> None:
         summary = "Spark bridge cycle: " + ", ".join(findings)
         notify_agent(summary, priority="normal")
         wake_agent(
-            f"🔮 Spark found something — read SPARK_CONTEXT.md and SPARK_NOTIFICATIONS.md. Summary: {summary}"
+            f"ðŸ”® Spark found something â€” read SPARK_CONTEXT.md and SPARK_NOTIFICATIONS.md. Summary: {summary}"
         )
         _last_notify_time = now
     except Exception as e:
