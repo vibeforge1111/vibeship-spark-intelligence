@@ -59,15 +59,26 @@ Completed commits:
 39. `5df7ae9` PR-08 follow-up: added blocking benchmark-stage checks to VibeForge promotion gating
 40. `f513369` PR-10 follow-up: removed route-derived provider diagnostics field in advisory engine
 41. `74cce2a` PR-04 follow-up: added JSON-consumer retirement streak gate ledger
+42. `d81581e` PR-04 follow-up: migrated runtime cognitive readers to SQLite-first snapshot
+43. `00c4306` PR-10 follow-up: made live advisory orchestration alpha-only
+44. `3572adf` PR-04 follow-up: added periodic cognitive compaction pass in context sync
+45. `a02d6a0` PR-09 follow-up: pruned unused source_roles and llm_areas doc config surface
+46. `cecea8c` PR-04 follow-up: disabled runtime JSON fallback by default after gate readiness
+47. `5cb3c0b` PR-04/09 follow-up: collapsed runtime JSON surface and added workflow_evidence schema/config-authority path
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
 2. `memory_quality_observatory.py`: retrieval guardrails passing
-3. Key metrics: `context.p50=230`, `advisory.emit_rate=0.194`, `strict_trace_coverage=0.7883`
+3. Key metrics: `context.p50=230`, `advisory.emit_rate=0.194`, `strict_trace_coverage=0.7172`
 4. Replay arena latest (`scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42`):
    - winner: `alpha`
    - `promotion_gate_pass=true`
-   - `consecutive_pass_streak=13`
+   - `consecutive_pass_streak=22`
+5. JSON consumer retirement latest (`scripts/memory_json_consumer_gate.py --max-runtime-hits 2 --max-total-hits 80 --required-streak 3`):
+   - `runtime_hits=2`
+   - `total_hits=68`
+   - `ready_for_runtime_json_retirement=true`
+6. Tuneables schema validation: `ok=True`, `unknown=0` (workflow_evidence now schema-covered)
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial
@@ -104,7 +115,7 @@ Current measured state:
 5. JSON writes are now compatibility mirror only (`SPARK_MEMORY_SPINE_JSON_MIRROR`), not canonical source.
 6. Added JSON consumer inventory tooling (`scripts/memory_json_consumer_audit.py`) and streak gate (`scripts/memory_json_consumer_gate.py`) for explicit retirement readiness.
 7. Added ACT-R style compaction planner (`lib/memory_compaction.py`) and preview/apply runner (`scripts/cognitive_memory_compaction.py`) with Mem0 action labels.
-8. Remaining: extend SQLite-first coverage across advisory/memory surfaces beyond cognitive learner and delete remaining runtime JSON consumers.
+8. Remaining: retire the final two compatibility JSON paths (cognitive learner legacy file path + spine fallback path) once full JSON deprecation is approved.
 
 ### PR-05 Retrieval Fusion (RRF + Contextual Retrieval)  (Done for Current Scope)
 1. Hybrid retrieval now includes deterministic RRF fusion (semantic + lexical + support ranks).
@@ -154,7 +165,8 @@ Current measured state:
 2. Replaced local helper copies in advisory engine/orchestrator/alpha/quarantine modules.
 3. Removed dead advisory fallback tuneables (`fallback_budget_cap/window`) from schema after fallback lane deletion.
 4. Removed stale fallback-budget keys from baseline config (`config/tuneables.json`) and aligned docs/observatory references.
-5. Remaining: broad tuneable pruning and additional utility dedup across non-advisory surfaces.
+5. Added missing `workflow_evidence` schema/config-authority integration to eliminate unknown config surface.
+6. Remaining: broad tuneable pruning and additional utility dedup across non-advisory surfaces.
 
 ### PR-10 Legacy Deletion Sweep (Mandatory)  (Partial)
 1. Removed hook-level legacy fallback (`observe.py` direct `advisor.advise_on_tool` fallback).
@@ -165,12 +177,13 @@ Current measured state:
 6. Removed advisory-emitter legacy compatibility shim (`_emit_advisory_compat`) from advisory engine hot path.
 7. Removed duplicate route-only ledger field (`route_hint`) from advisory decision entries.
 8. Removed route-derived `provider_path` diagnostics field from advisory engine envelope.
-9. Remaining: larger advisory-stack file deletion set after live canary pass.
-10. Pending broader sweep once PR-03/04/05/06 are proven:
+9. Made live advisory orchestration alpha-only (legacy/canary runtime branches removed from orchestrator hot path).
+10. Remaining: larger advisory-stack file deletion set after live canary pass.
+11. Pending broader sweep once PR-03/04/05/06 are proven:
    - Legacy advisory stack (targeting 17-file collapse from V2)
    - Redundant noise filters no longer used
    - Legacy storage write paths replaced by SQLite spine
-11. Output required: explicit deleted file list + LOC removed + rollback tag.
+12. Output required: explicit deleted file list + LOC removed + rollback tag.
 
 ## Methods Decision (RL Governor vs VibeForge Loop)
 Default path for alpha:

@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, storage-compaction/tooling + VibeForge benchmark-gate hardening)
+Last updated: 2026-02-27 (local branch snapshot, runtime JSON retirement + workflow evidence schema/config authority alignment)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -275,6 +275,32 @@ Branch: feat/spark-alpha
 - Gate supports runtime-hit and total-hit thresholds with optional enforcement mode.
 - Added helper tests in `tests/test_memory_json_consumer_gate_helpers.py`.
 
+42. `d81581e` - `feat(alpha-pr04): migrate runtime cognitive readers to sqlite-first snapshot`
+- Switched runtime cognitive readers (gates, observatory, advisory memory fusion, auto-tuner) to SQLite-first snapshot helpers.
+- Added runtime snapshot tests and audit helper hardening.
+
+43. `00c4306` - `refactor(alpha-pr10): make live advisory orchestration alpha-only`
+- Removed live orchestrator route branching and made runtime pre/post/prompt advisory orchestration alpha-only.
+- Kept requested-route telemetry for diagnostics while routing all live traffic through alpha.
+
+44. `3572adf` - `feat(alpha-pr04): add periodic cognitive compaction pass in context sync`
+- Added cooldown-based periodic compaction (signal dedupe, struggle dedupe, wisdom promotion) in `lib/context_sync.py`.
+- Added env controls and diagnostics for compaction cadence.
+
+45. `a02d6a0` - `refactor(alpha-pr09): prune unused source_roles and llm_areas doc config surface`
+- Removed unused top-level `source_roles` from `config/tuneables.json`.
+- Removed stale `llm_areas._doc` surface from baseline config.
+
+46. `cecea8c` - `refactor(alpha-pr04): disable runtime JSON fallback by default after gate readiness`
+- Disabled runtime JSON fallback by default behind explicit opt-in (`SPARK_MEMORY_RUNTIME_JSON_FALLBACK=1`), while keeping pytest compatibility.
+- Added test coverage for default-fallback-off behavior.
+
+47. `5cb3c0b` - `feat(alpha-pr04/pr09): collapse runtime JSON surface and schema-workflow evidence`
+- Collapsed residual runtime JSON references to a SQLite-first/default-path helper surface.
+- Added `workflow_evidence` to tuneables schema and switched `lib/workflow_evidence.py` to config-authority resolution.
+- Updated memory quality observatory context stats to SQLite-first runtime snapshot reads.
+- Reduced JSON consumer audit to `runtime_hits=2` (from 18 in prior state).
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -317,8 +343,12 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisory_orchestrator.py tests/test_advisory_dual_path_router.py tests/test_advisory_engine_alpha.py -q` -> `16 passed`
 - `pytest tests/test_advisory_dual_path_router.py tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_on_pre_tool.py -q` -> `31 passed`
 - `python scripts/cognitive_memory_compaction.py --candidate-limit 5` -> preview produced compaction report (`total=72`, `update_candidates=12`)
-- `python scripts/memory_json_consumer_audit.py --out-dir benchmarks/out/memory_spine_audit` -> audit report refreshed (`hits=150`, `runtime_hits=35`)
-- `python scripts/memory_json_consumer_gate.py --max-runtime-hits 40 --max-total-hits 200 --required-streak 3` -> gate pass, streak `1/3`
+- `python scripts/memory_json_consumer_audit.py --out-dir benchmarks/out/memory_spine_audit` -> audit report refreshed (`hits=68`, `runtime_hits=2`)
+- `python scripts/memory_json_consumer_gate.py --max-runtime-hits 2 --max-total-hits 80 --required-streak 3` -> gate pass, streak `5/3`, `ready_for_runtime_json_retirement=true`
+- `pytest tests/test_workflow_evidence.py tests/test_production_loop_gates.py tests/test_memory_spine_sqlite.py tests/test_memory_json_consumer_audit_helpers.py tests/test_observatory_helpfulness_explorer.py tests/test_observatory_meta_ralph_totals.py tests/test_context_sync_policy.py -q` -> `44 passed`
+- `pytest tests/test_tuneables_alignment.py tests/test_advisor.py -q` -> `98 passed`
+- `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (workflow_evidence section now schema-covered)
+- `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `22/3`
 - Replay artifacts:
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.json`
   - `benchmarks/out/replay_arena/spark_alpha_replay_arena_20260227_013933.md`
@@ -328,10 +358,10 @@ Branch: feat/spark-alpha
 Notable metrics now:
 - `context.p50`: 230
 - `advisory.emit_rate`: 0.194
-- `strict_trace_coverage`: 0.7883
-- `strict_acted_on_rate`: 0.2798
-- `advisory_store_readiness`: 0.455
-- `advisory_store_freshness`: 0.455
+- `strict_trace_coverage`: 0.7172
+- `strict_acted_on_rate`: 0.2581
+- `advisory_store_readiness`: 0.510
+- `advisory_store_freshness`: 0.510
 
 ## Not done yet
 
@@ -345,7 +375,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
 7. Broad file/function deletion pass to reach Carmack-size target is not done.
 8. Final migration playbook for old paths/deprecated modules is not done.
-9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + JSON mirror compatibility); JSON consumer audit + retirement gate tooling is now in place, but broader runtime JSON consumer deletion is still pending.
+9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + JSON mirror compatibility); runtime JSON consumer surface is reduced to 2 hits (CognitiveLearner legacy file + spine compatibility path), and retirement gate is passing (`5/3` streak).
 10. PR-05 superseded fallback rank-extension branch deletion is complete, and keyword/parser fallback paths are removed; broader retrieval simplification outside these branches is still pending.
 11. PR-06 alpha ownership expansion for post-tool/user-prompt is complete; broad legacy advisory file removals after canary burn-in are still pending.
 12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup and dead fallback removal.
