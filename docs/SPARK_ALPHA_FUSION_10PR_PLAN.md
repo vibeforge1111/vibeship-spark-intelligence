@@ -72,6 +72,7 @@ Completed commits:
 52. `1b53c38` PR-10/PR-05 follow-up: unified retrieval fusion weights and pruned per-domain weight branches in advisor defaults
 53. `8936beb` PR-10 follow-up: removed dead global-dedupe helper functions and helper-only tests
 54. `64c1f69` PR-10 follow-up: removed LLM-assisted global dedupe scope optimization from runtime (deterministic global scope)
+55. `5ab1d92` PR-09 follow-up: removed unused `dedupe_optimize` LLM-area surface (dispatch + schema + baseline tuneables)
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -90,6 +91,7 @@ Current measured state:
 8. Retrieval+config slice (`tests/test_advisor_retrieval_routing.py tests/test_advisor.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py`): `134 passed`
 9. Advisory dedupe/lineage slice (`tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py`): `48 passed`
 10. Advisory dedupe deterministic-scope slice (`tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_lineage.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_engine_evidence.py tests/test_advisory_dual_path_router.py tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py`): `48 passed`
+11. Config-authority + advisory regression slice after llm-area surface pruning: `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0`; `pytest ...` composite slice -> `76 passed`
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial
@@ -178,7 +180,8 @@ Current measured state:
 3. Removed dead advisory fallback tuneables (`fallback_budget_cap/window`) from schema after fallback lane deletion.
 4. Removed stale fallback-budget keys from baseline config (`config/tuneables.json`) and aligned docs/observatory references.
 5. Added missing `workflow_evidence` schema/config-authority integration to eliminate unknown config surface.
-6. Remaining: broad tuneable pruning and additional utility dedup across non-advisory surfaces.
+6. Removed unused `dedupe_optimize` llm-area config surface from dispatch/schema/baseline config.
+7. Remaining: broad tuneable pruning and additional utility dedup across non-advisory surfaces.
 
 ### PR-10 Legacy Deletion Sweep (Mandatory)  (Partial)
 1. Removed hook-level legacy fallback (`observe.py` direct `advisor.advise_on_tool` fallback).
