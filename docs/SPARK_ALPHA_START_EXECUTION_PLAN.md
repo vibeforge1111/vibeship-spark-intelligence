@@ -47,15 +47,15 @@ Latest measured signals:
 ### Verified not done
 
 1. Full advisory collapse not complete:
-   - still `14` `lib/*advisory*.py` files
+   - wave 1 completed (`10` `lib/*advisory*.py` files), final 3-module end-state pending
 2. Config surface still large:
-   - `lib/tuneables_schema.py` -> `40` sections, `415` keys
+   - reduced to `40` sections, `279` keys (target met for wave 1; deeper runtime-specific pruning still pending)
 3. Single-store consolidation still partial:
    - SQLite path exists, but JSON/JSONL surface remains broad
 4. Memory compaction still partial:
    - ACT-R compaction exists, but no unified advisory-store compaction layer
-5. Distillation simplification not complete:
-   - `5` distillation files remain
+5. Distillation file-surface collapse done:
+   - reduced to `3` distillation files; deeper flow unification remains
 6. VibeForge evolve lane deferred:
    - current implementation is tuneable proposal/rollback (no code-evolve lane in this repo)
 

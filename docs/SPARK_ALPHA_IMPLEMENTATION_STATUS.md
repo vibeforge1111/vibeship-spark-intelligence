@@ -1013,16 +1013,26 @@ Notable metrics now:
 - `advisory_store_readiness`: 0.519
 - `advisory_store_freshness`: 0.519
 
+### Latest reduction delta (2026-02-27, current branch head)
+
+- `python scripts/alpha_gap_audit.py` -> `advisory_files=10`, `tuneable_keys=279`, `lib_jsonl_refs=376`, `lib_jsonl_runtime_refs=269`, `lib_jsonl_runtime_ext_refs=146`, `distillation_files=3`
+- `python scripts/tuneables_usage_audit.py` -> `sections=40`, `keys=279`, `orphan_keys=0`, `external_orphan_keys=0`
+- `pytest tests/test_llm_dispatch.py tests/test_intelligence_llm_preferences.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py -q` -> `45 passed`
+- `pytest tests/test_distillation_refiner_runtime_llm.py tests/test_eidos_distillation_curriculum.py tests/test_observatory_eidos_curriculum_metrics.py tests/test_distillation_advisory.py -q` -> `11 passed`
+- `pytest tests/test_pr2_config_authority.py tests/test_tuneables_alignment.py tests/test_remaining_config_authority.py tests/test_opportunity_scanner.py tests/test_observatory_tuneables_deep_dive.py -q` -> `45 passed`
+- `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+- `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, streak `54`
+
 ## Not done yet
 
 These are still pending relative to the broader Simplification/Fast-Track goals:
 
-1. Full advisory collapse (17 modules -> compact 3-module architecture) is not implemented.
+1. Advisory collapse wave 1 is done (`advisory_files=10`), but final 3-module end-state is not yet implemented.
 2. Storage consolidation to single SQLite-first memory/advisory store is partially implemented (cognitive memory is SQLite-canonical; advisory packet lookup is now SQLite-canonical with no runtime JSON lookup fallback mode).
 3. Memory compaction engine is partially implemented (ACT-R style planner + preview/apply runner + bounded periodic ACT-R runtime compaction for cognitive insights are in place); broader integration across advisory stores is still pending.
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).
-5. Large config surface reduction (hard pruning to minimal knobs) is not implemented.
-6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
+5. Config reduction wave target is now met (`tuneable_keys=279`), but deeper runtime simplification of high-noise sections is still pending.
+6. Distillation file-count collapse wave is now met (`distillation_files=3`); end-to-end flow-level unification beyond module surface is still pending.
 7. Broad file/function deletion pass is in progress (legacy advisory dual-path test suites + `advisory_memory_fusion.py` + `advisory_prefetch_planner.py` + `advisory_packet_feedback.py` + `advisory_packet_llm_reranker.py` removed); larger legacy advisory/runtime file deletions are still pending.
 8. Final migration playbook is now documented (`docs/SPARK_ALPHA_MIGRATION_PLAYBOOK.md`); execution and cutover evidence collection remains ongoing.
 9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + optional mirror compatibility); runtime JSON consumer surface is now `0` and retirement gate is passing (`6/3` streak).

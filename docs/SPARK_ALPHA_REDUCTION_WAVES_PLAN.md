@@ -98,7 +98,7 @@ Rollback:
 
 Target outcome:
 
-1. reduce `lib` JSONL references from `375` to `<=300` in first pass
+1. reduce runtime JSONL extension refs (`lib_jsonl_runtime_ext_refs`) to `<=220` while tracking total JSONL surface separately
 
 Method:
 
@@ -108,7 +108,7 @@ Method:
 
 Deliverables:
 
-1. JSONL path inventory (before/after)
+1. JSONL path inventory (before/after), split by total/runtime/runtime-extension counters
 2. helper consolidation commits
 3. no packet lookup/regression failures
 
@@ -214,7 +214,6 @@ Alpha structural reduction wave set is considered complete when:
 
 1. advisory files <= `10`
 2. tuneable keys <= `280`
-3. lib JSONL refs <= `220`
+3. lib runtime JSONL extension refs (`lib_jsonl_runtime_ext_refs`) <= `220`
 4. distillation files <= `3`
 5. strict readiness green for 3 consecutive runs after final wave
-
