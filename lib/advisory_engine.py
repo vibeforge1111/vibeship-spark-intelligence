@@ -1,4 +1,4 @@
-"""
+﻿"""
 Advisory Engine: orchestrator for direct-path advisory and predictive packets.
 """
 
@@ -42,7 +42,7 @@ ACTION_FIRST_ENABLED = os.getenv("SPARK_ADVISORY_ACTION_FIRST", "0") == "1"
 # Default: ON (Carmack-style: deterministic + fast). Override via env or tuneable.
 FORCE_PROGRAMMATIC_SYNTH = os.getenv("SPARK_ADVISORY_FORCE_PROGRAMMATIC_SYNTH", "1") == "1"
 # Mixed policy: allow AI synthesis selectively even when programmatic forcing is enabled.
-# Default: ON — selective AI synthesis for high-authority advice improves delivery quality.
+# Default: ON â€” selective AI synthesis for high-authority advice improves delivery quality.
 SELECTIVE_AI_SYNTH_ENABLED = os.getenv("SPARK_ADVISORY_SELECTIVE_AI_SYNTH", "1") == "1"
 SELECTIVE_AI_MIN_REMAINING_MS = float(
     os.getenv("SPARK_ADVISORY_SELECTIVE_AI_MIN_REMAINING_MS", "1800")
@@ -122,7 +122,7 @@ GLOBAL_DEDUPE_SCOPE = str(os.getenv("SPARK_ADVISORY_GLOBAL_DEDUPE_SCOPE", "globa
 
 # (pytest hygiene handled in *_recently_emitted helpers)
 
-# ── Rejection telemetry ──────────────────────────────────────────────
+# â”€â”€ Rejection telemetry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Lightweight in-memory counters for each early-exit / rejection path.
 # Flushed to disk every 50 increments to avoid hot-path I/O.
 REJECTION_TELEMETRY_FILE = Path.home() / ".spark" / "advisory_rejection_telemetry.json"
@@ -1497,854 +1497,27 @@ def on_pre_tool(
         return None
 
     start_ms = time.time() * 1000.0
-    resolved_trace_id = trace_id
-    route = "live"
-    packet_id = None
-    stage_ms: Dict[str, float] = {}
-    session_context_key = ""
-    memory_bundle: Dict[str, Any] = {}
-    intent_family = "emergent_other"
-    task_plane = "build_delivery"
-    advice_source_counts: Dict[str, int] = {}
-    emitted_advice_source_counts: Dict[str, int] = {}
-    synth_policy = "none"
-
-    def _mark(stage: str, t0: float) -> None:
-        try:
-            stage_ms[stage] = round((time.time() * 1000.0) - t0, 1)
-        except Exception:
-            pass
-
-    def _diag() -> Dict[str, Any]:
-        return _diagnostics_envelope(
-            session_id=session_id,
-            trace_id=resolved_trace_id,
-            session_context_key=session_context_key,
-            scope="session",
-            memory_bundle=memory_bundle,
-        )
-
     try:
-        from .advisor import advise_on_tool
-        from .advisory_emitter import emit_advisory
-        from .advisory_gate import evaluate, get_tool_cooldown_s
-        from .advisory_packet_store import (
-            build_packet,
-            record_packet_usage,
-            resolve_advisory_packet_for_context,
-            save_packet,
-        )
-        from .advisory_state import (
-            load_state,
-            mark_advice_shown,
-            record_tool_call,
-            resolve_recent_trace_id,
-            save_state,
-            suppress_tool_advice,
-        )
-        from .advisory_synthesizer import synthesize
+        # Compatibility shim: alpha runtime owns advisory execution.
+        from .advisory_engine_alpha import on_pre_tool as _alpha_on_pre_tool
 
-        state = load_state(session_id)
-        resolved_trace_id = trace_id or resolve_recent_trace_id(state, tool_name)
-        if not resolved_trace_id:
-            try:
-                from .exposure_tracker import infer_latest_trace_id
-
-                resolved_trace_id = infer_latest_trace_id(session_id)
-            except Exception:
-                resolved_trace_id = None
-        if not resolved_trace_id:
-            # Keep engine events trace-bound even when upstream did not provide a trace.
-            resolved_trace_id = f"spark-auto-{session_id[:16]}-{tool_name.lower()}-{int(time.time()*1000)}"
-
-        record_tool_call(state, tool_name, tool_input, success=None, trace_id=resolved_trace_id)
-        # Use tool-agnostic intent for packet keying/prefetch alignment.
-        # (Carmack-style: stability > hyper-specificity on the hot path.)
-        intent_info = _intent_context(state, tool_name="*")
-        project_key = _project_key()
-        session_context_key = _session_context_key(state, tool_name)
-        intent_family = state.intent_family or "emergent_other"
-        task_plane = state.task_plane or "build_delivery"
-
-        # Early-exit: if same tool+context as last emission and within cooldown,
-        # skip the entire retrieval → gate → synthesis path. (Batch 1 optimization.)
-        context_fp = _text_fingerprint(f"{tool_name}:{session_context_key}")
-        last_context_fp = str(getattr(state, "last_advisory_context_fingerprint", "") or "")
-        last_at = float(getattr(state, "last_advisory_at", 0.0) or 0.0)
-        if (
-            context_fp
-            and context_fp == last_context_fp
-            and last_at > 0
-            and (time.time() - last_at) < ADVISORY_TEXT_REPEAT_COOLDOWN_S
-        ):
-            _record_advisory_decision_ledger(
-                stage="early_exit_context_repeat",
-                outcome="blocked",
-                tool_name=tool_name,
-                intent_family=intent_family,
-                task_plane=task_plane,
-                route="none",
-                packet_id=None,
-                advice_items=None,
-                gate_result=None,
-                session_id=session_id,
-                trace_id=resolved_trace_id,
-                extras={
-                    "error_kind": "policy",
-                    "error_code": "AE_CONTEXT_REPEAT",
-                    "context_fp": context_fp,
-                    "age_s": round(time.time() - last_at, 1),
-                    "cooldown_s": float(ADVISORY_TEXT_REPEAT_COOLDOWN_S),
-                },
-            )
-            _record_rejection("early_exit_context_repeat")
-            save_state(state)
-            return None
-
-        t_lookup = time.time() * 1000.0
-        packet, packet_route = resolve_advisory_packet_for_context(
-            project_key=project_key,
-            session_context_key=session_context_key,
-            tool_name=tool_name,
-            intent_family=intent_family,
-            task_plane=task_plane,
-            context_text=str(getattr(state, "user_intent", "") or ""),
-        )
-        if packet_route in {"packet_exact", "packet_relaxed"}:
-            route = packet_route
-
-        _mark("packet_lookup", t_lookup)
-
-        if packet:
-            packet_id = str(packet.get("packet_id") or "")
-            advice_items = _packet_to_advice(packet)
-        else:
-            t_live = time.time() * 1000.0
-            advice_items = advise_on_tool(
-                tool_name,
-                tool_input or {},
-                context=state.user_intent,
-                include_mind=INCLUDE_MIND_IN_MEMORY,
-                track_retrieval=False,  # track retrieval only for *delivered* advice (after gating)
-                log_recent=False,  # recent_advice should reflect *delivered* advice, not retrieval fanout
-                trace_id=resolved_trace_id,
-            )
-            _mark("advisor_retrieval", t_live)
-            route = "live"
-        advice_source_counts = _advice_source_counts(advice_items)
-
-        if not advice_items:
-            save_state(state)
-            _record_advisory_decision_ledger(
-                stage="no_advice",
-                outcome="none",
-                tool_name=tool_name,
-                intent_family=intent_family,
-                task_plane=task_plane,
-                route=route,
-                packet_id=packet_id,
-                advice_items=advice_items,
-                gate_result=None,
-                session_id=session_id,
-                trace_id=resolved_trace_id,
-                extras={
-                    "event": "no_advice",
-                    "error_kind": "no_hit",
-                    "error_code": "AE_NO_ADVICE",
-                    "stage": "no_advice",
-                },
-            )
-            _log_engine_event(
-                "no_advice",
-                tool_name,
-                0,
-                0,
-                start_ms,
-                extra={
-                    **_diag(),
-                    "route": route,
-                    "intent_family": intent_family,
-                    "task_plane": task_plane,
-                    "stage_ms": stage_ms,
-                    "delivery_mode": "none",
-                "advice_source_counts": advice_source_counts,
-                "error_kind": "no_hit",
-                "error_code": "AE_NO_ADVICE",
-                },
-            )
-            _record_rejection("no_advice")
-            return None
-
-        # Pre-read global dedupe log once so the gate can absorb advice_id dedupe
-        # (avoids per-item I/O in the post-gate dedupe pass).
-        recent_global_emissions: Dict[str, float] = {}
-        recent_global_text_sig_age: Dict[str, float] = {}
-        pytest_default_log_skip = False
-        if os.getenv("PYTEST_CURRENT_TEST"):
-            try:
-                default_log = (Path.home() / ".spark" / "advisory_global_dedupe.jsonl").resolve()
-                pytest_default_log_skip = GLOBAL_DEDUPE_LOG.resolve() == default_log
-            except Exception:
-                pytest_default_log_skip = True
-        if (
-            GLOBAL_DEDUPE_ENABLED
-            and not pytest_default_log_skip
-            and not str(session_id or "").startswith("advisory-bench-")
-        ):
-            try:
-                _dedupe_now = time.time()
-                _dedupe_cooldown = float(GLOBAL_DEDUPE_COOLDOWN_S)
-                _dedupe_scope = _dedupe_scope_key(
-                    session_id,
-                    intent_family=intent_family,
-                    task_phase=str(getattr(state, "task_phase", "") or ""),
-                )
-                for row in reversed(_tail_jsonl(GLOBAL_DEDUPE_LOG, 400)):
-                    try:
-                        aid = str(row.get("advice_id") or "").strip()
-                        if not aid:
-                            continue
-                        ts = float(row.get("ts") or 0.0)
-                        if ts <= 0:
-                            continue
-                        age_s = _dedupe_now - ts
-                        if age_s < 0 or age_s >= _dedupe_cooldown:
-                            continue
-                        scope = str(row.get("scope_key") or "").strip()
-                        if _dedupe_scope and scope and scope != _dedupe_scope:
-                            continue
-                        if aid not in recent_global_emissions:
-                            recent_global_emissions[aid] = age_s
-                        text_sig = str(row.get("text_sig") or "").strip()
-                        if text_sig and text_sig not in recent_global_text_sig_age:
-                            recent_global_text_sig_age[text_sig] = age_s
-                    except Exception:
-                        continue
-            except Exception as exc:
-                log_debug("advisory_engine", f"global dedupe log scan failed: {exc}", None)
-
-        t_gate = time.time() * 1000.0
-        gate_result = evaluate(
-            advice_items, state, tool_name, tool_input,
-            recent_global_emissions=recent_global_emissions or None,
-        )
-        _mark("gate", t_gate)
-        if not gate_result.emitted:
-            if packet_id:
-                try:
-                    record_packet_usage(
-                        packet_id,
-                        emitted=False,
-                        route=route,
-                        trace_id=resolved_trace_id,
-                        tool_name=tool_name,
-                    )
-                except Exception as e:
-                    log_debug("advisory_engine", "AE_PKT_USAGE_NO_EMIT", e)
-            suppression_meta = _gate_suppression_metadata(gate_result)
-            _record_advisory_gate_drop(
-                stage="gate_no_emit",
-                reason="AE_GATE_SUPPRESSED",
-                tool_name=tool_name,
-                intent_family=intent_family,
-                task_plane=task_plane,
-                route=route,
-                packet_id=packet_id,
-                advice_items=advice_items,
-                extras=suppression_meta,
-            )
-            _record_advisory_decision_ledger(
-                stage="gate_no_emit",
-                outcome="blocked",
-                tool_name=tool_name,
-                intent_family=intent_family,
-                task_plane=task_plane,
-                route=route,
-                packet_id=packet_id,
-                advice_items=advice_items,
-                gate_result=gate_result,
-                session_id=session_id,
-                trace_id=resolved_trace_id,
-                extras={
-                    "error_kind": "policy",
-                    "error_code": "AE_GATE_SUPPRESSED",
-                    "suppressed_reasons": suppression_meta.get("suppressed_reasons", []),
-                },
-            )
-            save_state(state)
-            _log_engine_event(
-                "no_emit",
-                tool_name,
-                len(advice_items),
-                0,
-                start_ms,
-                extra={
-                    **_diag(),
-                    "route": route,
-                    "intent_family": intent_family,
-                    "task_plane": task_plane,
-                    "packet_id": packet_id,
-                    "stage_ms": stage_ms,
-                    "delivery_mode": "none",
-                    "advice_source_counts": advice_source_counts,
-                    "error_kind": "policy",
-                    "error_code": "AE_GATE_SUPPRESSED",
-                    **suppression_meta,
-                },
-            )
-            _record_rejection("gate_no_emit")
-            return None
-
-        advice_by_id = {str(getattr(item, "advice_id", "")): item for item in advice_items}
-        emitted_advice = []
-        for decision in gate_result.emitted:
-            item = advice_by_id.get(decision.advice_id)
-            if item is None:
-                continue
-            item._authority = decision.authority
-            emitted_advice.append(item)
-        emitted_advice_source_counts = _advice_source_counts(emitted_advice)
-
-        # Post-gate quality filter: block placeholders/noise/unsafe text and
-        # enforce per-insight repeat cooldown unless outcome changed.
-        try:
-            if gate_result.emitted:
-                now_ts = time.time()
-                recent_identity_ts = _load_recent_delivery_identity_ts(max_rows=600)
-                outcome_ts_by_insight, outcome_ts_by_advice_id = _load_recent_outcome_update_ts(
-                    max_records=900
-                )
-                kept, suppressed = _apply_emission_quality_filters(
-                    list(gate_result.emitted or []),
-                    advice_by_id,
-                    now_ts=now_ts,
-                    cooldown_s=float(ADVISORY_TEXT_REPEAT_COOLDOWN_S),
-                    recent_identity_ts=recent_identity_ts,
-                    outcome_ts_by_insight=outcome_ts_by_insight,
-                    outcome_ts_by_advice_id=outcome_ts_by_advice_id,
-                    recent_global_text_sig_age=(
-                        recent_global_text_sig_age
-                        if GLOBAL_DEDUPE_ENABLED and GLOBAL_DEDUPE_TEXT_ENABLED
-                        else None
-                    ),
-                )
-                if suppressed:
-                    _record_advisory_gate_drop(
-                        stage="emission_quality_filtered",
-                        reason="AE_EMIT_QUALITY_FILTERED",
-                        tool_name=tool_name,
-                        intent_family=intent_family,
-                        task_plane=task_plane,
-                        route=route,
-                        packet_id=packet_id,
-                        advice_items=advice_items,
-                        extras={
-                            "suppressed_count": len(suppressed),
-                            "suppressed": suppressed[:8],
-                            "cooldown_s": round(float(ADVISORY_TEXT_REPEAT_COOLDOWN_S), 2),
-                        },
-                    )
-                    if not kept:
-                        _record_advisory_decision_ledger(
-                            stage="emission_quality_filtered",
-                            outcome="blocked",
-                            tool_name=tool_name,
-                            intent_family=intent_family,
-                            task_plane=task_plane,
-                            route=route,
-                            packet_id=packet_id,
-                            advice_items=advice_items,
-                            gate_result=gate_result,
-                            session_id=session_id,
-                            trace_id=resolved_trace_id,
-                            extras={
-                                "error_kind": "quality",
-                                "error_code": "AE_EMIT_QUALITY_FILTERED",
-                                "suppressed": suppressed[:8],
-                                "cooldown_s": round(float(ADVISORY_TEXT_REPEAT_COOLDOWN_S), 2),
-                            },
-                        )
-                        save_state(state)
-                        _log_engine_event(
-                            "quality_filtered_suppressed",
-                            tool_name,
-                            len(advice_items),
-                            0,
-                            start_ms,
-                            extra={
-                                **_diag(),
-                                "route": route,
-                                "intent_family": intent_family,
-                                "task_plane": task_plane,
-                                "packet_id": packet_id,
-                                "stage_ms": stage_ms,
-                                "delivery_mode": "none",
-                                "advice_source_counts": advice_source_counts,
-                                "error_kind": "quality",
-                                "error_code": "AE_EMIT_QUALITY_FILTERED",
-                                "suppressed_count": len(suppressed),
-                                "suppressed": suppressed[:8],
-                            },
-                        )
-                        _record_rejection("emission_quality_filtered")
-                        return None
-
-                    gate_result.emitted = kept
-                    emitted_advice = []
-                    for decision in gate_result.emitted:
-                        item = advice_by_id.get(decision.advice_id)
-                        if item is None:
-                            continue
-                        item._authority = decision.authority
-                        emitted_advice.append(item)
-                    emitted_advice_source_counts = _advice_source_counts(emitted_advice)
-        except Exception as exc:
-            log_debug("advisory_engine", f"emission quality filter failed: {exc}", None)
-
-        elapsed_ms = (time.time() * 1000.0) - start_ms
-        remaining_ms = MAX_ENGINE_MS - elapsed_ms
-
-        t_synth = time.time() * 1000.0
-        synth_text = ""
-        selective_ai_eligible = False
-        if packet and str(packet.get("advisory_text") or "").strip():
-            synth_text = str(packet.get("advisory_text") or "").strip()
-            synth_policy = "packet_cached"
-        elif FORCE_PROGRAMMATIC_SYNTH:
-            selective_ai_eligible = _should_use_selective_ai_synth(
-                gate_result=gate_result,
-                remaining_ms=remaining_ms,
-            )
-            if selective_ai_eligible:
-                synth_text = synthesize(
-                    emitted_advice,
-                    phase=gate_result.phase,
-                    user_intent=state.user_intent,
-                    tool_name=tool_name,
-                )
-                synth_policy = "selective_ai_auto"
-            else:
-                synth_text = synthesize(
-                    emitted_advice,
-                    phase=gate_result.phase,
-                    user_intent=state.user_intent,
-                    tool_name=tool_name,
-                    force_mode="programmatic",
-                )
-                synth_policy = "programmatic_forced"
-        elif remaining_ms > 500:
-            synth_text = synthesize(
-                emitted_advice,
-                phase=gate_result.phase,
-                user_intent=state.user_intent,
-                tool_name=tool_name,
-            )
-            synth_policy = "auto"
-        else:
-            synth_text = synthesize(
-                emitted_advice,
-                phase=gate_result.phase,
-                user_intent=state.user_intent,
-                tool_name=tool_name,
-                force_mode="programmatic",
-            )
-            synth_policy = "programmatic_budget_fallback"
-        synth_fallback_used = False
-        if not str(synth_text or "").strip():
-            synth_text = _fallback_synth_text_from_emitted(
-                emitted_advice,
-                intent_family=intent_family,
-            )
-            synth_fallback_used = bool(str(synth_text or "").strip())
-        _mark("synth", t_synth)
-
-        action_meta = _ensure_actionability(synth_text, tool_name, task_plane)
-        synth_text = str(action_meta.get("text") or synth_text)
-        if ACTION_FIRST_ENABLED:
-            synth_text = _action_first_format(synth_text)
-        repeat_meta = _duplicate_repeat_state(state, synth_text)
-        if repeat_meta["repeat"]:
-            if packet_id:
-                try:
-                    record_packet_usage(
-                        packet_id,
-                        emitted=False,
-                        route=f"{route}_repeat_suppressed",
-                        trace_id=resolved_trace_id,
-                        tool_name=tool_name,
-                    )
-                except Exception as e:
-                    log_debug("advisory_engine", "AE_PKT_USAGE_REPEAT_SUPPRESS_FAILED", e)
-            _record_advisory_gate_drop(
-                stage="duplicate_suppressed",
-                reason="AE_DUPLICATE_SUPPRESSED",
-                tool_name=tool_name,
-                intent_family=intent_family,
-                task_plane=task_plane,
-                route=route,
-                packet_id=packet_id,
-                advice_items=advice_items,
-                extras={
-                    "advisory_fingerprint": repeat_meta["fingerprint"],
-                    "repeat_age_s": repeat_meta["age_s"],
-                    "repeat_cooldown_s": repeat_meta["cooldown_s"],
-                    "actionability_added": bool(action_meta.get("added")),
-                    "actionability_command": action_meta.get("command"),
-                    "top_advice_id": str(getattr(gate_result.emitted[0], "advice_id", "")) if gate_result.emitted else "",
-                    "top_authority": str(getattr(gate_result.emitted[0], "authority", "")) if gate_result.emitted else "",
-                },
-            )
-            _record_advisory_decision_ledger(
-                stage="duplicate_suppressed",
-                outcome="blocked",
-                tool_name=tool_name,
-                intent_family=intent_family,
-                task_plane=task_plane,
-                route=route,
-                packet_id=packet_id,
-                advice_items=advice_items,
-                gate_result=gate_result,
-                session_id=session_id,
-                trace_id=resolved_trace_id,
-                extras={
-                    "error_kind": "policy",
-                    "error_code": "AE_DUPLICATE_SUPPRESSED",
-                    "advisory_fingerprint": repeat_meta["fingerprint"],
-                    "repeat_age_s": repeat_meta["age_s"],
-                    "repeat_cooldown_s": repeat_meta["cooldown_s"],
-                    "actionability_added": bool(action_meta.get("added")),
-                    "actionability_command": action_meta.get("command"),
-                    "top_advice_id": str(getattr(gate_result.emitted[0], "advice_id", "")) if gate_result.emitted else "",
-                    "top_authority": str(getattr(gate_result.emitted[0], "authority", "")) if gate_result.emitted else "",
-                },
-            )
-            save_state(state)
-            _log_engine_event(
-                "duplicate_suppressed",
-                tool_name,
-                len(advice_items),
-                len(gate_result.emitted),
-                start_ms,
-                extra={
-                    **_diag(),
-                    "route": route,
-                    "intent_family": intent_family,
-                    "task_plane": task_plane,
-                    "packet_id": packet_id,
-                    "stage_ms": stage_ms,
-                    "delivery_mode": "none",
-                    "advice_source_counts": advice_source_counts,
-                    "error_kind": "policy",
-                    "error_code": "AE_DUPLICATE_SUPPRESSED",
-                    "advisory_fingerprint": repeat_meta["fingerprint"],
-                    "repeat_age_s": repeat_meta["age_s"],
-                    "repeat_cooldown_s": repeat_meta["cooldown_s"],
-                    "actionability_added": bool(action_meta.get("added")),
-                    "actionability_command": action_meta.get("command"),
-                },
-            )
-            _record_rejection("duplicate_suppressed")
-            return None
-
-        # Safety gate: block unsafe content BEFORE emit (pre-emit position).
-        try:
-            from .promoter import is_unsafe_insight
-            if synth_text and is_unsafe_insight(synth_text):
-                log_debug("advisory_engine", f"SAFETY_BLOCK: unsafe content blocked for {tool_name}", None)
-                _record_advisory_decision_ledger(
-                    stage="safety_blocked",
-                    outcome="blocked",
-                    tool_name=tool_name,
-                    intent_family=intent_family,
-                    task_plane=task_plane,
-                    route=route,
-                    packet_id=packet_id,
-                    advice_items=advice_items,
-                    gate_result=gate_result,
-                    session_id=session_id,
-                    trace_id=resolved_trace_id,
-                    extras={
-                        "error_kind": "safety",
-                        "error_code": "AE_SAFETY_BLOCKED",
-                        "emitted_text_preview": (synth_text or "")[:140],
-                    },
-                )
-                _record_rejection("safety_blocked")
-                save_state(state)
-                return None
-        except Exception as safety_err:
-            log_debug("advisory_engine", "SAFETY_CHECK_EXCEPTION_fail_open", safety_err)
-
-        t_emit = time.time() * 1000.0
-        emitted = bool(
-            emit_advisory(
-            gate_result,
-            synth_text,
-            advice_items,
-            trace_id=resolved_trace_id,
-            tool_name=tool_name,
-            route=route,
-            task_plane=task_plane,
-            )
-        )
-        _mark("emit", t_emit)
-        effective_text = str(synth_text or "").strip()
-        if emitted and not effective_text:
-            fragments: List[str] = []
-            for item in emitted_advice[:3]:
-                text = str(getattr(item, "text", "") or "").strip()
-                if text:
-                    fragments.append(text)
-            if fragments:
-                effective_text = " ".join(fragments)
-        effective_action_meta = _ensure_actionability(effective_text, tool_name, task_plane) if emitted else {"text": effective_text, "added": False, "command": ""}
-        effective_text = str(effective_action_meta.get("text") or effective_text)
-
-        # Initialize before conditional paths to avoid stale runtime crashes
-        # when no advisories are emitted in this pass.
-        shown_ids: List[str] = []
-        dedupe_scope = _dedupe_scope_key(
-            session_id,
-            intent_family=intent_family,
-            task_phase=str(getattr(state, "task_phase", "") or ""),
-        )
-        session_lineage = _session_lineage(session_id)
-        if emitted:
-            shown_ids = [d.advice_id for d in gate_result.emitted]
-            mark_advice_shown(
-                state,
-                shown_ids,
-                tool_name=tool_name,
-                task_phase=state.task_phase,
-            )
-        # Apply tool-family-aware cooldown: exploration tools get shorter suppression.
-        try:
-            from .advisory_gate import _tool_cooldown_scale
-            tool_cd_scale = _tool_cooldown_scale(tool_name)
-        except Exception:
-            tool_cd_scale = 1.0
-        suppress_tool_advice(state, tool_name, duration_s=get_tool_cooldown_s() * tool_cd_scale)
-        # Track retrieval only for delivered advice items (strict attribution).
-        try:
-            from .meta_ralph import get_meta_ralph
-
-            ralph = get_meta_ralph()
-            for adv in list(emitted_advice or [])[:4]:
-                ralph.track_retrieval(
-                    str(getattr(adv, "advice_id", "") or ""),
-                    str(getattr(adv, "text", "") or ""),
-                    insight_key=str(getattr(adv, "insight_key", "") or "") or None,
-                    source=str(getattr(adv, "source", "") or "") or None,
-                    trace_id=resolved_trace_id,
-                )
-        except Exception as exc:
-            log_debug("advisory_engine", f"delivery tracking failed: {exc}", None)
-        # Write delivery-backed recent_advice entry for post-tool outcome linkage.
-        try:
-            from .advisor import record_recent_delivery
-
-            record_recent_delivery(
-                tool=tool_name,
-                advice_list=list(emitted_advice or [])[:4],
-                trace_id=resolved_trace_id,
-                route=route,
-                delivered=True,
-                categories=[getattr(adv, "category", None) for adv in list(emitted_advice or [])[:4]],
-                advisory_readiness=[getattr(adv, "advisory_readiness", 0.0) for adv in list(emitted_advice or [])[:4]],
-                advisory_quality=[
-                    q if isinstance(q, dict) else {}
-                    for q in [getattr(adv, "advisory_quality", None) for adv in list(emitted_advice or [])[:4]]
-                ],
-            )
-        except Exception as exc:
-            log_debug("advisory_engine", f"recent advice write failed: {exc}", None)
-
-        # Update global dedupe log on successful emission (any authority).
-        try:
-            if (
-                GLOBAL_DEDUPE_ENABLED
-                and gate_result.emitted
-                and not str(session_id or "").startswith("advisory-bench-")
-            ):
-                for d in list(gate_result.emitted or [])[:4]:
-                    aid = str(getattr(d, "advice_id", "") or "").strip()
-                    if not aid:
-                        continue
-                    text_sig = ""
-                    if GLOBAL_DEDUPE_TEXT_ENABLED:
-                        try:
-                            item = advice_by_id.get(aid)
-                            text_sig = _text_fingerprint(str(getattr(item, "text", "") or "")) if item else ""
-                        except Exception:
-                            text_sig = ""
-                    _append_jsonl_capped(
-                        GLOBAL_DEDUPE_LOG,
-                        {
-                            "ts": time.time(),
-                            "tool": tool_name,
-                            "advice_id": aid,
-                            "authority": str(getattr(d, "authority", "") or ""),
-                            "trace_id": resolved_trace_id,
-                            "route": route,
-                            "scope_key": dedupe_scope,
-                            "session_kind": session_lineage.get("session_kind"),
-                            "text_sig": text_sig,
-                        },
-                        max_lines=int(GLOBAL_DEDUPE_LOG_MAX),
-                    )
-        except Exception as exc:
-            log_debug("advisory_engine", f"dedupe log append failed: {exc}", None)
-
-        if route == "live":
-            lineage_sources = []
-            for source_name, cnt in (emitted_advice_source_counts or advice_source_counts).items():
-                if int(cnt or 0) > 0:
-                    lineage_sources.append(str(source_name))
-            packet_payload = build_packet(
-                project_key=project_key,
-                session_context_key=session_context_key,
-                tool_name=tool_name,
-                intent_family=intent_family,
-                task_plane=task_plane,
-                advisory_text=synth_text or _baseline_text(intent_family),
-                source_mode="live_ai" if synth_text else "live_deterministic",
-                advice_items=_advice_to_rows_with_proof(
-                    emitted_advice or advice_items,
-                    trace_id=resolved_trace_id,
-                ),
-                lineage={
-                    "sources": lineage_sources,
-                    "memory_absent_declared": _infer_memory_absent_declared(
-                        emitted_advice_source_counts or advice_source_counts
-                    ),
-                    "trace_id": resolved_trace_id,
-                },
-                trace_id=resolved_trace_id,
-            )
-            packet_id = save_packet(packet_payload)
-
-        try:
-            from .advice_feedback import record_advice_request
-
-            record_advice_request(
-                session_id=session_id,
-                tool=tool_name,
-                advice_ids=shown_ids,
-                advice_texts=[str(getattr(a, "text", "") or "") for a in emitted_advice],
-                sources=[str(getattr(a, "source", "") or "") for a in emitted_advice],
-                trace_id=resolved_trace_id,
-                route=route,
-                packet_id=packet_id,
-                min_interval_s=120,
-            )
-        except Exception as e:
-            log_debug("advisory_engine", "AE_ADVICE_FEEDBACK_REQUEST_FAILED", e)
-
-        state.last_advisory_packet_id = str(packet_id or "")
-        state.last_advisory_route = str(route or "")
-        state.last_advisory_tool = str(tool_name or "")
-        state.last_advisory_advice_ids = list(shown_ids[:20])
-        state.last_advisory_at = time.time()
-        state.last_advisory_text_fingerprint = repeat_meta["fingerprint"]
-        state.last_advisory_context_fingerprint = context_fp
-
-        if packet_id:
-            try:
-                record_packet_usage(
-                    packet_id,
-                    emitted=bool(emitted),
-                    route=route,
-                    trace_id=resolved_trace_id,
-                    tool_name=tool_name,
-                )
-            except Exception as e:
-                log_debug("advisory_engine", "AE_PKT_USAGE_POST_EMIT_FAILED", e)
-
-        save_state(state)
-
-        _log_engine_event(
-            "emitted" if emitted else "synth_empty",
-            tool_name,
-            len(advice_items),
-            len(gate_result.emitted),
-            start_ms,
-            extra={
-                **_diag(),
-                "route": route,
-                "intent_family": intent_family,
-                "task_plane": task_plane,
-                "packet_id": packet_id,
-                "intent_confidence": float(intent_info.get("confidence", 0.0) or 0.0),
-                "stage_ms": stage_ms,
-                "delivery_mode": "live" if emitted else "none",
-                "emitted_text_preview": effective_text[:220],
-                "advice_source_counts": emitted_advice_source_counts or advice_source_counts,
-                "actionability_added": bool(action_meta.get("added")),
-                "actionability_command": action_meta.get("command"),
-                "effective_actionability_added": bool(effective_action_meta.get("added")),
-                "effective_actionability_command": effective_action_meta.get("command"),
-                "synth_fallback_used": bool(synth_fallback_used),
-                "synth_policy": str(synth_policy),
-                "selective_ai_eligible": bool(selective_ai_eligible),
-                "selective_ai_min_authority": str(SELECTIVE_AI_MIN_AUTHORITY),
-                "selective_ai_min_remaining_ms": float(SELECTIVE_AI_MIN_REMAINING_MS),
-                "remaining_ms_before_synth": round(float(remaining_ms), 2),
-                "emitted_authorities": [
-                    str(getattr(decision, "authority", "") or "").strip().lower()
-                for decision in list(getattr(gate_result, "emitted", []) or [])[:4]
-                ],
-            },
-        )
-        _record_advisory_decision_ledger(
-            stage="emitted" if emitted else "synth_empty",
-            outcome="emitted" if emitted else "none",
-            tool_name=tool_name,
-            intent_family=intent_family,
-            task_plane=task_plane,
-            route=route,
-            packet_id=packet_id,
-            advice_items=advice_items,
-            gate_result=gate_result,
+        return _alpha_on_pre_tool(
             session_id=session_id,
-            trace_id=resolved_trace_id,
-            extras={
-                "delivery_mode": "live" if emitted else "none",
-                "emitted_text_preview": effective_text[:220],
-            },
-        )
-        return effective_text if emitted else None
-
-    except Exception as e:
-        log_debug("advisory_engine", f"on_pre_tool failed for {tool_name}", e)
-        _record_advisory_decision_ledger(
-            stage="engine_error",
-            outcome="error",
             tool_name=tool_name,
-            intent_family=intent_family,
-            task_plane=task_plane,
-            route=route,
-            packet_id=packet_id if "packet_id" in locals() else None,
-            advice_items=None,
-            gate_result=None,
-            session_id=session_id,
-            trace_id=resolved_trace_id if "resolved_trace_id" in locals() else None,
-            extras={
-                "event": "engine_error",
-                "error": str(e),
-            },
+            tool_input=tool_input,
+            trace_id=trace_id,
         )
+    except Exception as exc:
+        log_debug("advisory_engine", "compat shim pre_tool forward failed", exc)
         _log_engine_event(
-            "engine_error",
+            "compat_forward_error",
             tool_name,
             0,
             0,
             start_ms,
-            extra={
-                **_diag(),
-                **build_error_fields(str(e), "AE_ON_PRE_TOOL_FAILED"),
-            },
+            extra=build_error_fields(str(exc), "AE_COMPAT_FORWARD_PRE_TOOL"),
         )
-        _record_rejection("engine_error")
+        _record_rejection("compat_forward_error_pre_tool")
         return None
 
 
@@ -2358,106 +1531,30 @@ def on_post_tool(
 ) -> None:
     if not ENGINE_ENABLED:
         return
+
     start_ms = time.time() * 1000.0
-    resolved_trace_id = trace_id
-
     try:
-        from .advisory_state import (
-            load_state,
-            record_tool_call,
-            resolve_recent_trace_id,
-            save_state,
+        from .advisory_engine_alpha import on_post_tool as _alpha_on_post_tool
+
+        _alpha_on_post_tool(
+            session_id=session_id,
+            tool_name=tool_name,
+            success=bool(success),
+            tool_input=tool_input,
+            trace_id=trace_id,
+            error=error,
         )
-
-        state = load_state(session_id)
-        resolved_trace_id = trace_id or resolve_recent_trace_id(state, tool_name)
-        record_tool_call(
-            state,
-            tool_name,
-            tool_input,
-            success=success,
-            trace_id=resolved_trace_id,
-        )
-
-        # Outcome predictor (world-model-lite): record outcome for cheap risk scoring.
-        try:
-            from .outcome_predictor import record_outcome
-            record_outcome(
-                tool_name=tool_name,
-                intent_family=state.intent_family or "emergent_other",
-                phase=state.task_phase or "implementation",
-                success=bool(success),
-            )
-        except Exception as exc:
-            log_debug("advisory_engine", f"post-tool state update failed: {exc}", None)
-
-        if state.shown_advice_ids:
-            _record_implicit_feedback(state, tool_name, success, resolved_trace_id)
-
-        try:
-            from .advisory_packet_store import record_packet_outcome
-
-            last_packet_id = str(state.last_advisory_packet_id or "").strip()
-            last_tool = str(state.last_advisory_tool or "").strip().lower()
-            age_s = time.time() - float(state.last_advisory_at or 0.0)
-            if (
-                last_packet_id
-                and last_tool
-                and last_tool == str(tool_name or "").strip().lower()
-                and age_s <= 900
-            ):
-                record_packet_outcome(
-                    last_packet_id,
-                    status=("acted" if bool(success) else "blocked"),
-                    tool_name=str(tool_name or ""),
-                    trace_id=resolved_trace_id,
-                    notes=(str(error or "")[:200] if error else ""),
-                    source="implicit_post_tool",
-                    count_effectiveness=True,
-                )
-        except Exception as e:
-            log_debug("advisory_engine", "AE_PKT_OUTCOME_POST_TOOL_FAILED", e)
-
-        if tool_name in {"Edit", "Write"}:
-            try:
-                from .advisory_packet_store import invalidate_packets
-
-                # Scope invalidation to packets matching the edited file,
-                # not a blanket project-wide wipe.  Falls back to project
-                # invalidation only if no file_path is available.
-                file_hint = (tool_input or {}).get("file_path", "")
-                if file_hint:
-                    invalidate_packets(
-                        project_key=_project_key(),
-                        reason=f"post_tool_{tool_name.lower()}",
-                        file_hint=file_hint,
-                    )
-                else:
-                    invalidate_packets(
-                        project_key=_project_key(),
-                        reason=f"post_tool_{tool_name.lower()}",
-                    )
-            except Exception as e:
-                log_debug("advisory_engine", "AE_PACKET_INVALIDATE_POST_EDIT_FAILED", e)
-
-        save_state(state)
-    except Exception as e:
-        log_debug("advisory_engine", f"on_post_tool failed for {tool_name}", e)
+    except Exception as exc:
+        log_debug("advisory_engine", "compat shim post_tool forward failed", exc)
         _log_engine_event(
-            "post_tool_error",
+            "compat_forward_error",
             tool_name,
             0,
             0,
             start_ms,
-            extra={
-                **_diagnostics_envelope(
-                    session_id=session_id,
-                    trace_id=resolved_trace_id,
-                    scope="session",
-                ),
-                **build_error_fields(str(e), "AE_ON_POST_TOOL_FAILED"),
-            },
+            extra=build_error_fields(str(exc), "AE_COMPAT_FORWARD_POST_TOOL"),
         )
+        _record_rejection("compat_forward_error_post_tool")
 
 
 def on_user_prompt(
@@ -2467,117 +1564,27 @@ def on_user_prompt(
 ) -> None:
     if not ENGINE_ENABLED:
         return
+
     start_ms = time.time() * 1000.0
-
     try:
-        from .advisory_packet_store import build_packet, enqueue_prefetch_job, save_packet
-        from .advisory_state import load_state, record_user_intent, save_state
+        from .advisory_engine_alpha import on_user_prompt as _alpha_on_user_prompt
 
-        state = load_state(session_id)
-        record_user_intent(state, prompt_text)
-        resolved_trace_id = str(trace_id or "").strip() or f"spark-auto-{session_id[:16]}-user_prompt-{int(time.time()*1000)}"
-        intent_info = _intent_context(state, tool_name="*")
-        project_key = _project_key()
-        session_context_key = _session_context_key(state, tool_name="*")
-        intent_family = state.intent_family or "emergent_other"
-        task_plane = state.task_plane or "build_delivery"
-        save_state(state)
-
-        baseline_text = _baseline_text(intent_family)
-        baseline_action = _ensure_actionability(baseline_text, "*", task_plane)
-        baseline_text = str(baseline_action.get("text") or baseline_text)
-        baseline_proof = {
-            "advice_id": f"baseline_{intent_family}",
-            "insight_key": f"intent:{intent_family}",
-            "source": "baseline",
-        }
-        baseline_packet = build_packet(
-            project_key=project_key,
-            session_context_key=session_context_key,
-            tool_name="*",
-            intent_family=intent_family,
-            task_plane=task_plane,
-            advisory_text=baseline_text,
-            source_mode="baseline_deterministic",
-            advice_items=[
-                {
-                    "advice_id": f"baseline_{intent_family}",
-                    "insight_key": f"intent:{intent_family}",
-                    "text": baseline_text,
-                    "confidence": max(0.75, float(intent_info.get("confidence", 0.75) or 0.75)),
-                    "source": "baseline",
-                    "context_match": 0.8,
-                    "reason": "session_baseline",
-                    "proof_refs": baseline_proof,
-                    "evidence_hash": _evidence_hash_for_row(
-                        advice_text=baseline_text,
-                        proof_refs=baseline_proof,
-                    ),
-                }
-            ],
-            lineage={"sources": ["baseline"], "memory_absent_declared": False},
+        _alpha_on_user_prompt(
+            session_id=session_id,
+            prompt_text=prompt_text,
+            trace_id=trace_id,
         )
-        save_packet(baseline_packet)
-
-        if ENABLE_PREFETCH_QUEUE:
-            enqueue_prefetch_job(
-                {
-                    "session_id": session_id,
-                    "project_key": project_key,
-                    "intent_family": intent_family,
-                    "task_plane": task_plane,
-                    "session_context_key": session_context_key,
-                    "prompt_excerpt": (prompt_text or "")[:180],
-                    "trace_id": resolved_trace_id,
-                }
-            )
-            if ENABLE_INLINE_PREFETCH_WORKER:
-                try:
-                    from .advisory_prefetch_worker import process_prefetch_queue
-
-                    process_prefetch_queue(
-                        max_jobs=INLINE_PREFETCH_MAX_JOBS,
-                        max_tools_per_job=3,
-                    )
-                except Exception as e:
-                    log_debug("advisory_engine", "inline prefetch worker failed", e)
-
+    except Exception as exc:
+        log_debug("advisory_engine", "compat shim user_prompt forward failed", exc)
         _log_engine_event(
-            "user_prompt_prefetch",
-            "*",
-            1,
-            0,
-            start_ms,
-            extra={
-                **_diagnostics_envelope(
-                    session_id=session_id,
-                    trace_id=resolved_trace_id,
-                    session_context_key=session_context_key,
-                    scope="session",
-                ),
-                "intent_family": intent_family,
-                "task_plane": task_plane,
-                "packet_id": baseline_packet.get("packet_id"),
-                "prefetch_queue_enabled": bool(ENABLE_PREFETCH_QUEUE),
-            },
-        )
-    except Exception as e:
-        log_debug("advisory_engine", "on_user_prompt failed", e)
-        _log_engine_event(
-            "user_prompt_error",
+            "compat_forward_error",
             "*",
             0,
             0,
             start_ms,
-            extra={
-                **_diagnostics_envelope(
-                    session_id=session_id,
-                    trace_id=str(trace_id or "").strip() or None,
-                    scope="session",
-                ),
-                **build_error_fields(str(e), "AE_ON_USER_PROMPT_FAILED"),
-            },
+            extra=build_error_fields(str(exc), "AE_COMPAT_FORWARD_USER_PROMPT"),
         )
+        _record_rejection("compat_forward_error_user_prompt")
 
 
 def _log_engine_event(
@@ -2622,10 +1629,20 @@ def _rotate_engine_log() -> None:
 
 def get_engine_status() -> Dict[str, Any]:
     status = {
-        "enabled": ENGINE_ENABLED,
+        "enabled": bool(ENGINE_ENABLED),
         "max_ms": MAX_ENGINE_MS,
         "config": get_engine_config(),
+        "compat_mode": "legacy_shim",
     }
+
+    try:
+        from .advisory_engine_alpha import get_alpha_status
+
+        status["alpha"] = get_alpha_status()
+        status["active_runtime"] = "alpha"
+    except Exception:
+        status["alpha"] = {"error": "unavailable"}
+        status["active_runtime"] = "legacy_shim"
 
     try:
         from .advisory_synthesizer import get_synth_status
@@ -2684,3 +1701,4 @@ def get_engine_status() -> Dict[str, Any]:
         status["delivery_badge"] = _derive_delivery_badge([])
 
     return status
+
