@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import subprocess
 import sys
@@ -54,6 +55,83 @@ def _run(cmd: List[str]) -> Tuple[int, str, str]:
         encoding="utf-8",
     )
     return int(proc.returncode), proc.stdout or "", proc.stderr or ""
+
+
+def _collect_runtime_cycles() -> List[List[str]]:
+    lib_root = ROOT / "lib"
+    modules: Dict[str, Path] = {}
+    for path in sorted(lib_root.rglob("*.py")):
+        rel = path.relative_to(lib_root).as_posix()
+        mod = f"lib.{rel[:-3].replace('/', '.')}"
+        modules[mod] = path
+
+    edges: Dict[str, set[str]] = {}
+    for mod, path in modules.items():
+        edges.setdefault(mod, set())
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        pkg_parts = mod.split(".")[:-1]
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = str(alias.name or "")
+                    if name.startswith("lib.") and name in modules:
+                        edges[mod].add(name)
+                continue
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            target = ""
+            if node.level:
+                base = list(pkg_parts)
+                up = max(0, int(node.level) - 1)
+                if up:
+                    base = base[:-up]
+                if node.module:
+                    target = ".".join(base + [str(node.module)])
+            elif node.module:
+                target = str(node.module)
+            if target.startswith("lib.") and target in modules:
+                edges[mod].add(target)
+
+    index = 0
+    stack: List[str] = []
+    onstack: set[str] = set()
+    idx: Dict[str, int] = {}
+    low: Dict[str, int] = {}
+    sccs: List[List[str]] = []
+
+    def _strongconnect(v: str) -> None:
+        nonlocal index
+        idx[v] = index
+        low[v] = index
+        index += 1
+        stack.append(v)
+        onstack.add(v)
+        for w in edges.get(v, set()):
+            if w not in idx:
+                _strongconnect(w)
+                low[v] = min(low[v], low[w])
+            elif w in onstack:
+                low[v] = min(low[v], idx[w])
+        if low[v] == idx[v]:
+            comp: List[str] = []
+            while True:
+                w = stack.pop()
+                onstack.remove(w)
+                comp.append(w)
+                if w == v:
+                    break
+            if len(comp) > 1:
+                comp_sorted = sorted(comp)
+                if not all(item.startswith("lib.research.") for item in comp_sorted):
+                    sccs.append(comp_sorted)
+
+    for mod in modules:
+        if mod not in idx:
+            _strongconnect(mod)
+    return sorted(sccs, key=len, reverse=True)
 
 
 def _docs_guardrail() -> Dict[str, Any]:
@@ -141,12 +219,28 @@ def _gap_guardrail(
     }
 
 
+def _runtime_cycle_guardrail(*, max_runtime_cycles: int) -> Dict[str, Any]:
+    cycles = _collect_runtime_cycles()
+    ok = len(cycles) <= int(max_runtime_cycles)
+    return {
+        "name": "runtime_dependency_cycles",
+        "ok": bool(ok),
+        "returncode": 0,
+        "details": {
+            "runtime_cycle_count": int(len(cycles)),
+            "max_runtime_cycles": int(max_runtime_cycles),
+            "cycles": cycles[:10],
+        },
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Run fast Spark Alpha CI guardrails.")
     ap.add_argument("--max-advisory-files", type=int, default=4)
     ap.add_argument("--max-tuneable-keys", type=int, default=320)
     ap.add_argument("--max-distillation-files", type=int, default=3)
     ap.add_argument("--max-lib-jsonl-runtime-ext-refs", type=int, default=140)
+    ap.add_argument("--max-runtime-cycles", type=int, default=0)
     args = ap.parse_args()
 
     stages = [
@@ -157,6 +251,7 @@ def main() -> int:
             max_distillation_files=int(args.max_distillation_files),
             max_lib_jsonl_runtime_ext_refs=int(args.max_lib_jsonl_runtime_ext_refs),
         ),
+        _runtime_cycle_guardrail(max_runtime_cycles=int(args.max_runtime_cycles)),
     ]
     ok = all(bool(stage.get("ok")) for stage in stages)
     report = {
@@ -167,6 +262,7 @@ def main() -> int:
             "max_tuneable_keys": int(args.max_tuneable_keys),
             "max_distillation_files": int(args.max_distillation_files),
             "max_lib_jsonl_runtime_ext_refs": int(args.max_lib_jsonl_runtime_ext_refs),
+            "max_runtime_cycles": int(args.max_runtime_cycles),
         },
     }
     print(json.dumps(report, indent=2, ensure_ascii=True))
@@ -175,4 +271,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

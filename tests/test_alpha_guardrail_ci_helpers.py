@@ -98,3 +98,18 @@ def test_gap_guardrail_fails_on_threshold_regression(monkeypatch):
     assert checks["advisory_files_ok"] is False
     assert checks["orchestrator_removed_ok"] is False
 
+
+def test_runtime_cycle_guardrail_pass(monkeypatch):
+    mod = _load_module()
+    monkeypatch.setattr(mod, "_collect_runtime_cycles", lambda: [])
+    stage = mod._runtime_cycle_guardrail(max_runtime_cycles=0)
+    assert stage["ok"] is True
+    assert stage["details"]["runtime_cycle_count"] == 0
+
+
+def test_runtime_cycle_guardrail_fail(monkeypatch):
+    mod = _load_module()
+    monkeypatch.setattr(mod, "_collect_runtime_cycles", lambda: [["lib.a", "lib.b"]])
+    stage = mod._runtime_cycle_guardrail(max_runtime_cycles=0)
+    assert stage["ok"] is False
+    assert stage["details"]["runtime_cycle_count"] == 1
