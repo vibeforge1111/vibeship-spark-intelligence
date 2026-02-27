@@ -3,6 +3,10 @@
 Last updated: 2026-02-27 (local branch snapshot, global dedupe wiring in alpha runtime + advisory telemetry alignment)
 Branch: feat/spark-alpha
 
+Runtime truth source:
+- For current live flow wiring and readiness contract, use `docs/SPARK_ALPHA_RUNTIME_CONTRACT.md`.
+- This file remains the implementation/change ledger.
+
 ## Latest delta (2026-02-27, compaction+distillation+evidence pack)
 
 - Unified compaction policy surface for sync runtime:
@@ -1243,6 +1247,29 @@ Notable metrics now:
   - `python scripts/alpha_gap_audit.py` -> `advisory_files=4`, `tuneable_keys=282`, `distillation_files=3`
   - `python scripts/alpha_start_readiness.py --strict --emit-report` -> `ready=true` (`replay pass rate=1.0`, `pytest_alpha_core=250 passed`)
 
+### Latest alpha hardening delta (2026-02-28, env-contract guard + readiness refresh)
+
+- Added explicit alpha env-contract diagnostics in `lib/doctor.py`:
+  - new check `alpha_env_contract` catches conflicting overrides that silently degrade alpha behavior
+  - hard-fail signals:
+    - `SPARK_ADVISORY_ROUTE=alpha` with `SPARK_ADVISORY_ALPHA_ENABLED=0`
+    - `SPARK_MEMORY_SPINE_CANONICAL=0`
+    - `SPARK_EMBED_BACKEND` disabling retrieval (`none|off|disabled`)
+  - warning signals:
+    - non-alpha advisory routes (`engine|canary`)
+    - `SPARK_VALIDATE_AND_STORE=0`
+    - bridge sidecars re-enabled
+    - forced `tfidf` backend (quality warning)
+- Added focused regression tests: `tests/test_doctor_alpha_env_contract.py`
+  - default pass path
+  - experimental warning path
+  - hard-fail conflict path
+- Refreshed strict readiness + preflight evidence:
+  - `python scripts/alpha_start_readiness.py --strict --episodes 2 --seeds 1 --delta-rounds 1 --pytest-targets tests/test_production_loop_gates.py --emit-report` -> `ready=true`
+  - `python scripts/alpha_preflight_bundle.py --json-only` -> `ready=true`
+  - `python scripts/production_loop_report.py --json` -> `READY (19/19 passed)`
+  - `python scripts/alpha_gap_audit.py` -> `advisory_files=4`, `tuneable_keys=289`, `distillation_files=3`, `lib_jsonl_runtime_ext_refs=121`
+
 ## Not done yet
 
 These are still pending relative to the broader Simplification/Fast-Track goals:
@@ -1251,7 +1278,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 2. Storage consolidation to single SQLite-first memory/advisory store is partially implemented (cognitive memory is SQLite-canonical; advisory packet lookup is now SQLite-canonical with no runtime JSON lookup fallback mode).
 3. Memory compaction engine is partially implemented (ACT-R cognitive compaction + packet compaction preview/apply lane + sync-integrated bounded packet apply lane are in place); deeper unified policy across all advisory/memory stores is still pending.
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).
-5. Config reduction wave target was met and then expanded for sync packet-compaction controls (`tuneable_keys=282`); deeper runtime simplification of high-noise sections is still pending.
+5. Config reduction wave target was met and then expanded for sync packet-compaction controls (`tuneable_keys=289` currently); deeper runtime simplification of high-noise sections is still pending.
 6. Distillation file-count collapse wave is now met (`distillation_files=3`); end-to-end flow-level unification beyond module surface is still pending.
 7. Broad file/function deletion pass is in progress (legacy advisory dual-path test suites + `advisory_memory_fusion.py` + `advisory_prefetch_planner.py` + `advisory_packet_feedback.py` + `advisory_packet_llm_reranker.py` removed); larger legacy advisory/runtime file deletions are still pending.
 8. Final migration playbook is now documented (`docs/SPARK_ALPHA_MIGRATION_PLAYBOOK.md`); execution and cutover evidence collection remains ongoing.

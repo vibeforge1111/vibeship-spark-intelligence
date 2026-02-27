@@ -75,6 +75,16 @@ class DoctorResult:
         }
 
 
+def _env_flag(name: str, default: bool) -> bool:
+    """Parse an env var as bool with a deterministic fallback."""
+    raw = str(os.environ.get(name, "")).strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return bool(default)
+
+
 # ── Category 1: Environment ──
 
 def _check_python(result: DoctorResult):
@@ -472,6 +482,67 @@ def _check_advisory(result: DoctorResult):
 
 # ── Category 6: Config Integrity ──
 
+def _check_alpha_env_contract(result: DoctorResult):
+    """Detect conflicting env overrides that undermine alpha-runtime behavior."""
+    route = str(os.environ.get("SPARK_ADVISORY_ROUTE", "alpha") or "alpha").strip().lower() or "alpha"
+    alpha_enabled = _env_flag("SPARK_ADVISORY_ALPHA_ENABLED", True)
+    memory_spine_canonical = _env_flag("SPARK_MEMORY_SPINE_CANONICAL", True)
+    validate_and_store = _env_flag("SPARK_VALIDATE_AND_STORE", True)
+    advisory_sidecar = _env_flag("SPARK_BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED", False)
+    eidos_sidecar = _env_flag("SPARK_BRIDGE_LLM_EIDOS_SIDECAR_ENABLED", False)
+    embed_backend = str(os.environ.get("SPARK_EMBED_BACKEND", "auto") or "auto").strip().lower() or "auto"
+
+    hard_issues: list[str] = []
+    warnings: list[str] = []
+
+    if route == "alpha" and not alpha_enabled:
+        hard_issues.append("route=alpha while SPARK_ADVISORY_ALPHA_ENABLED=0")
+    if not memory_spine_canonical:
+        hard_issues.append("SPARK_MEMORY_SPINE_CANONICAL=0 (runtime is SQLite-canonical)")
+    if embed_backend in {"none", "off", "disabled"}:
+        hard_issues.append("SPARK_EMBED_BACKEND disables semantic retrieval")
+
+    if route in {"engine", "canary"}:
+        warnings.append(f"route={route} (non-alpha route)")
+    if not validate_and_store:
+        warnings.append("SPARK_VALIDATE_AND_STORE=0 (validation/noise gate bypass)")
+    if advisory_sidecar:
+        warnings.append("SPARK_BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED=1")
+    if eidos_sidecar:
+        warnings.append("SPARK_BRIDGE_LLM_EIDOS_SIDECAR_ENABLED=1")
+    if embed_backend == "tfidf":
+        warnings.append("SPARK_EMBED_BACKEND=tfidf (reduced semantic quality)")
+
+    if hard_issues:
+        details = "; ".join(hard_issues + warnings)
+        result.add(Check(
+            id="alpha_env_contract",
+            category="config",
+            status="fail",
+            message="Alpha env contract violated",
+            details=details,
+            repair_cmd="Unset conflicting SPARK_* overrides or restore alpha-safe values",
+        ))
+        return
+
+    if warnings:
+        result.add(Check(
+            id="alpha_env_contract",
+            category="config",
+            status="warn",
+            message="Alpha env contract in experimental mode",
+            details="; ".join(warnings),
+        ))
+        return
+
+    result.add(Check(
+        id="alpha_env_contract",
+        category="config",
+        status="pass",
+        message="Alpha env contract: stable",
+    ))
+
+
 def _check_config(result: DoctorResult):
     """Check tuneables config integrity."""
     runtime_config = SPARK_DIR / "tuneables.json"
@@ -529,6 +600,8 @@ def _check_config(result: DoctorResult):
             message="Versioned tuneables template missing",
             details=f"Expected at: {versioned_config}",
         ))
+
+    _check_alpha_env_contract(result)
 
 
 # ── Deep checks (optional, slower) ──

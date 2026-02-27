@@ -1,76 +1,35 @@
 # Program Status
 
-Updated: 2026-02-26
-Navigation hub: `docs/GLOSSARY.md`
+Updated: 2026-02-28
+Navigation hub: `docs/DOCS_INDEX.md`
 
-This file consolidates status from older roadmap and integration plan docs.
+## Current Runtime State
 
-## Recent 24h shipped updates (2026-02-26)
+1. Alpha core runtime is healthy.
+   - `python -m spark.cli services --json`: core services running, codex bridge running with fresh telemetry.
+   - `python -m lib.integration_status`: `HEALTHY`.
+2. Production alpha gates are passing.
+   - `python scripts/production_loop_report.py --json`: `READY (19/19 passed)`.
+3. Alpha readiness suite is passing.
+   - `python scripts/alpha_start_readiness.py --strict --emit-report`: `ready=true`, `251 passed`.
+4. Codex observability gates are now passing.
+   - `python scripts/codex_hooks_observatory.py --json-only`: all required gates pass (`observe.success_ratio`, `observe.latency_p95_ms`, `shadow.unknown_exit_ratio`).
+   - `python scripts/alpha_preflight_bundle.py --json-only`: `ready=true`.
+5. Observatory and alpha flow tracker are live.
+   - `python scripts/reset_alpha_observatory.py --yes`: rebuilds local + Obsidian vault observatory surfaces.
+   - `python scripts/alpha_intelligence_flow_status.py --json-only`: writes alpha flow snapshot and appends tracker row (`~/.spark/logs/alpha_intelligence_tracker.jsonl`).
 
-- Advisory dedupe now supports contextual scope mode (`global_dedupe_scope=contextual`) with rejection telemetry flush improvements.
-- Codex hook bridge is available in shadow-first rollout mode, with optional observe forwarding into `hooks/observe.py`.
-- Codex rollout observability is available via `scripts/codex_hooks_observatory.py` and the `codex_hooks` observatory page.
-- Runtime LLM preference operations now have a dedicated setup CLI (`scripts/intelligence_llm_setup.py`).
-- EIDOS curriculum build/export path is available via `scripts/build_eidos_curriculum.py` with Observatory integration/test coverage.
-- Memory quality guardrails were tightened across capture/retrieval, and scheduler integration added a dedicated memory observatory toggle.
-- CI/security workflow stack and GitHub Actions versions were refreshed across main workflows.
+## Canonical Runtime References
 
-## Current State
-
-- Queue and bridge pipelines are active and optimized for lower write-amplification.
-- Cognitive and Meta-Ralph persistence now support deferred batch flush in bridge cycles.
-- Advisor retrieval includes semantic-first behavior with guarded fallback paths.
-- Advisor retrieval now uses Carmack-style routing controls:
-  - embeddings-first fast path
-  - minimal escalation gate (weak_count/weak_score/high_risk)
-  - agentic deadline and rate cap
-  - insight prefilter and route telemetry
-- Chips runtime/store now include rotation safeguards to contain file growth.
-- Chips now support single/multifile/hybrid loading with event normalization and pre-store quality gating.
-- Mind bridge retrieval/sync paths include bounded timeouts and health backoff behavior.
-- Bridge cycle now runs both prompt validation and outcome-linked validation each cycle.
-- Queue rotation now uses atomic rewrite (temp + replace) to reduce data-loss risk.
-- Pipeline queue consumption now skips when pattern detection fails in the same cycle.
-- Promoter now supports stale-promotion demotion (unpromote + doc cleanup).
-- Service startup now checks readiness and can report `started_unhealthy` when process is up but not healthy.
-- `sparkd` now enforces token auth on all mutating `POST` endpoints by default (token from `SPARKD_TOKEN` or `~/.spark/sparkd.token`).
-- `sparkd` now applies per-IP rate limiting and bounded invalid-event quarantine retention.
-- Meta-Ralph dashboard now binds locally (`127.0.0.1`) by default.
-- Advisor effectiveness counters now enforce invariants (`helpful <= followed <= total`) with deduped outcome counting.
-- Production loop-gate evaluation module/report added (`lib/production_gates.py`, `scripts/production_loop_report.py`).
-- Meta-Ralph outcome stats now split actionable vs non-actionable orchestration records, keeping utilization scoring honest.
-- Meta-Ralph outcome retention now preserves actionable/acted-on history under high task-telemetry volume.
-- Chip insight compaction utility is available for high-volume telemetry control (`scripts/compact_chip_insights.py`).
-- CI workflow now enforces critical lint/test gates on PRs and main pushes.
-- Current loop-gate status: `READY (8/8 passed)` on 2026-02-06.
-
-## Completed Foundations
-
-- Session bootstrap and context sync pipeline
-- Pattern detection stack and distillation path
-- Outcome logging and validation loop foundations
-- Skills and orchestration integration baseline
-- Dashboard and watchdog operational baseline
+1. Alpha flow and config contract: `docs/SPARK_ALPHA_RUNTIME_CONTRACT.md`
+2. Alpha execution/delivery plan: `docs/SPARK_ALPHA_FUSION_10PR_PLAN.md`
+3. Alpha implementation ledger: `docs/SPARK_ALPHA_IMPLEMENTATION_STATUS.md`
+4. Codex bridge rollout/gates: `docs/CODEX_HOOK_BRIDGE_ROLLOUT.md`
+5. Tuneables schema authority: `lib/tuneables_schema.py`
 
 ## Active Priorities
 
-1. Improve outcome attribution analytics (source -> action -> outcome quality).
-2. Add memory diagnostics endpoints (`/api/memory/health`, `/api/memory/diag`) with strict error taxonomy.
-3. Standardize retrieval identity envelope across direct/bridge paths (`session_id`, `actor_id`, `scope`, `memory_tier`, `trace_id`).
-4. Expand EIDOS unit coverage for persistence/distillation edge cases.
-5. Keep docs and flow references synchronized with runtime behavior.
-
-## Canonical References
-
-- Runtime flow: `Intelligence_Flow.md`
-- Runtime map: `Intelligence_Flow_Map.md`
-- Readiness tracking: `PRODUCTION_READINESS.md`
-- Tuneables: `TUNEABLES.md`
-- EIDOS: `EIDOS_GUIDE.md`
-- Meta-Ralph: `META_RALPH.md`
-- Semantic advisor: `SEMANTIC_ADVISOR_DESIGN.md`
-
-## Consolidation Notes
-
-Superseded status and roadmap docs are maintained in internal project archives and are not included in this public snapshot.
-Point-in-time deep analysis reports were moved to `docs/reports/`.
+1. Keep production gate contract stable while reducing advisory/config surface.
+2. Continue high-confidence tuneable reduction (`tuneable_keys=289`) with schema-authority validation at each cut.
+3. Complete remaining legacy deletion sweep after burn-in evidence refresh.
+4. Maintain docs parity with runtime paths after each alpha change.
