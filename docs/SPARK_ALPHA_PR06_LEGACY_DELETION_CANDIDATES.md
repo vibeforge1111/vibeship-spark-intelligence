@@ -23,6 +23,7 @@ Purpose: explicit legacy advisory-path candidates for PR-10 deletion sweep, tied
 7. [Done] `lib/advisor.py` keyword fallback path for cognitive retrieval removed.
 8. [Done] `lib/advisor.py` superseded per-profile/domain rank-weight branches collapsed to one deterministic fusion-weight baseline with explicit override support retained (`1b53c38`).
 9. [Done] `lib/advisory_parser.py` legacy markdown/engine preview read paths removed.
+10. [Done] `lib/advisory_engine.py` dead global dedupe helper functions removed after dedupe path collapse (`8936beb`).
 
 ## Files Added in PR-06 That Enable This Sweep
 
