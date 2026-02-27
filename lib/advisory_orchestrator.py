@@ -1,8 +1,7 @@
-"""Advisory route orchestrator (engine vs alpha, with canary support)."""
+"""Advisory route orchestrator (alpha-only runtime path)."""
 
 from __future__ import annotations
 
-import hashlib
 import os
 import time
 from pathlib import Path
@@ -14,50 +13,24 @@ ROUTE_DECISION_LOG = Path.home() / ".spark" / "advisory_route_decisions.jsonl"
 ROUTE_DECISION_MAX_LINES = 3000
 
 
-def _stable_bucket(seed: str) -> int:
-    digest = hashlib.sha1(str(seed or "").encode("utf-8", errors="ignore")).hexdigest()
-    return int(digest[:8], 16) % 100
+def _requested_route_mode() -> str:
+    mode = str(os.getenv("SPARK_ADVISORY_ROUTE", "alpha") or "alpha").strip().lower()
+    if mode in {"legacy", "engine", "canary"}:
+        return mode
+    return "alpha"
 
 
 def _route_mode() -> str:
-    mode = str(os.getenv("SPARK_ADVISORY_ROUTE", "alpha") or "alpha").strip().lower()
-    if mode in {"legacy"}:
-        return "engine"
-    if mode not in {"engine", "alpha", "canary"}:
-        return "alpha"
-    return mode
-
-
-def _canary_percent() -> int:
-    try:
-        raw = int(os.getenv("SPARK_ADVISORY_ALPHA_CANARY_PERCENT", "0") or 0)
-    except Exception:
-        raw = 0
-    return max(0, min(100, raw))
+    # Runtime is alpha-only. Legacy/canary remain available through replay tooling,
+    # not through live hook orchestration.
+    return "alpha"
 
 
 def route_for_session(session_id: str, tool_name: str, trace_id: Optional[str] = None) -> str:
-    mode = _route_mode()
-    if mode != "canary":
-        return mode
-    percent = _canary_percent()
-    if percent <= 0:
-        return "engine"
-    if percent >= 100:
-        return "alpha"
-    seed = f"{session_id}|{tool_name}|{str(trace_id or '').strip()}"
-    return "alpha" if _stable_bucket(seed) < percent else "engine"
-
-
-def _engine_on_pre_tool(
-    session_id: str,
-    tool_name: str,
-    tool_input: Optional[dict],
-    trace_id: Optional[str],
-) -> Optional[str]:
-    from .advisory_engine import on_pre_tool as _fn
-
-    return _fn(session_id=session_id, tool_name=tool_name, tool_input=tool_input, trace_id=trace_id)
+    del session_id
+    del tool_name
+    del trace_id
+    return "alpha"
 
 
 def _alpha_on_pre_tool(
@@ -69,26 +42,6 @@ def _alpha_on_pre_tool(
     from .advisory_engine_alpha import on_pre_tool as _fn
 
     return _fn(session_id=session_id, tool_name=tool_name, tool_input=tool_input, trace_id=trace_id)
-
-
-def _engine_on_post_tool(
-    session_id: str,
-    tool_name: str,
-    success: bool,
-    tool_input: Optional[dict],
-    trace_id: Optional[str],
-    error: Optional[str],
-) -> None:
-    from .advisory_engine import on_post_tool as _fn
-
-    _fn(
-        session_id=session_id,
-        tool_name=tool_name,
-        success=bool(success),
-        tool_input=tool_input,
-        trace_id=trace_id,
-        error=error,
-    )
 
 
 def _alpha_on_post_tool(
@@ -111,12 +64,6 @@ def _alpha_on_post_tool(
     )
 
 
-def _engine_on_user_prompt(session_id: str, prompt_text: str, trace_id: Optional[str]) -> None:
-    from .advisory_engine import on_user_prompt as _fn
-
-    _fn(session_id=session_id, prompt_text=prompt_text, trace_id=trace_id)
-
-
 def _alpha_on_user_prompt(session_id: str, prompt_text: str, trace_id: Optional[str]) -> None:
     from .advisory_engine_alpha import on_user_prompt as _fn
 
@@ -130,7 +77,7 @@ def _log_route_decision(
     session_id: str,
     tool_name: str,
     trace_id: Optional[str],
-    fallback_used: bool,
+    requested_mode: str,
     ok: bool,
     elapsed_ms: float,
     error: str = "",
@@ -142,11 +89,10 @@ def _log_route_decision(
             "phase": str(phase or ""),
             "route": str(route or ""),
             "mode": _route_mode(),
-            "canary_percent": _canary_percent(),
+            "requested_mode": requested_mode,
             "session_id": str(session_id or ""),
             "tool_name": str(tool_name or ""),
             "trace_id": str(trace_id or ""),
-            "fallback_used": bool(fallback_used),
             "ok": bool(ok),
             "elapsed_ms": round(max(0.0, float(elapsed_ms or 0.0)), 2),
             "error": str(error or "")[:240],
@@ -163,31 +109,17 @@ def on_pre_tool(
     trace_id: Optional[str] = None,
 ) -> Optional[str]:
     start = time.time()
-    route = route_for_session(session_id, tool_name, trace_id)
-    fallback_used = False
+    route = "alpha"
+    requested_mode = _requested_route_mode()
     try:
-        if route == "alpha":
-            out = _alpha_on_pre_tool(session_id, tool_name, tool_input, trace_id)
-            _log_route_decision(
-                phase="pre_tool",
-                route=route,
-                session_id=session_id,
-                tool_name=tool_name,
-                trace_id=trace_id,
-                fallback_used=False,
-                ok=True,
-                elapsed_ms=(time.time() - start) * 1000.0,
-            )
-            return out
-
-        out = _engine_on_pre_tool(session_id, tool_name, tool_input, trace_id)
+        out = _alpha_on_pre_tool(session_id, tool_name, tool_input, trace_id)
         _log_route_decision(
             phase="pre_tool",
             route=route,
             session_id=session_id,
             tool_name=tool_name,
             trace_id=trace_id,
-            fallback_used=fallback_used,
+            requested_mode=requested_mode,
             ok=True,
             elapsed_ms=(time.time() - start) * 1000.0,
         )
@@ -199,7 +131,7 @@ def on_pre_tool(
             session_id=session_id,
             tool_name=tool_name,
             trace_id=trace_id,
-            fallback_used=fallback_used,
+            requested_mode=requested_mode,
             ok=False,
             elapsed_ms=(time.time() - start) * 1000.0,
             error=str(exc),
@@ -216,30 +148,17 @@ def on_post_tool(
     error: Optional[str] = None,
 ) -> None:
     start = time.time()
-    route = route_for_session(session_id, tool_name, trace_id)
-    fallback_used = False
+    route = "alpha"
+    requested_mode = _requested_route_mode()
     try:
-        if route == "alpha":
-            _alpha_on_post_tool(session_id, tool_name, success, tool_input, trace_id, error)
-            _log_route_decision(
-                phase="post_tool",
-                route=route,
-                session_id=session_id,
-                tool_name=tool_name,
-                trace_id=trace_id,
-                fallback_used=False,
-                ok=True,
-                elapsed_ms=(time.time() - start) * 1000.0,
-            )
-            return
-        _engine_on_post_tool(session_id, tool_name, success, tool_input, trace_id, error)
+        _alpha_on_post_tool(session_id, tool_name, success, tool_input, trace_id, error)
         _log_route_decision(
             phase="post_tool",
             route=route,
             session_id=session_id,
             tool_name=tool_name,
             trace_id=trace_id,
-            fallback_used=fallback_used,
+            requested_mode=requested_mode,
             ok=True,
             elapsed_ms=(time.time() - start) * 1000.0,
         )
@@ -250,7 +169,7 @@ def on_post_tool(
             session_id=session_id,
             tool_name=tool_name,
             trace_id=trace_id,
-            fallback_used=fallback_used,
+            requested_mode=requested_mode,
             ok=False,
             elapsed_ms=(time.time() - start) * 1000.0,
             error=str(exc),
@@ -264,30 +183,17 @@ def on_user_prompt(
     trace_id: Optional[str] = None,
 ) -> None:
     start = time.time()
-    route = route_for_session(session_id, "*", trace_id)
-    fallback_used = False
+    route = "alpha"
+    requested_mode = _requested_route_mode()
     try:
-        if route == "alpha":
-            _alpha_on_user_prompt(session_id, prompt_text, trace_id)
-            _log_route_decision(
-                phase="user_prompt",
-                route=route,
-                session_id=session_id,
-                tool_name="*",
-                trace_id=trace_id,
-                fallback_used=False,
-                ok=True,
-                elapsed_ms=(time.time() - start) * 1000.0,
-            )
-            return
-        _engine_on_user_prompt(session_id, prompt_text, trace_id)
+        _alpha_on_user_prompt(session_id, prompt_text, trace_id)
         _log_route_decision(
             phase="user_prompt",
             route=route,
             session_id=session_id,
             tool_name="*",
             trace_id=trace_id,
-            fallback_used=fallback_used,
+            requested_mode=requested_mode,
             ok=True,
             elapsed_ms=(time.time() - start) * 1000.0,
         )
@@ -298,7 +204,7 @@ def on_user_prompt(
             session_id=session_id,
             tool_name="*",
             trace_id=trace_id,
-            fallback_used=fallback_used,
+            requested_mode=requested_mode,
             ok=False,
             elapsed_ms=(time.time() - start) * 1000.0,
             error=str(exc),
@@ -309,6 +215,6 @@ def on_user_prompt(
 def get_route_status() -> Dict[str, Any]:
     return {
         "mode": _route_mode(),
-        "canary_percent": _canary_percent(),
+        "requested_mode": _requested_route_mode(),
         "decision_log": str(ROUTE_DECISION_LOG),
     }
