@@ -8,10 +8,8 @@ from typing import Any, Dict, List, Optional
 import json
 import time
 
-from .advisory_log_paths import advisory_engine_log_default
-
 SPARK_DIR = Path.home() / ".spark"
-ADVISORY_LOG = advisory_engine_log_default()
+ADVISORY_LOG = SPARK_DIR / "advisory_engine_alpha.jsonl"
 ADVICE_FEEDBACK_REQUESTS = SPARK_DIR / "advice_feedback_requests.jsonl"
 EFFECTIVENESS_FILE = SPARK_DIR / "advisor" / "effectiveness.json"
 SYNC_STATS_FILE = SPARK_DIR / "sync_stats.json"

@@ -14,9 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from lib.advisory_log_paths import advisory_engine_log_default
-
 SPARK_DIR = Path.home() / ".spark"
+ADVISORY_ENGINE_LOG = SPARK_DIR / "advisory_engine_alpha.jsonl"
 ALPHA_SUPPRESSION_EVENTS = {
     "gate_no_emit",
     "emit_suppressed",
@@ -405,7 +404,7 @@ def generate_summary(window_hours: float) -> Dict[str, Any]:
             exclude_trace_prefixes=["advisory-bench-"],
         ),
         "engine": summarize_engine(
-            advisory_engine_log_default(),
+            ADVISORY_ENGINE_LOG,
             window_s=window_s,
             now_ts=now_ts,
         ),

@@ -24,7 +24,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-from lib.advisory_log_paths import advisory_engine_log_default
 from lib.memory_capture import importance_score, normalize_memory_text
 from lib.metric_contract import (
     METRIC_CONTRACT_VERSION,
@@ -37,7 +36,7 @@ from lib.spark_memory_spine import load_cognitive_insights_runtime_snapshot
 SPARK_DIR = Path.home() / ".spark"
 MEMORY_DB = SPARK_DIR / "memory_store.sqlite"
 SEMANTIC_LOG = SPARK_DIR / "logs" / "semantic_retrieval.jsonl"
-ADVISORY_ENGINE_LOG = advisory_engine_log_default()
+ADVISORY_ENGINE_LOG = SPARK_DIR / "advisory_engine_alpha.jsonl"
 MIND_OFFLINE_QUEUE = SPARK_DIR / "mind_offline_queue.jsonl"
 OBSERVATORY_DIR = Path("_observatory")
 REPORTS_DIR = Path("docs") / "reports"

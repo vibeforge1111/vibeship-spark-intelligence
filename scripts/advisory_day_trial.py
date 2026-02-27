@@ -18,7 +18,6 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from lib.action_matcher import FEEDBACK_FILE, OUTCOMES_FILE, match_actions
 from lib.advice_feedback import REQUESTS_FILE
-from lib.advisory_log_paths import advisory_engine_log_default
 from lib.advisory_parser import parse_feedback_requests
 from lib.production_gates import evaluate_gates, load_live_metrics
 
@@ -27,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SPARK_DIR = Path.home() / ".spark"
 DEFAULT_TRIAL_ROOT = ROOT / "docs" / "reports" / "day_trials"
 DEFAULT_TUNEABLES = SPARK_DIR / "tuneables.json"
-DEFAULT_ENGINE_FILE = advisory_engine_log_default()
+DEFAULT_ENGINE_FILE = SPARK_DIR / "advisory_engine_alpha.jsonl"
 DEFAULT_MEMORY_CASES = ROOT / "benchmarks" / "data" / "memory_retrieval_eval_multidomain_real_user_2026_02_16.json"
 DEFAULT_MEMORY_GATES = ROOT / "benchmarks" / "data" / "memory_retrieval_domain_gates_multidomain_v1.json"
 DEFAULT_ADVISORY_CASES = ROOT / "benchmarks" / "data" / "advisory_quality_eval_seed.json"

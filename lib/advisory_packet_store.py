@@ -18,7 +18,6 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .advisory_log_paths import advisory_engine_log_default
 from .advisory_packet_spine import (
     relaxed_candidates as _spine_relaxed_candidates,
     resolve_exact_packet_id as _spine_resolve_exact_packet_id,
@@ -34,7 +33,7 @@ OBSIDIAN_EXPORT_DIR = PACKET_DIR / "obsidian"
 OBSIDIAN_PACKETS_DIR = OBSIDIAN_EXPORT_DIR / "packets"
 OBSIDIAN_INDEX_FILE = OBSIDIAN_PACKETS_DIR / "index.md"
 ADVISORY_DECISION_LEDGER_FILE = Path.home() / ".spark" / "advisory_decision_ledger.jsonl"
-ADVISORY_ENGINE_LOG_FILE = advisory_engine_log_default()
+ADVISORY_ENGINE_LOG_FILE = Path.home() / ".spark" / "advisory_engine_alpha.jsonl"
 ADVISORY_EMIT_FILE = Path.home() / ".spark" / "advisory_emit.jsonl"
 ADVISORY_LOW_AUTH_DEDUPE_FILE = Path.home() / ".spark" / "advisory_low_auth_dedupe.jsonl"
 ADVISORY_GLOBAL_DEDUPE_FILE = Path.home() / ".spark" / "advisory_global_dedupe.jsonl"
