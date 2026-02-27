@@ -3,6 +3,24 @@
 Last updated: 2026-02-27 (local branch snapshot, global dedupe wiring in alpha runtime + advisory telemetry alignment)
 Branch: feat/spark-alpha
 
+## Latest delta (2026-02-27, compaction+distillation+evidence pack)
+
+- Unified compaction policy surface for sync runtime:
+  - Added shared sync policy loader in [lib/context_sync.py](../lib/context_sync.py) that drives both cognitive ACT-R and advisory packet compaction with one cadence/budget contract.
+  - Added global cross-store action budget (`sync.compaction_max_actions`) and explicit cognitive tuneables (`sync.cognitive_actr_*`) plus packet lane defaults.
+  - Added policy test coverage in [tests/test_context_sync_policy.py](../tests/test_context_sync_policy.py) for shared budget behavior.
+- Distillation flow-level unification at persistence boundary:
+  - [lib/eidos/store.py](../lib/eidos/store.py) now hydrates advisory projection (`refined_statement` + `advisory_quality`) on `save_distillation(...)` when missing/weak.
+  - Ensures all distillation producers that persist through EidosStore share one transform contract before retrieval/advisory.
+  - Added coverage in [tests/test_eidos_store_distillation_dedupe.py](../tests/test_eidos_store_distillation_dedupe.py).
+- Cutover evidence pack runner:
+  - Added [scripts/alpha_cutover_evidence_pack.py](../scripts/alpha_cutover_evidence_pack.py) to produce one artifact covering production gates + replay evidence + canary lane.
+  - Added helper tests in [tests/test_alpha_cutover_evidence_pack_helpers.py](../tests/test_alpha_cutover_evidence_pack_helpers.py).
+  - Latest artifact: `benchmarks/out/alpha_cutover/alpha_cutover_evidence_20260227_221102.json` (`production_ready=true`, `replay_pass=true`, `canary_pass=false` due missing benchmark input files in this workspace snapshot).
+- Validation after this delta:
+  - `pytest tests/test_context_sync_policy.py tests/test_eidos_store_distillation_dedupe.py tests/test_alpha_cutover_evidence_pack_helpers.py -q` -> `19 passed`
+  - `python scripts/alpha_start_readiness.py --strict --emit-report` -> `ready=true` (`251 passed`)
+
 ## Done so far
 
 ### Code commits completed
