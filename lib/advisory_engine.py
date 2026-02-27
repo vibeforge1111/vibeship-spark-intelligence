@@ -899,6 +899,7 @@ def _apply_emission_quality_filters(
     recent_identity_ts: Optional[Dict[str, float]] = None,
     outcome_ts_by_insight: Optional[Dict[str, float]] = None,
     outcome_ts_by_advice_id: Optional[Dict[str, float]] = None,
+    recent_global_text_sig_age: Optional[Dict[str, float]] = None,
 ) -> Tuple[List[Any], List[Dict[str, Any]]]:
     kept: List[Any] = []
     suppressed: List[Dict[str, Any]] = []
@@ -907,6 +908,9 @@ def _apply_emission_quality_filters(
     recent_map = recent_identity_ts if isinstance(recent_identity_ts, dict) else {}
     outcome_insight = outcome_ts_by_insight if isinstance(outcome_ts_by_insight, dict) else {}
     outcome_advice = outcome_ts_by_advice_id if isinstance(outcome_ts_by_advice_id, dict) else {}
+    global_text_sig_age = (
+        recent_global_text_sig_age if isinstance(recent_global_text_sig_age, dict) else {}
+    )
 
     for decision in list(emitted_decisions or []):
         advice_id = str(getattr(decision, "advice_id", "") or "").strip()
@@ -935,6 +939,26 @@ def _apply_emission_quality_filters(
             except Exception:
                 pass
             suppressed.append({"advice_id": advice_id, "reason": issue})
+            continue
+
+        text_sig = _text_fingerprint(normalized_text) if normalized_text else ""
+        text_repeat_age_s = (
+            float(global_text_sig_age.get(text_sig, -1.0) or -1.0) if text_sig else -1.0
+        )
+        if text_repeat_age_s >= 0.0:
+            try:
+                decision.emit = False
+                decision.reason = "emission_quality_filter: global_text_repeat"
+            except Exception:
+                pass
+            suppressed.append(
+                {
+                    "advice_id": advice_id,
+                    "reason": "text_sig",
+                    "repeat_age_s": round(float(text_repeat_age_s), 2),
+                    "repeat_cooldown_s": round(float(GLOBAL_DEDUPE_COOLDOWN_S), 2),
+                }
+            )
             continue
 
         identity = _repeat_identity_for_item(item, advice_id=advice_id)
@@ -1144,7 +1168,6 @@ def _diagnostics_envelope(
     *,
     session_id: str,
     trace_id: Optional[str],
-    route: str,
     session_context_key: str = "",
     scope: Optional[str] = None,
     memory_bundle: Optional[Dict[str, Any]] = None,
@@ -1584,11 +1607,10 @@ def on_pre_tool(
         except Exception:
             pass
 
-    def _diag(current_route: str) -> Dict[str, Any]:
+    def _diag() -> Dict[str, Any]:
         return _diagnostics_envelope(
             session_id=session_id,
             trace_id=resolved_trace_id,
-            route=current_route,
             session_context_key=session_context_key,
             scope="session",
             memory_bundle=memory_bundle,
@@ -1731,7 +1753,7 @@ def on_pre_tool(
                 0,
                 start_ms,
                 extra={
-                    **_diag(route),
+                    **_diag(),
                     "route": route,
                     "intent_family": intent_family,
                     "task_plane": task_plane,
@@ -1748,8 +1770,17 @@ def on_pre_tool(
         # Pre-read global dedupe log once so the gate can absorb advice_id dedupe
         # (avoids per-item I/O in the post-gate dedupe pass).
         recent_global_emissions: Dict[str, float] = {}
+        recent_global_text_sig_age: Dict[str, float] = {}
+        pytest_default_log_skip = False
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            try:
+                default_log = (Path.home() / ".spark" / "advisory_global_dedupe.jsonl").resolve()
+                pytest_default_log_skip = GLOBAL_DEDUPE_LOG.resolve() == default_log
+            except Exception:
+                pytest_default_log_skip = True
         if (
             GLOBAL_DEDUPE_ENABLED
+            and not pytest_default_log_skip
             and not str(session_id or "").startswith("advisory-bench-")
         ):
             try:
@@ -1776,6 +1807,9 @@ def on_pre_tool(
                             continue
                         if aid not in recent_global_emissions:
                             recent_global_emissions[aid] = age_s
+                        text_sig = str(row.get("text_sig") or "").strip()
+                        if text_sig and text_sig not in recent_global_text_sig_age:
+                            recent_global_text_sig_age[text_sig] = age_s
                     except Exception:
                         continue
             except Exception as exc:
@@ -1837,7 +1871,7 @@ def on_pre_tool(
                 0,
                 start_ms,
                 extra={
-                    **_diag(route),
+                    **_diag(),
                     "route": route,
                     "intent_family": intent_family,
                     "task_plane": task_plane,
@@ -1863,128 +1897,6 @@ def on_pre_tool(
             emitted_advice.append(item)
         emitted_advice_source_counts = _advice_source_counts(emitted_advice)
 
-        # Cross-session dedupe: text_sig only (advice_id dedupe absorbed into gate).
-        try:
-            if (
-                GLOBAL_DEDUPE_ENABLED
-                and GLOBAL_DEDUPE_TEXT_ENABLED
-                and gate_result.emitted
-                and not str(session_id or "").startswith("advisory-bench-")
-            ):
-                now_ts = time.time()
-                cooldown = float(GLOBAL_DEDUPE_COOLDOWN_S)
-                dedupe_scope = _dedupe_scope_key(
-                    session_id,
-                    intent_family=intent_family,
-                    task_phase=str(getattr(state, "task_phase", "") or ""),
-                )
-                kept = []
-                suppressed: List[Dict[str, Any]] = []
-                for decision in list(gate_result.emitted or []):
-                    aid = str(getattr(decision, "advice_id", "") or "").strip()
-                    if not aid:
-                        continue
-                    try:
-                        item = advice_by_id.get(aid)
-                        sig = _text_fingerprint(str(getattr(item, "text", "") or "")) if item else ""
-                    except Exception:
-                        sig = ""
-                    if sig:
-                        hit_sig = _global_recently_emitted_text_sig(
-                            text_sig=sig,
-                            now_ts=now_ts,
-                            cooldown_s=cooldown,
-                            scope_key=dedupe_scope,
-                        )
-                        if hit_sig:
-                            suppressed.append(
-                                {
-                                    "advice_id": aid,
-                                    "reason": "text_sig",
-                                    "repeat_age_s": round(float(hit_sig.get("age_s") or 0.0), 2),
-                                    "repeat_cooldown_s": round(float(hit_sig.get("cooldown_s") or cooldown), 2),
-                                }
-                            )
-                            continue
-                    kept.append(decision)
-
-                if suppressed:
-                    _record_advisory_gate_drop(
-                        stage="global_dedupe_suppressed",
-                        reason="AE_GLOBAL_DEDUPE_SUPPRESSED",
-                        tool_name=tool_name,
-                        intent_family=intent_family,
-                        task_plane=task_plane,
-                        route=route,
-                        packet_id=packet_id,
-                        advice_items=advice_items,
-                        extras={
-                            "suppressed_count": len(suppressed),
-                            "suppressed": suppressed[:8],
-                            "cooldown_s": round(float(cooldown), 2),
-                            "dedupe_scope": dedupe_scope,
-                        },
-                    )
-                    _record_advisory_decision_ledger(
-                        stage="global_dedupe_suppressed",
-                        outcome="blocked",
-                        tool_name=tool_name,
-                        intent_family=intent_family,
-                        task_plane=task_plane,
-                        route=route,
-                        packet_id=packet_id,
-                        advice_items=advice_items,
-                        gate_result=gate_result,
-                        session_id=session_id,
-                        trace_id=resolved_trace_id,
-                        extras={
-                            "error_kind": "policy",
-                            "error_code": "AE_GLOBAL_DEDUPE_SUPPRESSED",
-                            "suppressed": suppressed[:8],
-                            "cooldown_s": round(float(cooldown), 2),
-                            "dedupe_scope": dedupe_scope,
-                        },
-                    )
-                    if not kept:
-                        save_state(state)
-                        _log_engine_event(
-                            "global_dedupe_suppressed",
-                            tool_name,
-                            len(advice_items),
-                            0,
-                            start_ms,
-                            extra={
-                                **_diag(route),
-                                "route": route,
-                                "intent_family": intent_family,
-                                "task_plane": task_plane,
-                                "packet_id": packet_id,
-                                "stage_ms": stage_ms,
-                                "delivery_mode": "none",
-                                "advice_source_counts": advice_source_counts,
-                                "error_kind": "policy",
-                                "error_code": "AE_GLOBAL_DEDUPE_SUPPRESSED",
-                                "suppressed_count": len(suppressed),
-                                "suppressed": suppressed[:8],
-                                "cooldown_s": round(float(cooldown), 2),
-                                "dedupe_scope": dedupe_scope,
-                            },
-                        )
-                        _record_rejection("global_dedupe_suppressed")
-                        return None
-
-                    gate_result.emitted = kept
-                    emitted_advice = []
-                    for decision in gate_result.emitted:
-                        item = advice_by_id.get(decision.advice_id)
-                        if item is None:
-                            continue
-                        item._authority = decision.authority
-                        emitted_advice.append(item)
-                    emitted_advice_source_counts = _advice_source_counts(emitted_advice)
-        except Exception as exc:
-            log_debug("advisory_engine", f"emission filtering failed: {exc}", None)
-
         # Post-gate quality filter: block placeholders/noise/unsafe text and
         # enforce per-insight repeat cooldown unless outcome changed.
         try:
@@ -2002,6 +1914,11 @@ def on_pre_tool(
                     recent_identity_ts=recent_identity_ts,
                     outcome_ts_by_insight=outcome_ts_by_insight,
                     outcome_ts_by_advice_id=outcome_ts_by_advice_id,
+                    recent_global_text_sig_age=(
+                        recent_global_text_sig_age
+                        if GLOBAL_DEDUPE_ENABLED and GLOBAL_DEDUPE_TEXT_ENABLED
+                        else None
+                    ),
                 )
                 if suppressed:
                     _record_advisory_gate_drop(
@@ -2047,7 +1964,7 @@ def on_pre_tool(
                             0,
                             start_ms,
                             extra={
-                                **_diag(route),
+                                **_diag(),
                                 "route": route,
                                 "intent_family": intent_family,
                                 "task_plane": task_plane,
@@ -2201,7 +2118,7 @@ def on_pre_tool(
                 len(gate_result.emitted),
                 start_ms,
                 extra={
-                    **_diag(route),
+                    **_diag(),
                     "route": route,
                     "intent_family": intent_family,
                     "task_plane": task_plane,
@@ -2444,7 +2361,7 @@ def on_pre_tool(
             len(gate_result.emitted),
             start_ms,
             extra={
-                **_diag(route),
+                **_diag(),
                 "route": route,
                 "intent_family": intent_family,
                 "task_plane": task_plane,
@@ -2515,7 +2432,7 @@ def on_pre_tool(
             0,
             start_ms,
             extra={
-                **_diag(route),
+                **_diag(),
                 **build_error_fields(str(e), "AE_ON_PRE_TOOL_FAILED"),
             },
         )
@@ -2628,7 +2545,6 @@ def on_post_tool(
                 **_diagnostics_envelope(
                     session_id=session_id,
                     trace_id=resolved_trace_id,
-                    route="post_tool",
                     scope="session",
                 ),
                 **build_error_fields(str(e), "AE_ON_POST_TOOL_FAILED"),
@@ -2728,7 +2644,6 @@ def on_user_prompt(
                 **_diagnostics_envelope(
                     session_id=session_id,
                     trace_id=resolved_trace_id,
-                    route="user_prompt",
                     session_context_key=session_context_key,
                     scope="session",
                 ),
@@ -2750,7 +2665,6 @@ def on_user_prompt(
                 **_diagnostics_envelope(
                     session_id=session_id,
                     trace_id=str(trace_id or "").strip() or None,
-                    route="user_prompt",
                     scope="session",
                 ),
                 **build_error_fields(str(e), "AE_ON_USER_PROMPT_FAILED"),

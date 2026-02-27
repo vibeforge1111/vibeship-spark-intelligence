@@ -54,7 +54,6 @@ def test_diagnostics_envelope_has_session_scope_and_sources():
     env = advisory_engine._diagnostics_envelope(
         session_id="session-1",
         trace_id="trace-1",
-        route="packet_exact",
         session_context_key="ctx-1",
         scope="session",
         memory_bundle=bundle,
