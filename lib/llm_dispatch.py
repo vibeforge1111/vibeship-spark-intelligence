@@ -1,6 +1,6 @@
 """Central LLM dispatch for all configurable LLM-assisted areas.
 
-Every area in the system (26 total) calls through this module.
+Every area in the system (20 total) calls through this module.
 Each area is individually enable/disable with its own provider,
 timeout, and max output length — all configured in tuneables.json
 under the ``llm_areas`` section.
@@ -41,7 +41,7 @@ class LLMAreaResult:
 
 
 # ---------------------------------------------------------------------------
-# Area registry — canonical list of all 26 area IDs
+# Area registry — canonical list of all 20 area IDs
 # ---------------------------------------------------------------------------
 
 LEARNING_AREAS = (
@@ -67,14 +67,7 @@ LEARNING_AREAS = (
     "policy_autotuner_recommend",
 )
 
-ARCHITECTURE_AREAS = (
-    "operator_now_synth",
-    "dead_widget_plan",
-    "error_translate",
-    "config_advise",
-    "canary_decide",
-    "canvas_enrich",
-)
+ARCHITECTURE_AREAS: tuple[str, ...] = ()
 
 ALL_AREAS = LEARNING_AREAS + ARCHITECTURE_AREAS
 
@@ -105,13 +98,6 @@ _AREA_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "implicit_feedback_interpret":  {"provider": "minimax",   "timeout_s": 8.0,  "max_chars": 400},
     "curriculum_gap_summarize":     {"provider": "minimax",   "timeout_s": 10.0, "max_chars": 600},
     "policy_autotuner_recommend":   {"provider": "minimax",   "timeout_s": 10.0, "max_chars": 600},
-    # --- Architecture ---
-    "operator_now_synth":           {"provider": "minimax",   "timeout_s": 10.0, "max_chars": 600},
-    "dead_widget_plan":             {"provider": "minimax",   "timeout_s": 8.0,  "max_chars": 400},
-    "error_translate":              {"provider": "minimax",   "timeout_s": 6.0,  "max_chars": 300},
-    "config_advise":                {"provider": "minimax",   "timeout_s": 8.0,  "max_chars": 400},
-    "canary_decide":                {"provider": "minimax",   "timeout_s": 10.0, "max_chars": 400},
-    "canvas_enrich":                {"provider": "minimax",   "timeout_s": 8.0,  "max_chars": 400},
 }
 
 _VALID_PROVIDERS = {"auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"}
@@ -221,7 +207,7 @@ def llm_area_call(
     """Call an LLM for a specific area, respecting per-area config.
 
     Args:
-        area_id: One of the 30 registered area IDs.
+        area_id: One of the registered area IDs.
         prompt: The fully-formed prompt to send to the LLM.
         fallback: Text to return if the area is disabled or the LLM fails.
 

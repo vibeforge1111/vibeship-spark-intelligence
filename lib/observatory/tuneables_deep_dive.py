@@ -327,27 +327,9 @@ def _auto_tuner_analysis(live: Dict[str, Any]) -> Dict[str, Any]:
 # ── Page Generator ───────────────────────────────────────────────────
 
 def _llm_area_config_advise(drifts: list, anomalies: list) -> str:
-    """LLM area: generate config recommendations from drift and anomaly data.
-
-    When disabled (default), returns empty string.
-    """
-    try:
-        from ..llm_area_prompts import format_prompt
-        from ..llm_dispatch import llm_area_call
-
-        prompt = format_prompt(
-            "config_advise",
-            drift_count=str(len(drifts)),
-            anomaly_count=str(len(anomalies)),
-            top_drifts=str(drifts[:5]) if drifts else "none",
-            top_anomalies=str(anomalies[:5]) if anomalies else "none",
-        )
-        result = llm_area_call("config_advise", prompt, fallback="")
-        if result.used_llm and result.text:
-            return result.text
-        return ""
-    except Exception:
-        return ""
+    _ = drifts
+    _ = anomalies
+    return ""
 
 
 def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:

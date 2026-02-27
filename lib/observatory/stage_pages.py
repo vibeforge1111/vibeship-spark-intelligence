@@ -16,30 +16,8 @@ from .linker import (
 
 
 def _llm_area_dead_widget_plan(d: dict) -> str:
-    """LLM area: diagnose dead/stale advisory paths and recommend fixes.
-
-    When disabled (default), returns empty string.
-    """
-    try:
-        from ..llm_area_prompts import format_prompt
-        from ..llm_dispatch import llm_area_call
-
-        health_data = {
-            "emit_rate": d.get("decision_emit_rate", 0),
-            "followed_rate": d.get("followed_rate", 0),
-            "total_advice": d.get("total_advice_given", 0),
-            "feedback_follow_rate": d.get("feedback_follow_rate", 0),
-        }
-        prompt = format_prompt(
-            "dead_widget_plan",
-            health_data=str(health_data),
-        )
-        result = llm_area_call("dead_widget_plan", prompt, fallback="")
-        if result.used_llm and result.text:
-            return result.text
-        return ""
-    except Exception:
-        return ""
+    _ = d
+    return ""
 
 
 def _slug(text: str) -> str:

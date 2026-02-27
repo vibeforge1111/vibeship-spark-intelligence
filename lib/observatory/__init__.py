@@ -18,48 +18,13 @@ _last_sync_ts: float = 0.0
 
 
 def _llm_area_operator_now_synth(data: dict) -> str:
-    """LLM area: synthesize operator-facing system state summary.
-
-    When disabled (default), returns empty string.
-    """
-    try:
-        from ..llm_area_prompts import format_prompt
-        from ..llm_dispatch import llm_area_call
-
-        stage_keys = sorted(data.keys()) if isinstance(data, dict) else []
-        prompt = format_prompt(
-            "operator_now_synth",
-            stage_count=str(len(stage_keys)),
-            stages=str(stage_keys[:12]),
-        )
-        result = llm_area_call("operator_now_synth", prompt, fallback="")
-        if result.used_llm and result.text:
-            return result.text
-        return ""
-    except Exception:
-        return ""
+    _ = data
+    return ""
 
 
 def _llm_area_canvas_enrich(canvas_content: str, data: dict) -> str:
-    """LLM area: enrich canvas with annotations.
-
-    When disabled (default), returns canvas_content unchanged.
-    """
-    try:
-        from ..llm_area_prompts import format_prompt
-        from ..llm_dispatch import llm_area_call
-
-        prompt = format_prompt(
-            "canvas_enrich",
-            canvas_preview=canvas_content[:500],
-            stage_count=str(len(data) if isinstance(data, dict) else 0),
-        )
-        result = llm_area_call("canvas_enrich", prompt, fallback=canvas_content)
-        if result.used_llm and result.text and result.text != canvas_content:
-            return result.text
-        return canvas_content
-    except Exception:
-        return canvas_content
+    _ = data
+    return canvas_content
 
 
 def _coerce_int(value: Any, default: int = 0) -> int:

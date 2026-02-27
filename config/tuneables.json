@@ -714,31 +714,7 @@
     "policy_autotuner_recommend_enabled": false,
     "policy_autotuner_recommend_provider": "minimax",
     "policy_autotuner_recommend_timeout_s": 10.0,
-    "policy_autotuner_recommend_max_chars": 600,
-    "operator_now_synth_enabled": false,
-    "operator_now_synth_provider": "minimax",
-    "operator_now_synth_timeout_s": 10.0,
-    "operator_now_synth_max_chars": 600,
-    "dead_widget_plan_enabled": false,
-    "dead_widget_plan_provider": "minimax",
-    "dead_widget_plan_timeout_s": 8.0,
-    "dead_widget_plan_max_chars": 400,
-    "error_translate_enabled": false,
-    "error_translate_provider": "minimax",
-    "error_translate_timeout_s": 6.0,
-    "error_translate_max_chars": 300,
-    "config_advise_enabled": false,
-    "config_advise_provider": "minimax",
-    "config_advise_timeout_s": 8.0,
-    "config_advise_max_chars": 400,
-    "canary_decide_enabled": false,
-    "canary_decide_provider": "minimax",
-    "canary_decide_timeout_s": 10.0,
-    "canary_decide_max_chars": 400,
-    "canvas_enrich_enabled": false,
-    "canvas_enrich_provider": "minimax",
-    "canvas_enrich_timeout_s": 8.0,
-    "canvas_enrich_max_chars": 400
+    "policy_autotuner_recommend_max_chars": 600
   }
 }
 

@@ -95,12 +95,6 @@ def generate_llm_areas_status(data: Dict[int, Any] | None = None) -> str:
         "implicit_feedback_interpret": "lib/advisory_implicit_feedback.py",
         "curriculum_gap_summarize": "lib/eidos_distillation_curriculum.py",
         "policy_autotuner_recommend": "lib/auto_tuner.py",
-        "operator_now_synth": "lib/observatory/__init__.py",
-        "dead_widget_plan": "lib/observatory/stage_pages.py",
-        "error_translate": "lib/error_translator.py",
-        "config_advise": "lib/observatory/tuneables_deep_dive.py",
-        "canary_decide": "lib/canary_assistant.py",
-        "canvas_enrich": "lib/observatory/__init__.py",
     }
 
     # Learning System Areas table

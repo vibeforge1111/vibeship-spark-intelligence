@@ -776,37 +776,6 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "policy_autotuner_recommend_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for policy autotuner LLM call"),
         "policy_autotuner_recommend_max_chars": TuneableSpec("int", 600, 50, 3000, "Max output chars for policy autotuner"),
 
-        # -- Architecture (8) --
-
-        "operator_now_synth_enabled": TuneableSpec("bool", False, None, None, "Enable LLM synthesis of operator briefings"),
-        "operator_now_synth_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for operator synthesis", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "operator_now_synth_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for operator synthesis LLM call"),
-        "operator_now_synth_max_chars": TuneableSpec("int", 600, 50, 3000, "Max output chars for operator synthesis"),
-
-        "dead_widget_plan_enabled": TuneableSpec("bool", False, None, None, "Enable LLM planning for dead widget remediation"),
-        "dead_widget_plan_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for dead widget planning", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "dead_widget_plan_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for dead widget planning LLM call"),
-        "dead_widget_plan_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for dead widget planning"),
-
-        "error_translate_enabled": TuneableSpec("bool", False, None, None, "Enable LLM translation of errors to fix steps"),
-        "error_translate_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for error translation", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "error_translate_timeout_s": TuneableSpec("float", 6.0, 0.5, 60.0, "Timeout for error translation LLM call"),
-        "error_translate_max_chars": TuneableSpec("int", 300, 50, 2000, "Max output chars for error translation"),
-
-        "config_advise_enabled": TuneableSpec("bool", False, None, None, "Enable LLM-assisted config change advice"),
-        "config_advise_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for config advice", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "config_advise_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for config advice LLM call"),
-        "config_advise_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for config advice"),
-
-        "canary_decide_enabled": TuneableSpec("bool", False, None, None, "Enable LLM-assisted canary pass/fail/hold decisions"),
-        "canary_decide_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for canary decisions", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "canary_decide_timeout_s": TuneableSpec("float", 10.0, 0.5, 60.0, "Timeout for canary decision LLM call"),
-        "canary_decide_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for canary decisions"),
-
-        "canvas_enrich_enabled": TuneableSpec("bool", False, None, None, "Enable LLM enrichment of mission canvas task nodes"),
-        "canvas_enrich_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for canvas enrichment", ["auto", "minimax", "ollama", "gemini", "openai", "anthropic", "claude"]),
-        "canvas_enrich_timeout_s": TuneableSpec("float", 8.0, 0.5, 60.0, "Timeout for canvas enrichment LLM call"),
-        "canvas_enrich_max_chars": TuneableSpec("int", 400, 50, 2000, "Max output chars for canvas enrichment"),
     },
 }
 
