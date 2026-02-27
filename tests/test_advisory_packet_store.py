@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 
+import lib.advisory_packet_spine as packet_spine
 import lib.advisory_packet_store as store
 
 
@@ -11,6 +12,8 @@ def _patch_store_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(store, "PACKET_DIR", packet_dir)
     monkeypatch.setattr(store, "INDEX_FILE", packet_dir / "index.json")
     monkeypatch.setattr(store, "PREFETCH_QUEUE_FILE", packet_dir / "prefetch_queue.jsonl")
+    monkeypatch.setattr(packet_spine, "SPINE_DB", packet_dir / "packet_spine.db")
+    monkeypatch.setattr(store, "PACKET_SQLITE_LOOKUP_ENABLED", False)
 
 
 def test_packet_store_create_lookup_invalidate(monkeypatch, tmp_path):
@@ -371,6 +374,68 @@ def test_relaxed_lookup_candidates_returns_empty_list_on_miss(monkeypatch, tmp_p
         task_plane="build_delivery",
     )
     assert out == []
+
+
+def test_lookup_exact_can_resolve_via_sqlite_alias_when_index_missing(monkeypatch, tmp_path):
+    _patch_store_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(store, "PACKET_SQLITE_LOOKUP_ENABLED", True)
+
+    packet = store.build_packet(
+        project_key="proj",
+        session_context_key="ctx",
+        tool_name="Edit",
+        intent_family="auth_security",
+        task_plane="build_delivery",
+        advisory_text="sqlite exact lookup path",
+        source_mode="prefetch",
+        lineage={"sources": ["prefetch"], "memory_absent_declared": False},
+        ttl_s=300,
+    )
+    packet_id = store.save_packet(packet)
+
+    index = store._load_index()
+    index["by_exact"] = {}
+    store._save_index(index)
+
+    out = store.lookup_exact(
+        project_key="proj",
+        session_context_key="ctx",
+        tool_name="Edit",
+        intent_family="auth_security",
+    )
+    assert out is not None
+    assert str(out.get("packet_id") or "") == packet_id
+
+
+def test_lookup_relaxed_candidates_can_resolve_via_sqlite_when_index_missing(monkeypatch, tmp_path):
+    _patch_store_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(store, "PACKET_SQLITE_LOOKUP_ENABLED", True)
+
+    packet = store.build_packet(
+        project_key="proj",
+        session_context_key="ctx",
+        tool_name="Edit",
+        intent_family="auth_security",
+        task_plane="build_delivery",
+        advisory_text="sqlite relaxed lookup path",
+        source_mode="prefetch",
+        lineage={"sources": ["prefetch"], "memory_absent_declared": False},
+        ttl_s=300,
+    )
+    store.save_packet(packet)
+
+    index = store._load_index()
+    index["packet_meta"] = {}
+    store._save_index(index)
+
+    out = store.lookup_relaxed_candidates(
+        project_key="proj",
+        tool_name="Edit",
+        intent_family="auth_security",
+        task_plane="build_delivery",
+    )
+    assert out
+    assert str((out[0] or {}).get("packet_id") or "").startswith("pkt_")
 
 
 def test_record_packet_usage_refreshes_fresh_until(monkeypatch, tmp_path):

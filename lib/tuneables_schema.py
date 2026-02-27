@@ -230,6 +230,7 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "relaxed_low_effectiveness_penalty": TuneableSpec("float", 0.5, 0.0, 1.0, "Low effectiveness penalty"),
         "relaxed_max_candidates": TuneableSpec("int", 6, 1, 30, "Top N rows to consider in relaxed match"),
         "packet_lookup_candidates": TuneableSpec("int", 6, 1, 30, "Top N relaxed match candidates to score"),
+        "packet_sqlite_lookup_enabled": TuneableSpec("bool", True, None, None, "Use SQLite packet spine for exact/relaxed lookup"),
         "packet_lookup_llm_enabled": TuneableSpec("bool", False, None, None, "Enable LLM-assisted relaxed lookup rerank"),
         "packet_lookup_llm_provider": TuneableSpec("str", "minimax", None, None, "LLM provider for packet rerank"),
         "packet_lookup_llm_timeout_s": TuneableSpec("float", 1.2, 0.2, 10.0, "Packet lookup LLM timeout (s)"),
