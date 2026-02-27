@@ -30,7 +30,7 @@ Purpose: explicit legacy advisory-path candidates for PR-10 deletion sweep, tied
 
 1. `lib/advisory_engine_alpha.py`
 2. `lib/advisory_orchestrator.py`
-3. `scripts/advisory_alpha_quality_report.py`
+3. `[Removed in PR-10] scripts/advisory_alpha_quality_report.py`
 
 ## Rollback Note
 

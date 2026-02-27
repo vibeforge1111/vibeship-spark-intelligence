@@ -588,6 +588,14 @@ Branch: feat/spark-alpha
   - alpha observatory/packet-store wording now references alpha log only
 - Regression slice: `pytest tests/test_vibeforge_helpers.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisory_preferences.py tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_day_trial.py tests/test_intelligence_llm_preferences.py tests/test_llm_dispatch.py tests/test_production_loop_gates.py tests/test_context_sync_policy.py tests/test_memory_compaction.py tests/test_memory_spine_sqlite.py tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py -q` -> `251 passed`.
 
+87. `bc34195` - `refactor(alpha-pr10): remove legacy alpha-vs-engine compare surface and compat log helper`
+- Deleted `scripts/advisory_alpha_quality_report.py` (legacy alpha-vs-engine compare report path).
+- Simplified advisory log-path resolution to alpha-only canonical runtime log in `lib/advisory_log_paths.py`.
+- Regression + gate evidence:
+  - `pytest tests/test_advisory_self_review.py tests/test_cross_surface_drift_checker.py tests/test_advisory_day_trial.py tests/test_memory_quality_observatory.py tests/test_carmack_kpi.py tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_intelligence_llm_preferences.py tests/test_llm_dispatch.py tests/test_production_loop_gates.py tests/test_context_sync_policy.py tests/test_memory_compaction.py tests/test_memory_spine_sqlite.py tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py tests/test_vibeforge_helpers.py -q` -> `242 passed`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `8`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
