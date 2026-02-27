@@ -649,6 +649,17 @@ Branch: feat/spark-alpha
 - Regression evidence:
   - `pytest tests/test_advisory_packet_store.py -q` -> `19 passed`
 
+93. `251d2f8` - `refactor(alpha-pr10): collapse advisory orchestrator to alpha shim`
+- Replaced orchestrator route/decision machinery with a compact alpha-only compatibility shim:
+  - `on_pre_tool`, `on_post_tool`, `on_user_prompt` are direct exports from `lib/advisory_engine_alpha.py`
+  - `get_route_status()` remains for callers and now reports alpha canonical log path
+- Removed dead route-decision logging surface from runtime (no separate route-decision jsonl path).
+- Updated orchestrator tests to assert exported entrypoint identity and alpha-log status contract.
+- Regression + gate evidence:
+  - `pytest tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_spark_alpha_replay_arena.py tests/test_run_alpha_replay_evidence_helpers.py -q` -> `165 passed`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `13`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
