@@ -1176,6 +1176,19 @@ Notable metrics now:
   - `python scripts/alpha_gap_audit.py` -> `advisory_files=4`, `tuneable_keys=282`, `distillation_files=3`
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
 
+### Latest replay stability delta (2026-02-27, benchmark dedupe bypass for arena/delta traces)
+
+- Prevented replay/champion-challenger runs from being flattened by cross-run global dedupe:
+  - `lib/advisory_engine_alpha.py` now bypasses global dedupe when trace IDs start with `arena:` or `delta-` (benchmark traffic)
+  - retained existing bypass for `advisory-bench-*` / `bench:*`
+- Added regression coverage in `tests/test_advisory_engine_alpha.py` for arena-trace bypass.
+- Validation:
+  - `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_self_review.py -q` -> `9 passed`
+  - replay smoke recovered to promotion pass streak:
+    - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke`
+    - streak progressed to `3`, `promotion_gate_pass=true`, `eligible_for_cutover=true`
+  - `python scripts/advisory_controlled_delta.py --rounds 2 ...` -> pass
+
 ## Not done yet
 
 These are still pending relative to the broader Simplification/Fast-Track goals:

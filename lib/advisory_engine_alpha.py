@@ -213,6 +213,10 @@ def _should_bypass_global_dedupe(session_id: str, trace_id: str) -> bool:
         return True
     if tid.startswith("bench:"):
         return True
+    if tid.startswith("arena:"):
+        return True
+    if tid.startswith("delta-"):
+        return True
     return False
 
 
