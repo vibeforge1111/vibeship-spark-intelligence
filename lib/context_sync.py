@@ -29,6 +29,7 @@ from .exposure_tracker import record_exposures, infer_latest_session_id, infer_l
 from .sync_tracker import get_sync_tracker
 from .outcome_checkin import list_checkins
 from .queue import _tail_lines
+from .memory_compaction import build_compaction_plan
 
 
 DEFAULT_MIN_RELIABILITY = 0.7
@@ -43,6 +44,9 @@ TUNEABLES_FILE = Path.home() / ".spark" / "tuneables.json"
 BASELINE_TUNEABLES_FILE = Path(__file__).resolve().parent.parent / "config" / "tuneables.json"
 COMPACTION_STATE_FILE = Path.home() / ".spark" / "cognitive_compaction_state.json"
 DEFAULT_COMPACTION_COOLDOWN_S = 6 * 3600
+DEFAULT_ACTR_COMPACTION_MAX_AGE_DAYS = 180.0
+DEFAULT_ACTR_COMPACTION_MIN_ACTIVATION = 0.20
+DEFAULT_ACTR_COMPACTION_MAX_DELETES = 20
 
 CORE_SYNC_ADAPTERS = ("openclaw", "exports")
 OPTIONAL_SYNC_ADAPTERS = ("claude_code", "cursor", "windsurf", "clawdbot", "codex")
@@ -149,6 +153,112 @@ def _save_compaction_state(payload: Dict[str, Any], path: Optional[Path] = None)
         pass
 
 
+def _compaction_rows_from_learner(cognitive: CognitiveLearner) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for key, insight in dict(getattr(cognitive, "insights", {}) or {}).items():
+        category = getattr(getattr(insight, "category", None), "value", "")
+        rows.append(
+            {
+                "key": str(key or ""),
+                "insight": str(getattr(insight, "insight", "") or ""),
+                "category": str(category or "general"),
+                "reliability": float(getattr(insight, "reliability", 0.0) or 0.0),
+                "created_at": str(getattr(insight, "created_at", "") or ""),
+                "last_validated_at": str(getattr(insight, "last_validated_at", "") or ""),
+            }
+        )
+    return rows
+
+
+def _run_actr_compaction(cognitive: CognitiveLearner) -> Dict[str, Any]:
+    enabled = str(os.getenv("SPARK_COGNITIVE_ACTR_COMPACTION_ENABLED", "1")).strip().lower() not in {
+        "0",
+        "false",
+        "off",
+        "no",
+    }
+    if not enabled:
+        return {"enabled": False, "ran": False, "reason": "disabled"}
+
+    try:
+        max_age_days = max(
+            30.0,
+            float(
+                os.getenv(
+                    "SPARK_COGNITIVE_ACTR_MAX_AGE_DAYS",
+                    str(DEFAULT_ACTR_COMPACTION_MAX_AGE_DAYS),
+                )
+                or DEFAULT_ACTR_COMPACTION_MAX_AGE_DAYS
+            ),
+        )
+    except Exception:
+        max_age_days = DEFAULT_ACTR_COMPACTION_MAX_AGE_DAYS
+    try:
+        min_activation = max(
+            0.01,
+            min(
+                1.0,
+                float(
+                    os.getenv(
+                        "SPARK_COGNITIVE_ACTR_MIN_ACTIVATION",
+                        str(DEFAULT_ACTR_COMPACTION_MIN_ACTIVATION),
+                    )
+                    or DEFAULT_ACTR_COMPACTION_MIN_ACTIVATION
+                ),
+            ),
+        )
+    except Exception:
+        min_activation = DEFAULT_ACTR_COMPACTION_MIN_ACTIVATION
+    try:
+        max_deletes = max(
+            0,
+            int(
+                float(
+                    os.getenv(
+                        "SPARK_COGNITIVE_ACTR_MAX_DELETES",
+                        str(DEFAULT_ACTR_COMPACTION_MAX_DELETES),
+                    )
+                    or DEFAULT_ACTR_COMPACTION_MAX_DELETES
+                )
+            ),
+        )
+    except Exception:
+        max_deletes = DEFAULT_ACTR_COMPACTION_MAX_DELETES
+
+    rows = _compaction_rows_from_learner(cognitive)
+    plan = build_compaction_plan(
+        rows,
+        max_age_days=float(max_age_days),
+        min_activation=float(min_activation),
+    )
+    candidates = list((plan.get("candidates") or []))
+    delete_keys = [
+        str((row or {}).get("key") or "")
+        for row in candidates
+        if str((row or {}).get("action") or "") == "delete" and str((row or {}).get("key") or "").strip()
+    ]
+    if max_deletes and len(delete_keys) > max_deletes:
+        delete_keys = delete_keys[:max_deletes]
+    removed = 0
+    if delete_keys:
+        for key in delete_keys:
+            cognitive.insights.pop(key, None)
+        cognitive._save_insights(drop_keys=set(delete_keys))
+        removed = len(delete_keys)
+
+    return {
+        "enabled": True,
+        "ran": True,
+        "rows": len(rows),
+        "max_age_days": float(max_age_days),
+        "min_activation": float(min_activation),
+        "max_deletes": int(max_deletes),
+        "delete_candidates": int(((plan.get("summary") or {}).get("by_action") or {}).get("delete", 0)),
+        "update_candidates": int(((plan.get("summary") or {}).get("by_action") or {}).get("update", 0)),
+        "deleted": int(removed),
+    }
+
+
 def _run_periodic_compaction(cognitive: CognitiveLearner) -> Dict[str, Any]:
     enabled = str(os.getenv("SPARK_COGNITIVE_COMPACTION_ENABLED", "1")).strip().lower() not in {
         "0",
@@ -177,11 +287,13 @@ def _run_periodic_compaction(cognitive: CognitiveLearner) -> Dict[str, Any]:
     signal_merged = cognitive.dedupe_signals()
     struggle_merged = cognitive.dedupe_struggles()
     wisdom = cognitive.promote_to_wisdom()
+    actr = _run_actr_compaction(cognitive)
     summary = {
         "last_run_ts": now_ts,
         "signal_groups": int(len(signal_merged)),
         "struggle_groups": int(len(struggle_merged)),
         "wisdom_promoted": int((wisdom or {}).get("promoted", 0) or 0),
+        "actr": actr,
     }
     _save_compaction_state(summary)
     return {"ran": True, **summary}

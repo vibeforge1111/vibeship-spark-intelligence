@@ -107,6 +107,7 @@ def test_periodic_compaction_writes_state_and_obeys_cooldown(monkeypatch, tmp_pa
     monkeypatch.setattr(context_sync, "COMPACTION_STATE_FILE", state_path)
     monkeypatch.setenv("SPARK_COGNITIVE_COMPACTION_ENABLED", "1")
     monkeypatch.setenv("SPARK_COGNITIVE_COMPACTION_COOLDOWN_S", "3600")
+    monkeypatch.setenv("SPARK_COGNITIVE_ACTR_COMPACTION_ENABLED", "0")
 
     cog = _DummyCognitive()
     first = context_sync._run_periodic_compaction(cog)
@@ -117,3 +118,38 @@ def test_periodic_compaction_writes_state_and_obeys_cooldown(monkeypatch, tmp_pa
     second = context_sync._run_periodic_compaction(cog)
     assert second["ran"] is False
     assert second["reason"] == "cooldown"
+
+
+def test_run_actr_compaction_caps_deletes(monkeypatch):
+    class _Insight:
+        def __init__(self, text: str):
+            self.insight = text
+            self.reliability = 0.01
+            self.created_at = "2020-01-01T00:00:00Z"
+            self.last_validated_at = "2020-01-01T00:00:00Z"
+            self.category = type("Cat", (), {"value": "reasoning"})()
+
+    class _DummyCognitive:
+        def __init__(self):
+            self.insights = {
+                "k1": _Insight("first stale memory"),
+                "k2": _Insight("second stale memory"),
+                "k3": _Insight("third stale memory"),
+            }
+            self.saved_drop_keys = set()
+
+        def _save_insights(self, drop_keys=None):
+            self.saved_drop_keys = set(drop_keys or set())
+
+    monkeypatch.setenv("SPARK_COGNITIVE_ACTR_COMPACTION_ENABLED", "1")
+    monkeypatch.setenv("SPARK_COGNITIVE_ACTR_MAX_AGE_DAYS", "30")
+    monkeypatch.setenv("SPARK_COGNITIVE_ACTR_MIN_ACTIVATION", "0.99")
+    monkeypatch.setenv("SPARK_COGNITIVE_ACTR_MAX_DELETES", "2")
+
+    cog = _DummyCognitive()
+    out = context_sync._run_actr_compaction(cog)
+    assert out["enabled"] is True
+    assert out["delete_candidates"] >= 3
+    assert out["deleted"] == 2
+    assert len(cog.saved_drop_keys) == 2
+    assert len(cog.insights) == 1
