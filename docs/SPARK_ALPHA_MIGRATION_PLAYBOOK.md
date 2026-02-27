@@ -28,15 +28,14 @@ Rollback A:
 
 ## Phase B: Storage Lock
 
-1. Keep SQLite packet lookup enabled:
-   - `advisory_packet_store.packet_sqlite_lookup_enabled=true`
+1. SQLite packet lookup is canonical (no runtime toggle).
 2. Run packet/retrieval regression slice:
    - `pytest tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py -q`
 3. Verify parity gates:
    - `python scripts/memory_spine_parity_report.py --list-limit 5`
 
 Rollback B:
-1. Set `advisory_packet_store.packet_sqlite_lookup_enabled=false`.
+1. Restore prior commit/tag if packet-spine regression is detected.
 2. Re-run regression slice.
 
 ## Phase C: Legacy Surface Removal

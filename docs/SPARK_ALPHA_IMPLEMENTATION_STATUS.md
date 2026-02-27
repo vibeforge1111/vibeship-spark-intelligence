@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, sqlite-canonical packet lookup + advisory runtime cleanup)
+Last updated: 2026-02-27 (local branch snapshot, sqlite-only packet lookup lock + advisory runtime cleanup)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -630,6 +630,19 @@ Branch: feat/spark-alpha
   - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
   - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `11`
 
+91. `30ea785` - `refactor(alpha-pr04/pr09): lock packet lookup to sqlite canonical path`
+- Retired `advisory_packet_store.packet_sqlite_lookup_enabled` from runtime tuneables schema and baseline config.
+- Packet lookup path is now unconditionally SQLite-canonical:
+  - removed JSON-index fallback branches from exact/relaxed lookup resolution logic
+  - removed packet-store config apply/get plumbing for the retired toggle
+- Updated observability wording to reflect canonical lookup backend (`lookup_backend=sqlite_canonical`).
+- Updated packet-store tests to stop mutating the removed runtime toggle surface.
+- Regression + gate evidence:
+  - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0`
+  - `pytest tests/test_advisory_packet_store.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_observatory_tuneables_deep_dive.py tests/test_observatory_stage7_curriculum_page.py tests/test_intelligence_llm_preferences.py -q` -> `164 passed`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/spark_alpha_replay_arena.py --episodes 8 --seed 42 --out-dir benchmarks/out/replay_arena_smoke` -> winner `alpha`, `promotion_gate_pass=true`, `eligible_for_cutover=true`, streak `12`
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -752,7 +765,7 @@ Notable metrics now:
 These are still pending relative to the broader Simplification/Fast-Track goals:
 
 1. Full advisory collapse (17 modules -> compact 3-module architecture) is not implemented.
-2. Storage consolidation to single SQLite-first memory/advisory store is partially implemented (cognitive memory is SQLite-canonical; advisory packet lookup is SQLite-canonical in runtime mode, with JSON lookup fallback retained only for explicit non-sqlite compatibility mode).
+2. Storage consolidation to single SQLite-first memory/advisory store is partially implemented (cognitive memory is SQLite-canonical; advisory packet lookup is now SQLite-canonical with no runtime JSON lookup fallback mode).
 3. Memory compaction engine is partially implemented (ACT-R style planner + preview/apply runner + bounded periodic ACT-R runtime compaction for cognitive insights are in place); broader integration across advisory stores is still pending.
 4. VibeForge goal-directed self-improvement loop is partially implemented (tuneable lane operational with rollback/reset/diff, adaptive proposal ranking, momentum continuation, cycle budget enforcement, benchmark metric support, and blocking benchmark-stage promotion checks; code-evolve lane is still pending).
 5. Large config surface reduction (hard pruning to minimal knobs) is not implemented.
