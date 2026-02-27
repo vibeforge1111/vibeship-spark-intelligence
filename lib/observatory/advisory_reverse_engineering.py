@@ -307,7 +307,7 @@ def _improvement_rows(runtime: Dict[str, Any], tune: Dict[str, Any]) -> List[Dic
                 "focus": "Global dedupe still heavy",
                 "evidence": f"global_dedupe={dedupe} ({_fmt_pct(dedupe, max(total_suppressed, 1))})",
                 "change": "Move from single cooldown to category-aware dedupe windows and source quotas.",
-                "where": "lib/advisory_engine.py (global_dedupe_suppressed)",
+                "where": "lib/advisory_engine_alpha.py + advisory dedupe logs (global_dedupe_suppressed)",
             }
         )
     if budget_ratio >= 0.08:
@@ -327,7 +327,7 @@ def _improvement_rows(runtime: Dict[str, Any], tune: Dict[str, Any]) -> List[Dic
                 "focus": "Tool cooldown hiding advice bursts",
                 "evidence": f"tool_cooldown={cooldown} ({_fmt_pct(cooldown, max(total_suppressed, 1))})",
                 "change": "DONE: tool-family multipliers (Read/Grep/Glob 0.5x, Bash 0.7x, Edit/Write 1.2x). Applied at both gate check and suppress time.",
-                "where": "lib/advisory_gate.py (TOOL_COOLDOWN_MULTIPLIERS) + lib/advisory_engine.py",
+                "where": "lib/advisory_gate.py (TOOL_COOLDOWN_MULTIPLIERS) + lib/advisory_engine_alpha.py",
             }
         )
 
@@ -339,7 +339,7 @@ def _improvement_rows(runtime: Dict[str, Any], tune: Dict[str, Any]) -> List[Dic
             "focus": "Balance emissions against observed follow rate",
             "evidence": f"emit_rate={emit_rate}, follow_rate={follow_rate}",
             "change": "Add per-intent emit target bands and alert when emission drops below floor while follow remains high.",
-            "where": "lib/advisory_engine.py + reports/runtime diagnostics",
+            "where": "lib/advisory_orchestrator.py + lib/advisory_engine_alpha.py + reports/runtime diagnostics",
         }
     )
 
