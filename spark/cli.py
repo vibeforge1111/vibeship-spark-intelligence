@@ -2040,50 +2040,6 @@ def cmd_importance(args):
     print()
 
 
-def cmd_curiosity(args):
-    """Explore knowledge gaps and questions. (DEPRECATED: not wired into production pipeline)"""
-    import warnings
-    warnings.warn("curiosity_engine is deprecated — not wired into production advisory pipeline", DeprecationWarning)
-    from lib.curiosity_engine import get_curiosity_engine
-
-    engine = get_curiosity_engine()
-
-    if args.questions:
-        gaps = engine.get_open_questions(limit=args.limit or 10)
-        print(f"\n{'=' * 60}")
-        print(f"  Open Questions ({len(gaps)})")
-        print(f"{'=' * 60}")
-        for gap in gaps:
-            print(f"\n  [{gap.gap_type.value.upper()}] {gap.question}")
-            print(f"    Topic: {gap.topic}")
-            print(f"    Priority: {gap.priority:.2f}")
-            if gap.source_insight:
-                print(f"    From: {gap.source_insight[:60]}...")
-        print()
-        return
-
-    if args.fill:
-        gap_id = args.fill
-        answer = args.answer or ""
-        valuable = not args.not_valuable
-        engine.fill_gap(gap_id, answer, valuable)
-        print(f"[SPARK] Gap {gap_id} filled. Valuable: {valuable}")
-        return
-
-    # Default: show stats
-    stats = engine.get_stats()
-    print(f"\n{'=' * 60}")
-    print(f"  Curiosity Engine Status")
-    print(f"{'=' * 60}")
-    print(f"\n  Total Gaps: {stats['total_gaps']}")
-    print(f"  Filled: {stats['filled']}")
-    print(f"  Unfilled: {stats['unfilled']}")
-    print(f"  Valuable Answers: {stats['valuable_answers']}")
-    print(f"  Value Rate: {stats['value_rate']:.1%}")
-    print(f"\n  Use --questions to see open questions")
-    print()
-
-
 def cmd_hypotheses(args):
     """Track and validate hypotheses."""
     from lib.hypothesis_tracker import get_hypothesis_tracker
@@ -3552,14 +3508,6 @@ Examples:
     importance_parser.add_argument("--semantic", "-s", action="store_true", help="Use semantic intelligence (embeddings)")
     importance_parser.add_argument("--feedback", "-f", action="store_true", help="Show feedback/accuracy statistics")
 
-    # curiosity - knowledge gaps and questions
-    curiosity_parser = subparsers.add_parser("curiosity", help="Explore knowledge gaps and open questions")
-    curiosity_parser.add_argument("--questions", "-q", action="store_true", help="Show open questions")
-    curiosity_parser.add_argument("--fill", help="Fill a gap by ID")
-    curiosity_parser.add_argument("--answer", "-a", help="Answer text when filling a gap")
-    curiosity_parser.add_argument("--not-valuable", action="store_true", help="Mark answer as not valuable")
-    curiosity_parser.add_argument("--limit", "-n", type=int, default=10, help="Max items to show")
-
     # hypotheses - track and validate hypotheses
     hypotheses_parser = subparsers.add_parser("hypotheses", help="Track and validate hypotheses")
     hypotheses_parser.add_argument("--testable", "-t", action="store_true", help="Show testable hypotheses")
@@ -3753,7 +3701,6 @@ Examples:
         "learn": cmd_learn,
         "surprises": cmd_surprises,
         "importance": cmd_importance,
-        "curiosity": cmd_curiosity,
         "hypotheses": cmd_hypotheses,
         "contradictions": cmd_contradictions,
         "eidos": cmd_eidos,
