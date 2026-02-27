@@ -442,7 +442,6 @@ def on_pre_tool(
         )
         suppress_tool_advice(state, tool_name, duration_s=float(get_tool_cooldown_s()))
         state.last_advisory_packet_id = ""
-        state.last_advisory_route = "alpha"
         state.last_advisory_tool = str(tool_name or "")
         state.last_advisory_advice_ids = emitted_ids_ordered[:8]
         state.last_advisory_at = time.time()

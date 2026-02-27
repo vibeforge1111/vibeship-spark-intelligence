@@ -121,7 +121,6 @@ class SessionState:
     #   format: "{advice_id}|{tool}|{phase}" (TTL-based)
     shown_advice_ids: Dict[str, float] = field(default_factory=dict)
     last_advisory_packet_id: str = ""
-    last_advisory_route: str = ""
     last_advisory_tool: str = ""
     last_advisory_advice_ids: List[str] = field(default_factory=list)
     last_advisory_at: float = 0.0

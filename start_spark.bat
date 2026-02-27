@@ -41,8 +41,6 @@ if "%SPARK_OUTCOME_PREDICTOR%"=="" set SPARK_OUTCOME_PREDICTOR=1
 
 REM Advisory: action-first formatting (put Next check command on first line)
 if "%SPARK_ADVISORY_ACTION_FIRST%"=="" set SPARK_ADVISORY_ACTION_FIRST=1
-REM Advisory route rollout: alpha-first by default. Set canary/engine explicitly to override.
-if "%SPARK_ADVISORY_ROUTE%"=="" set SPARK_ADVISORY_ROUTE=alpha
 
 REM Mind is now managed by service_control.py (spark up/down).
 :start_spark
