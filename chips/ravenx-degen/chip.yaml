@@ -1,0 +1,165 @@
+name: ravenx-degen
+version: "1.0"
+description: |
+  RavenX AI degen crypto intelligence chip.
+  Teaches Spark to learn from on-chain trading sessions —
+  bonding curves, wallet forensics, meme coin launches, and Solana DeFi.
+  Built for the Made in Heaven agent tool suite.
+author: "RavenX AI | github.com/DeadByDawn101"
+domain: crypto_degen
+
+triggers:
+  - id: solana_rpc_call
+    description: Any Solana RPC tool call via Made in Heaven
+    patterns:
+      - "get_balance"
+      - "get_token_accounts"
+      - "get_recent_transactions"
+      - "get_token_metadata"
+      - "send_transaction"
+      - "create_keypair"
+      - "get_sol_price"
+
+  - id: bonding_curve_check
+    description: Bonding curve state queries on pump.fun tokens
+    patterns:
+      - "bonding"
+      - "pump.fun"
+      - "virtual_sol_reserves"
+      - "graduation"
+      - "85 SOL"
+
+  - id: token_dd_session
+    description: Full degen DD analysis on a token CA
+    patterns:
+      - "degen_dd"
+      - "dexscreener"
+      - "rug check"
+      - "holder distribution"
+      - "DEGEN SCORE"
+
+  - id: wallet_forensics_session
+    description: On-chain wallet investigation
+    patterns:
+      - "wallet_forensics"
+      - "whale"
+      - "sniper"
+      - "transaction history"
+      - "PnL"
+
+  - id: token_launch_event
+    description: pump.fun token launch or bundle execution
+    patterns:
+      - "pump_launch"
+      - "bundle"
+      - "rawBuy"
+      - "InstaBond"
+      - "discriminator"
+
+  - id: jupiter_swap
+    description: Jupiter aggregator swap execution
+    patterns:
+      - "jupiter"
+      - "quote-api.jup.ag"
+      - "swap"
+      - "price_impact"
+
+observers:
+  - id: capture_curve_state
+    trigger: bonding_curve_check
+    capture:
+      - field: sol_amount
+        description: SOL in curve at time of check
+      - field: percentage
+        description: Curve fill percentage
+      - field: token_ca
+        description: Contract address checked
+      - field: outcome
+        description: What happened after the check (buy/hold/pass)
+
+  - id: capture_trade_outcome
+    trigger: jupiter_swap
+    capture:
+      - field: token_ca
+        description: Token traded
+      - field: sol_in
+        description: SOL spent
+      - field: tokens_out
+        description: Tokens received
+      - field: price_impact
+        description: Slippage/price impact pct
+      - field: success
+        description: Transaction confirmed or failed
+
+  - id: capture_dd_verdict
+    trigger: token_dd_session
+    capture:
+      - field: degen_score
+        description: Final score 0-100
+      - field: verdict
+        description: APE / WATCH / AVOID
+      - field: red_flags
+        description: Flags that triggered
+      - field: market_cap
+        description: MC at time of analysis
+
+  - id: capture_wallet_pattern
+    trigger: wallet_forensics_session
+    capture:
+      - field: wallet_classification
+        description: WHALE / SNIPER / BOT / FLIPPER / HOLDER
+      - field: win_rate
+        description: Wallet's historical win rate
+      - field: risk_level
+        description: LOW / MEDIUM / HIGH
+
+learners:
+  - id: learn_curve_velocity
+    description: Learn which curve velocities indicate real organic momentum vs. pump-and-dump
+    question: "At what bonding curve velocity (SOL/hour) do tokens tend to graduate vs. die?"
+    sources: [capture_curve_state]
+    category: reasoning
+
+  - id: learn_dd_accuracy
+    description: Learn which DD signals best predict post-buy performance
+    question: "Which red flags and DEGEN SCORE thresholds most accurately predict rugs vs. moonshots?"
+    sources: [capture_dd_verdict]
+    category: reasoning
+
+  - id: learn_trade_sizing
+    description: Learn optimal trade sizing relative to curve position and market cap
+    question: "What SOL amounts and price impact thresholds lead to best realized PnL?"
+    sources: [capture_trade_outcome]
+    category: wisdom
+
+  - id: learn_wallet_signals
+    description: Learn which wallet behavior patterns predict future token performance
+    question: "Which wallet classifications (whale/sniper/bot) buying a token predict price action?"
+    sources: [capture_wallet_pattern]
+    category: context
+
+outcomes:
+  - id: graduation_achieved
+    description: Token successfully graduated to Raydium (85 SOL reached)
+    success_signal: "complete: true"
+    positive: true
+
+  - id: rug_avoided
+    description: Token flagged as rug and position avoided — later confirmed rug
+    positive: true
+
+  - id: missed_moonshot
+    description: Token marked AVOID but mooned — learn from this
+    positive: false
+    learn_from_failure: true
+
+  - id: successful_launch
+    description: Token launched, graduated, or hit target MC
+    positive: true
+
+questions:
+  - "What bonding curve % is the optimal entry point for risk/reward?"
+  - "Which CT signals (KOL mentions, engagement rate, account age) best predict graduation?"
+  - "What's the correlation between first-hour buy count and graduation probability?"
+  - "Which wallet patterns (sniper dominance, whale concentration) predict dumps?"
+  - "What price impact threshold should trigger abort vs. proceed on buys?"
