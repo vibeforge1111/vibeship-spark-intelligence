@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT_DIR = ROOT / "benchmarks" / "out" / "alpha_start"
+GATE_BURN_IN_SCRIPT = ROOT / "scripts" / "alpha_gate_burn_in.py"
 PRODUCTION_REPORT_SCRIPT = ROOT / "scripts" / "production_loop_report.py"
 REPLAY_EVIDENCE_SCRIPT = ROOT / "scripts" / "run_alpha_replay_evidence.py"
 DELTA_SCRIPT = ROOT / "scripts" / "advisory_controlled_delta.py"
@@ -145,6 +146,9 @@ def _render_markdown(report: Dict[str, Any]) -> str:
         details = stage.get("details") or {}
         key_fields = []
         for key in (
+            "trace_rebind_updated",
+            "strict_samples_seeded",
+            "distillations_added",
             "gate_status",
             "promotion_pass_rate",
             "alpha_win_rate",
@@ -198,6 +202,49 @@ def _production_stage(*, strict: bool, timeout_s: int) -> StageResult:
         stdout=stdout,
         stderr=str(res["stderr"]),
         details={"gate_status": gate_status},
+    )
+
+
+def _burn_in_stage(*, strict: bool, timeout_s: int) -> StageResult:
+    cmd = [sys.executable, str(GATE_BURN_IN_SCRIPT)]
+    if not strict:
+        cmd.append("--dry-run")
+    res = _run_command(cmd, timeout_s=timeout_s)
+    ok = res["returncode"] == 0
+    details: Dict[str, Any] = {}
+    try:
+        payload = _parse_json_payload(str(res["stdout"]))
+        final = payload.get("final") if isinstance(payload.get("final"), dict) else {}
+        gates = final.get("gates") if isinstance(final.get("gates"), dict) else {}
+        actions = payload.get("actions") if isinstance(payload.get("actions"), dict) else {}
+        trace_rebind = payload.get("trace_rebind") if isinstance(payload.get("trace_rebind"), dict) else {}
+        details.update(
+            {
+                "trace_rebind_updated": int(trace_rebind.get("updated", 0) or 0),
+                "strict_samples_seeded": int(actions.get("strict_samples_seeded", 0) or 0),
+                "distillations_added": int(actions.get("distillations_added", 0) or 0),
+                "gate_status": (
+                    f"{'READY' if gates.get('ready') else 'NOT READY'} "
+                    f"({int(gates.get('passed', 0) or 0)}/{int(gates.get('total', 0) or 0)})"
+                ),
+            }
+        )
+        if strict:
+            ok = ok and bool(gates.get("ready"))
+    except Exception as exc:
+        details["parse_error"] = str(exc)
+        if strict:
+            ok = False
+
+    return StageResult(
+        name="gate_burn_in",
+        ok=ok,
+        returncode=int(res["returncode"]),
+        duration_s=float(res["duration_s"]),
+        command=cmd,
+        stdout=str(res["stdout"]),
+        stderr=str(res["stderr"]),
+        details=details,
     )
 
 
@@ -391,6 +438,12 @@ def main() -> int:
     ap.add_argument("--strict", action="store_true", help="Enforce strict success thresholds for stage checks.")
     ap.add_argument("--emit-report", action="store_true", help="Write JSON/Markdown readiness report artifacts.")
     ap.add_argument(
+        "--run-gate-burn-in",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run strict-attribution/distillation gate burn-in stage before production checks.",
+    )
+    ap.add_argument(
         "--min-promotion-pass-rate",
         type=float,
         default=1.0,
@@ -437,6 +490,8 @@ def main() -> int:
         pytest_targets = list(DEFAULT_PYTEST_TARGETS)
 
     stages: List[StageResult] = []
+    if bool(args.run_gate_burn_in):
+        stages.append(_burn_in_stage(strict=bool(args.strict), timeout_s=int(args.timeout_s)))
     stages.append(_production_stage(strict=bool(args.strict), timeout_s=int(args.timeout_s)))
     stages.append(
         _replay_stage(
@@ -477,12 +532,18 @@ def main() -> int:
         "replay_out_dir": str(replay_out_dir),
         "delta_out": str(delta_out),
     }
-    gap_details = (stage_dicts[3].get("details") or {}) if len(stage_dicts) > 3 else {}
+    gap_stage = next((s for s in stage_dicts if s.get("name") == "alpha_gap_audit"), {})
+    gap_details = gap_stage.get("details") if isinstance(gap_stage, dict) else {}
+    if not isinstance(gap_details, dict):
+        gap_details = {}
     if gap_details.get("report_json"):
         artifacts["alpha_gap_report_json"] = str(gap_details.get("report_json"))
     if gap_details.get("report_md"):
         artifacts["alpha_gap_report_md"] = str(gap_details.get("report_md"))
-    replay_details = (stage_dicts[1].get("details") or {}) if len(stage_dicts) > 1 else {}
+    replay_stage = next((s for s in stage_dicts if s.get("name") == "replay_evidence"), {})
+    replay_details = replay_stage.get("details") if isinstance(replay_stage, dict) else {}
+    if not isinstance(replay_details, dict):
+        replay_details = {}
     if replay_details.get("report_json"):
         artifacts["replay_report_json"] = str(replay_details.get("report_json"))
     if replay_details.get("report_md"):
@@ -500,6 +561,7 @@ def main() -> int:
             "seeds": _parse_csv(str(args.seeds)),
             "episodes": _parse_csv(str(args.episodes)),
             "delta_rounds": int(args.delta_rounds),
+            "run_gate_burn_in": bool(args.run_gate_burn_in),
             "min_promotion_pass_rate": float(args.min_promotion_pass_rate),
             "min_alpha_win_rate": float(args.min_alpha_win_rate),
             "max_advisory_files": int(args.max_advisory_files),
