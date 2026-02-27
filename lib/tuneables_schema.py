@@ -230,7 +230,6 @@ SCHEMA: Dict[str, Dict[str, TuneableSpec]] = {
         "relaxed_low_effectiveness_penalty": TuneableSpec("float", 0.5, 0.0, 1.0, "Low effectiveness penalty"),
         "relaxed_max_candidates": TuneableSpec("int", 6, 1, 30, "Top N rows to consider in relaxed match"),
         "packet_lookup_candidates": TuneableSpec("int", 6, 1, 30, "Top N relaxed match candidates to score"),
-        "packet_sqlite_lookup_enabled": TuneableSpec("bool", True, None, None, "Use SQLite packet spine for exact/relaxed lookup"),
         "obsidian_enabled": TuneableSpec("bool", False, None, None, "Enable advisory packet export to Obsidian"),
         "obsidian_auto_export": TuneableSpec("bool", False, None, None, "Auto-export packet payloads to Obsidian"),
         "obsidian_export_max_packets": TuneableSpec("int", 300, 1, 5000, "Max Obsidian packet exports to retain"),

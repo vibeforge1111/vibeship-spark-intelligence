@@ -13,7 +13,6 @@ def _patch_store_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(store, "INDEX_FILE", packet_dir / "index.json")
     monkeypatch.setattr(store, "PREFETCH_QUEUE_FILE", packet_dir / "prefetch_queue.jsonl")
     monkeypatch.setattr(packet_spine, "SPINE_DB", packet_dir / "packet_spine.db")
-    monkeypatch.setattr(store, "PACKET_SQLITE_LOOKUP_ENABLED", False)
 
 
 def test_packet_store_create_lookup_invalidate(monkeypatch, tmp_path):
@@ -378,7 +377,6 @@ def test_relaxed_lookup_candidates_returns_empty_list_on_miss(monkeypatch, tmp_p
 
 def test_lookup_exact_can_resolve_via_sqlite_alias_when_index_missing(monkeypatch, tmp_path):
     _patch_store_paths(monkeypatch, tmp_path)
-    monkeypatch.setattr(store, "PACKET_SQLITE_LOOKUP_ENABLED", True)
 
     packet = store.build_packet(
         project_key="proj",
@@ -409,7 +407,6 @@ def test_lookup_exact_can_resolve_via_sqlite_alias_when_index_missing(monkeypatc
 
 def test_lookup_relaxed_candidates_can_resolve_via_sqlite_when_index_missing(monkeypatch, tmp_path):
     _patch_store_paths(monkeypatch, tmp_path)
-    monkeypatch.setattr(store, "PACKET_SQLITE_LOOKUP_ENABLED", True)
 
     packet = store.build_packet(
         project_key="proj",
@@ -440,7 +437,6 @@ def test_lookup_relaxed_candidates_can_resolve_via_sqlite_when_index_missing(mon
 
 def test_lookup_exact_does_not_fallback_to_json_when_sqlite_enabled(monkeypatch, tmp_path):
     _patch_store_paths(monkeypatch, tmp_path)
-    monkeypatch.setattr(store, "PACKET_SQLITE_LOOKUP_ENABLED", True)
 
     packet = store.build_packet(
         project_key="proj",
@@ -469,7 +465,6 @@ def test_lookup_exact_does_not_fallback_to_json_when_sqlite_enabled(monkeypatch,
 
 def test_lookup_relaxed_does_not_fallback_to_json_when_sqlite_enabled(monkeypatch, tmp_path):
     _patch_store_paths(monkeypatch, tmp_path)
-    monkeypatch.setattr(store, "PACKET_SQLITE_LOOKUP_ENABLED", True)
 
     packet = store.build_packet(
         project_key="proj",

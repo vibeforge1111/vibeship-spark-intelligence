@@ -158,7 +158,6 @@
     "relaxed_low_effectiveness_penalty": 0.5,
     "relaxed_max_candidates": 6,
     "packet_lookup_candidates": 6,
-    "packet_sqlite_lookup_enabled": true,
     "obsidian_enabled": false,
     "obsidian_auto_export": false,
     "obsidian_export_max_packets": 300,

@@ -542,7 +542,7 @@ def generate_advisory_reverse_engineering(data: Dict[int, Dict[str, Any]]) -> st
     lines.append(
         "| advisory_packet_store | "
         f"packet_ttl_s={packet.get('packet_ttl_s')}, packet_lookup_candidates={packet.get('packet_lookup_candidates')}, "
-        f"packet_sqlite_lookup_enabled={packet.get('packet_sqlite_lookup_enabled')} |"
+        "lookup_backend=sqlite_canonical |"
     )
     lines.append("")
 

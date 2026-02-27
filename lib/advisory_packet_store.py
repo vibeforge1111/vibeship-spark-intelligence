@@ -111,14 +111,8 @@ _ALIASED_EXACT_KEYS: set[str] = set()
 _OBSIDIAN_CONFIG_DIR_OVERRIDE: Optional[str] = None
 PACKET_RELAXED_MAX_CANDIDATES = int(DEFAULT_PACKET_RELAXED_MAX_CANDIDATES)
 PACKET_LOOKUP_CANDIDATES = int(DEFAULT_PACKET_LOOKUP_CANDIDATES)
-PACKET_SQLITE_LOOKUP_ENABLED = str(os.getenv("SPARK_ADVISORY_PACKET_SQLITE_LOOKUP", "1")).strip().lower() not in {
-    "0",
-    "false",
-    "off",
-    "no",
-}
-if "PYTEST_CURRENT_TEST" in os.environ and os.getenv("SPARK_ADVISORY_PACKET_SQLITE_LOOKUP") is None:
-    PACKET_SQLITE_LOOKUP_ENABLED = False
+# SQLite packet lookup is now canonical and always enabled.
+PACKET_SQLITE_LOOKUP_ENABLED = True
 OBSIDIAN_EXPORT_ENABLED = bool(DEFAULT_OBSIDIAN_EXPORT_ENABLED)
 OBSIDIAN_AUTO_EXPORT = bool(DEFAULT_OBSIDIAN_AUTO_EXPORT)
 OBSIDIAN_EXPORT_MAX_PACKETS = int(DEFAULT_OBSIDIAN_EXPORT_MAX_PACKETS)
@@ -2220,11 +2214,10 @@ def alias_exact_key(
     by_exact[exact_key] = packet_id
     index["by_exact"] = by_exact
     _save_index(index)
-    if PACKET_SQLITE_LOOKUP_ENABLED:
-        try:
-            _spine_set_exact_alias(exact_key, packet_id)
-        except Exception:
-            pass
+    try:
+        _spine_set_exact_alias(exact_key, packet_id)
+    except Exception:
+        pass
     _ALIASED_EXACT_KEYS.add(exact_key)
     return True
 
@@ -2375,12 +2368,11 @@ def save_packet(packet: Dict[str, Any]) -> str:
     }
     _prune_index(index)
     _save_index(index)
-    if PACKET_SQLITE_LOOKUP_ENABLED:
-        try:
-            _spine_upsert_packet(packet)
-            _spine_set_exact_alias(exact_key, packet_id)
-        except Exception:
-            pass
+    try:
+        _spine_upsert_packet(packet)
+        _spine_set_exact_alias(exact_key, packet_id)
+    except Exception:
+        pass
     try:
         _export_packet_to_obsidian(packet)
     except Exception:
@@ -2499,18 +2491,12 @@ def lookup_exact(
     tool = _sanitize_token(tool_name, "*")
     intent = _sanitize_token(intent_family, "emergent_other")
     exact_key = _make_exact_key(project, session_ctx, tool, intent)
-    if PACKET_SQLITE_LOOKUP_ENABLED:
-        try:
-            packet_id = str(_spine_resolve_exact_packet_id(exact_key, now_ts=now_ts) or "").strip()
-        except Exception:
-            return None
-        if not packet_id:
-            return None
-    else:
-        index = _load_index()
-        packet_id = str(((index.get("by_exact") or {}).get(exact_key)) or "").strip()
-        if not packet_id:
-            return None
+    try:
+        packet_id = str(_spine_resolve_exact_packet_id(exact_key, now_ts=now_ts) or "").strip()
+    except Exception:
+        return None
+    if not packet_id:
+        return None
     packet = get_packet(str(packet_id or ""))
     if not packet:
         return None
@@ -2622,39 +2608,19 @@ def lookup_relaxed_candidates(
     intent_family = _sanitize_token(intent_family, "") if intent_family else ""
     task_plane = _sanitize_token(task_plane, "") if task_plane else ""
 
-    if PACKET_SQLITE_LOOKUP_ENABLED:
-        try:
-            spine_rows = _spine_relaxed_candidates(
-                project_key=project,
-                tool_name=tool_name,
-                intent_family=intent_family,
-                task_plane=task_plane,
-                now_ts=now_value,
-                limit=limit * 3,
-            )
-            for row in list(spine_rows or []):
-                packet_id = str((row or {}).get("packet_id") or "").strip()
-                if not packet_id:
-                    continue
-                scored = _candidate_match_score(
-                    row,
-                    project=project,
-                    tool_name=tool_name,
-                    intent_family=intent_family,
-                    task_plane=task_plane,
-                    now_value=now_value,
-                )
-                if not scored:
-                    continue
-                score, updated_ts = scored
-                candidates.append((score, updated_ts, packet_id, row))
-        except Exception:
-            return []
-    else:
-        index = _load_index()
-        meta = index.get("packet_meta") or {}
-        for packet_id, item in meta.items():
-            row = item or {}
+    try:
+        spine_rows = _spine_relaxed_candidates(
+            project_key=project,
+            tool_name=tool_name,
+            intent_family=intent_family,
+            task_plane=task_plane,
+            now_ts=now_value,
+            limit=limit * 3,
+        )
+        for row in list(spine_rows or []):
+            packet_id = str((row or {}).get("packet_id") or "").strip()
+            if not packet_id:
+                continue
             scored = _candidate_match_score(
                 row,
                 project=project,
@@ -2666,7 +2632,9 @@ def lookup_relaxed_candidates(
             if not scored:
                 continue
             score, updated_ts = scored
-            candidates.append((score, updated_ts, str(packet_id or ""), row))
+            candidates.append((score, updated_ts, packet_id, row))
+    except Exception:
+        return []
 
     if not candidates:
         return []
@@ -3190,7 +3158,6 @@ def apply_packet_store_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     global RELAXED_MIN_MATCH_SCORE
     global PACKET_RELAXED_MAX_CANDIDATES
     global PACKET_LOOKUP_CANDIDATES
-    global PACKET_SQLITE_LOOKUP_ENABLED
     global OBSIDIAN_EXPORT_ENABLED
     global OBSIDIAN_AUTO_EXPORT
     global OBSIDIAN_EXPORT_MAX_PACKETS
@@ -3285,13 +3252,6 @@ def apply_packet_store_config(cfg: Dict[str, Any]) -> Dict[str, List[str]]:
         except Exception:
             warnings.append("invalid_packet_lookup_candidates")
 
-    if "packet_sqlite_lookup_enabled" in cfg:
-        PACKET_SQLITE_LOOKUP_ENABLED = _coerce_bool(
-            cfg.get("packet_sqlite_lookup_enabled"),
-            PACKET_SQLITE_LOOKUP_ENABLED,
-        )
-        applied.append("packet_sqlite_lookup_enabled")
-
     if "obsidian_enabled" in cfg:
         OBSIDIAN_EXPORT_ENABLED = _coerce_bool(
             cfg.get("obsidian_enabled"),
@@ -3340,7 +3300,6 @@ def get_packet_store_config() -> Dict[str, Any]:
         "relaxed_min_match_score": float(RELAXED_MIN_MATCH_SCORE),
         "relaxed_max_candidates": int(PACKET_RELAXED_MAX_CANDIDATES),
         "packet_lookup_candidates": int(PACKET_LOOKUP_CANDIDATES),
-        "packet_sqlite_lookup_enabled": bool(PACKET_SQLITE_LOOKUP_ENABLED),
         "obsidian_enabled": bool(OBSIDIAN_EXPORT_ENABLED),
         "obsidian_auto_export": bool(OBSIDIAN_AUTO_EXPORT),
         "obsidian_export_max_packets": int(OBSIDIAN_EXPORT_MAX_PACKETS),
