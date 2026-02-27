@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""Report parity between advisory index packet_meta and SQLite packet spine metadata."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sqlite3
+import time
+from pathlib import Path
+from typing import Any, Dict
+
+from lib.advisory_spine_parity import compare_snapshots, evaluate_parity_gate
+
+
+def _default_index_path() -> Path:
+    return Path.home() / ".spark" / "advice_packets" / "index.json"
+
+
+def _default_db_path() -> Path:
+    return Path.home() / ".spark" / "advisory_packet_spine.db"
+
+
+def _load_index_meta(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    meta = data.get("packet_meta")
+    return dict(meta) if isinstance(meta, dict) else {}
+
+
+def _load_spine_meta(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        with sqlite3.connect(path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT packet_id, project_key, session_context_key, tool_name, intent_family, task_plane,
+                       invalidated, fresh_until_ts, updated_ts, effectiveness_score,
+                       read_count, usage_count, emit_count, deliver_count,
+                       source_summary_json, category_summary_json
+                FROM packet_meta
+                """
+            ).fetchall()
+    except Exception:
+        return {}
+
+    out: Dict[str, Any] = {}
+    for row in rows:
+        packet_id = str(row["packet_id"] or "").strip()
+        if not packet_id:
+            continue
+        try:
+            source_summary = json.loads(str(row["source_summary_json"] or "[]"))
+        except Exception:
+            source_summary = []
+        try:
+            category_summary = json.loads(str(row["category_summary_json"] or "[]"))
+        except Exception:
+            category_summary = []
+        out[packet_id] = {
+            "project_key": str(row["project_key"] or ""),
+            "session_context_key": str(row["session_context_key"] or ""),
+            "tool_name": str(row["tool_name"] or ""),
+            "intent_family": str(row["intent_family"] or ""),
+            "task_plane": str(row["task_plane"] or ""),
+            "invalidated": bool(int(row["invalidated"] or 0)),
+            "fresh_until_ts": float(row["fresh_until_ts"] or 0.0),
+            "updated_ts": float(row["updated_ts"] or 0.0),
+            "effectiveness_score": float(row["effectiveness_score"] or 0.5),
+            "read_count": int(row["read_count"] or 0),
+            "usage_count": int(row["usage_count"] or 0),
+            "emit_count": int(row["emit_count"] or 0),
+            "deliver_count": int(row["deliver_count"] or 0),
+            "source_summary": [str(x) for x in list(source_summary or [])][:20],
+            "category_summary": [str(x) for x in list(category_summary or [])][:20],
+        }
+    return out
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--index-path", type=Path, default=_default_index_path())
+    parser.add_argument("--db-path", type=Path, default=_default_db_path())
+    parser.add_argument("--fail-under", type=float, default=0.995)
+    parser.add_argument("--min-rows", type=int, default=10)
+    parser.add_argument("--list-limit", type=int, default=25)
+    parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--enforce", action="store_true", help="Exit non-zero when parity gate fails.")
+    args = parser.parse_args()
+
+    index_meta = _load_index_meta(args.index_path)
+    spine_meta = _load_spine_meta(args.db_path)
+    parity = compare_snapshots(index_meta, spine_meta, list_limit=max(0, int(args.list_limit)))
+    gate = evaluate_parity_gate(
+        parity,
+        min_payload_parity=float(args.fail_under),
+        min_rows=max(0, int(args.min_rows)),
+    )
+
+    report = {
+        "ok": True,
+        "ts": time.time(),
+        "index_path": str(args.index_path),
+        "db_path": str(args.db_path),
+        "parity": parity,
+        "gate": gate,
+    }
+
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+    print(json.dumps(report, indent=2))
+    if args.enforce and not bool(gate.get("pass")):
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
