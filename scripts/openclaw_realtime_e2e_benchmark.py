@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from lib.advisory_log_paths import advisory_engine_log_default
 from lib.openclaw_paths import discover_openclaw_workspaces
 from lib.production_gates import evaluate_gates, load_live_metrics
 from lib.service_control import service_status
@@ -25,7 +26,7 @@ QUEUE_FILE = SPARK_DIR / "queue" / "events.jsonl"
 REQUESTS_FILE = SPARK_DIR / "advice_feedback_requests.jsonl"
 FEEDBACK_FILE = SPARK_DIR / "advice_feedback.jsonl"
 OUTCOME_FILE = SPARK_DIR / "meta_ralph" / "outcome_tracking.json"
-ENGINE_FILE = SPARK_DIR / "advisory_engine.jsonl"
+ENGINE_FILE = advisory_engine_log_default()
 FALLBACK_ADVISORY = SPARK_DIR / "llm_advisory.md"
 
 

@@ -14,13 +14,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from lib.advisory_log_paths import advisory_engine_log_default
+
 SPARK_DIR = Path.home() / ".spark"
-ALPHA_ENGINE_LOG = SPARK_DIR / "advisory_engine_alpha.jsonl"
-COMPAT_ENGINE_LOG = SPARK_DIR / "advisory_engine.jsonl"
-
-
-def _default_engine_log() -> Path:
-    return ALPHA_ENGINE_LOG if ALPHA_ENGINE_LOG.exists() else COMPAT_ENGINE_LOG
 
 
 def _to_ts(value: Any) -> float:
@@ -395,7 +391,7 @@ def generate_summary(window_hours: float) -> Dict[str, Any]:
             exclude_trace_prefixes=["advisory-bench-"],
         ),
         "engine": summarize_engine(
-            _default_engine_log(),
+            advisory_engine_log_default(),
             window_s=window_s,
             now_ts=now_ts,
         ),

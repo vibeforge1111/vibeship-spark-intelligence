@@ -14,15 +14,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+from lib.advisory_log_paths import advisory_engine_log_default
 from lib.metric_contract import DRIFT_METRICS, METRIC_CONTRACT_VERSION
 
 SPARK_DIR = Path.home() / ".spark"
 REPORTS_DIR = Path("docs") / "reports"
 OBSERVATORY_SNAPSHOT = Path("_observatory") / "memory_quality_snapshot.json"
 OBSERVATORY_STATE = Path("_observatory") / ".observatory_snapshot.json"
-_ALPHA_ENGINE_LOG = SPARK_DIR / "advisory_engine_alpha.jsonl"
-_COMPAT_ENGINE_LOG = SPARK_DIR / "advisory_engine.jsonl"
-ADVISORY_ENGINE_LOG = _ALPHA_ENGINE_LOG if _ALPHA_ENGINE_LOG.exists() else _COMPAT_ENGINE_LOG
+ADVISORY_ENGINE_LOG = advisory_engine_log_default()
 ADVISORY_DECISION_LEDGER = SPARK_DIR / "advisory_decision_ledger.jsonl"
 
 

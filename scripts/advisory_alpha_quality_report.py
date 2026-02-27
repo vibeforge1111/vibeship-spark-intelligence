@@ -9,6 +9,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List
 
+from lib.advisory_log_paths import advisory_engine_log_compat
+
 
 def _read_jsonl(path: Path, limit: int = 5000) -> List[Dict[str, Any]]:
     if not path.exists():
@@ -112,7 +114,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Compare advisory engine and advisory alpha telemetry.")
     ap.add_argument("--window-s", type=int, default=86400, help="Time window in seconds (0=all rows).")
     ap.add_argument("--limit", type=int, default=8000, help="Tail rows to read per log.")
-    ap.add_argument("--engine-log", type=str, default=str(Path.home() / ".spark" / "advisory_engine.jsonl"))
+    ap.add_argument("--engine-log", type=str, default=str(advisory_engine_log_compat()))
     ap.add_argument("--alpha-log", type=str, default=str(Path.home() / ".spark" / "advisory_engine_alpha.jsonl"))
     args = ap.parse_args()
 
@@ -141,4 +143,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
