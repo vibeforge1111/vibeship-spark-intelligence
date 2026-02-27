@@ -65,6 +65,8 @@ Completed commits:
 45. `a02d6a0` PR-09 follow-up: pruned unused source_roles and llm_areas doc config surface
 46. `cecea8c` PR-04 follow-up: disabled runtime JSON fallback by default after gate readiness
 47. `5cb3c0b` PR-04/09 follow-up: collapsed runtime JSON surface and added workflow_evidence schema/config-authority path
+48. `49d2354` PR-10 follow-up: removed residual requested-route plumbing from orchestrator
+49. `853200f` PR-04 follow-up: retired runtime JSON memory fallback and enforced SQLite-only runtime reads
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -74,9 +76,9 @@ Current measured state:
    - winner: `alpha`
    - `promotion_gate_pass=true`
    - `consecutive_pass_streak=22`
-5. JSON consumer retirement latest (`scripts/memory_json_consumer_gate.py --max-runtime-hits 2 --max-total-hits 80 --required-streak 3`):
-   - `runtime_hits=2`
-   - `total_hits=68`
+5. JSON consumer retirement latest (`scripts/memory_json_consumer_gate.py --max-runtime-hits 0 --max-total-hits 80 --required-streak 3`):
+   - `runtime_hits=0`
+   - `total_hits=64`
    - `ready_for_runtime_json_retirement=true`
 6. Tuneables schema validation: `ok=True`, `unknown=0` (workflow_evidence now schema-covered)
 
@@ -115,7 +117,7 @@ Current measured state:
 5. JSON writes are now compatibility mirror only (`SPARK_MEMORY_SPINE_JSON_MIRROR`), not canonical source.
 6. Added JSON consumer inventory tooling (`scripts/memory_json_consumer_audit.py`) and streak gate (`scripts/memory_json_consumer_gate.py`) for explicit retirement readiness.
 7. Added ACT-R style compaction planner (`lib/memory_compaction.py`) and preview/apply runner (`scripts/cognitive_memory_compaction.py`) with Mem0 action labels.
-8. Remaining: retire the final two compatibility JSON paths (cognitive learner legacy file path + spine fallback path) once full JSON deprecation is approved.
+8. Remaining: optional removal of non-canonical/legacy compatibility lanes after full JSON deprecation sign-off; runtime path is already SQLite-only.
 
 ### PR-05 Retrieval Fusion (RRF + Contextual Retrieval)  (Done for Current Scope)
 1. Hybrid retrieval now includes deterministic RRF fusion (semantic + lexical + support ranks).

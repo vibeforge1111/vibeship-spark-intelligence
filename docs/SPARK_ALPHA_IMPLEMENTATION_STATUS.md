@@ -301,6 +301,15 @@ Branch: feat/spark-alpha
 - Updated memory quality observatory context stats to SQLite-first runtime snapshot reads.
 - Reduced JSON consumer audit to `runtime_hits=2` (from 18 in prior state).
 
+48. `49d2354` - `refactor(alpha-pr10): remove residual requested-route plumbing from orchestrator`
+- Removed dead requested-route env/plumbing from `lib/advisory_orchestrator.py`.
+- Route decision telemetry now reflects alpha-only routing without canary/requested-route compatibility fields.
+
+49. `853200f` - `feat(alpha-pr04): retire runtime JSON memory fallback and enforce sqlite-only reads`
+- Runtime cognitive snapshot reads are now SQLite-only (`load_cognitive_insights_runtime_snapshot` no longer falls back to JSON).
+- Updated `CognitiveLearner`/production-gates pathing to keep runtime canonical while preserving non-canonical compatibility lanes for tests/explicit legacy mode.
+- JSON consumer audit now reports `runtime_hits=0`.
+
 ### Runtime/data repairs applied in local Spark state
 
 - `scripts/backfill_context_envelopes.py --apply`
@@ -343,10 +352,12 @@ Branch: feat/spark-alpha
 - `pytest tests/test_advisory_orchestrator.py tests/test_advisory_dual_path_router.py tests/test_advisory_engine_alpha.py -q` -> `16 passed`
 - `pytest tests/test_advisory_dual_path_router.py tests/test_advisory_engine_dedupe.py tests/test_advisory_engine_on_pre_tool.py -q` -> `31 passed`
 - `python scripts/cognitive_memory_compaction.py --candidate-limit 5` -> preview produced compaction report (`total=72`, `update_candidates=12`)
-- `python scripts/memory_json_consumer_audit.py --out-dir benchmarks/out/memory_spine_audit` -> audit report refreshed (`hits=68`, `runtime_hits=2`)
-- `python scripts/memory_json_consumer_gate.py --max-runtime-hits 2 --max-total-hits 80 --required-streak 3` -> gate pass, streak `5/3`, `ready_for_runtime_json_retirement=true`
+- `python scripts/memory_json_consumer_audit.py --out-dir benchmarks/out/memory_spine_audit` -> audit report refreshed (`hits=64`, `runtime_hits=0`)
+- `python scripts/memory_json_consumer_gate.py --max-runtime-hits 0 --max-total-hits 80 --required-streak 3` -> gate pass, streak `6/3`, `ready_for_runtime_json_retirement=true`
 - `pytest tests/test_workflow_evidence.py tests/test_production_loop_gates.py tests/test_memory_spine_sqlite.py tests/test_memory_json_consumer_audit_helpers.py tests/test_observatory_helpfulness_explorer.py tests/test_observatory_meta_ralph_totals.py tests/test_context_sync_policy.py -q` -> `44 passed`
 - `pytest tests/test_tuneables_alignment.py tests/test_advisor.py -q` -> `98 passed`
+- `pytest tests/test_memory_spine_sqlite.py tests/test_production_loop_gates.py tests/test_cognitive_learner.py tests/test_cognitive_emotion_capture.py tests/test_validation_loop.py -q` -> `95 passed`
+- `pytest tests/test_advisory_orchestrator.py tests/test_advisory_engine_alpha.py tests/test_advisory_dual_path_router.py tests/test_workflow_evidence.py tests/test_tuneables_alignment.py -q` -> `31 passed`
 - `python -m lib.tuneables_schema` -> `ok=True`, `unknown=0` (workflow_evidence section now schema-covered)
 - `python scripts/spark_alpha_replay_arena.py --episodes 20 --seed 42` -> alpha winner, promotion gate pass, streak reached `22/3`
 - Replay artifacts:
@@ -358,10 +369,10 @@ Branch: feat/spark-alpha
 Notable metrics now:
 - `context.p50`: 230
 - `advisory.emit_rate`: 0.194
-- `strict_trace_coverage`: 0.7172
+- `strict_trace_coverage`: 0.7192
 - `strict_acted_on_rate`: 0.2581
-- `advisory_store_readiness`: 0.510
-- `advisory_store_freshness`: 0.510
+- `advisory_store_readiness`: 0.519
+- `advisory_store_freshness`: 0.519
 
 ## Not done yet
 
@@ -375,7 +386,7 @@ These are still pending relative to the broader Simplification/Fast-Track goals:
 6. Distillation pipeline collapse to minimal observe->filter->score->store->promote flow is not implemented.
 7. Broad file/function deletion pass to reach Carmack-size target is not done.
 8. Final migration playbook for old paths/deprecated modules is not done.
-9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + JSON mirror compatibility); runtime JSON consumer surface is reduced to 2 hits (CognitiveLearner legacy file + spine compatibility path), and retirement gate is passing (`5/3` streak).
+9. PR-04 canonical write-path collapse is complete for cognitive insights (SQLite-first + optional mirror compatibility); runtime JSON consumer surface is now `0` and retirement gate is passing (`6/3` streak).
 10. PR-05 superseded fallback rank-extension branch deletion is complete, and keyword/parser fallback paths are removed; broader retrieval simplification outside these branches is still pending.
 11. PR-06 alpha ownership expansion for post-tool/user-prompt is complete; broad legacy advisory file removals after canary burn-in are still pending.
 12. PR-09 large config pruning target (500+ knobs) is still pending; this pass focused on high-confidence utility dedup and dead fallback removal.
