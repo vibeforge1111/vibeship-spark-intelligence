@@ -22,6 +22,11 @@ def _db_path() -> Path:
     return Path.home() / ".spark" / "spark_memory_spine.db"
 
 
+def db_path() -> Path:
+    """Public helper for read-only tools that need the spine file location."""
+    return _db_path()
+
+
 def dual_write_enabled() -> bool:
     raw = os.getenv("SPARK_MEMORY_SPINE_DUAL_WRITE")
     if raw is None and os.getenv("PYTEST_CURRENT_TEST"):
@@ -105,6 +110,49 @@ def _write_json_mirror(path: Optional[Path], snapshot: Dict[str, Dict[str, Any]]
     except Exception:
         pass
     return str(target)
+
+
+def _coerce_runtime_snapshot(payload: Any) -> Dict[str, Dict[str, Any]]:
+    if isinstance(payload, dict):
+        if isinstance(payload.get("insights"), dict):
+            return {
+                str(k): dict(v)
+                for k, v in payload.get("insights", {}).items()
+                if isinstance(v, dict)
+            }
+        if isinstance(payload.get("insights"), list):
+            out: Dict[str, Dict[str, Any]] = {}
+            for idx, row in enumerate(payload.get("insights", [])):
+                if not isinstance(row, dict):
+                    continue
+                key = str(
+                    row.get("key")
+                    or row.get("insight_key")
+                    or row.get("id")
+                    or f"insight_{idx:05d}"
+                ).strip()
+                if not key:
+                    continue
+                out[key] = dict(row)
+            return out
+        if payload and all(isinstance(v, dict) for v in payload.values()):
+            return {str(k): dict(v) for k, v in payload.items()}
+    if isinstance(payload, list):
+        out: Dict[str, Dict[str, Any]] = {}
+        for idx, row in enumerate(payload):
+            if not isinstance(row, dict):
+                continue
+            key = str(
+                row.get("key")
+                or row.get("insight_key")
+                or row.get("id")
+                or f"insight_{idx:05d}"
+            ).strip()
+            if not key:
+                continue
+            out[key] = dict(row)
+        return out
+    return {}
 
 
 def write_cognitive_insights_snapshot(
@@ -204,3 +252,51 @@ def load_cognitive_insights_snapshot(*, force: bool = False) -> Dict[str, Dict[s
 def load_cognitive_insights_snapshot_canonical() -> Dict[str, Dict[str, Any]]:
     """Canonical read path for SQLite-first mode."""
     return load_cognitive_insights_snapshot(force=True)
+
+
+def load_cognitive_insights_runtime_snapshot(
+    *,
+    json_fallback_path: Optional[Path] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Read cognitive snapshot for runtime consumers (SQLite-first, JSON fallback)."""
+    try:
+        snap = load_cognitive_insights_snapshot(force=True)
+        if isinstance(snap, dict) and snap:
+            return snap
+    except Exception:
+        pass
+    try:
+        snap = load_cognitive_insights_snapshot(force=False)
+        if isinstance(snap, dict) and snap:
+            return snap
+    except Exception:
+        pass
+
+    fallback = json_fallback_path.expanduser() if json_fallback_path else (Path.home() / ".spark" / "cognitive_insights.json")
+    if not fallback.exists():
+        return {}
+    try:
+        payload = json.loads(fallback.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return _coerce_runtime_snapshot(payload)
+
+
+def runtime_snapshot_mtime(
+    *,
+    json_fallback_path: Optional[Path] = None,
+) -> Optional[float]:
+    """Best-effort mtime for active cognitive snapshot source."""
+    db = _db_path()
+    if db.exists():
+        try:
+            return float(db.stat().st_mtime)
+        except Exception:
+            pass
+    fallback = json_fallback_path.expanduser() if json_fallback_path else (Path.home() / ".spark" / "cognitive_insights.json")
+    if fallback.exists():
+        try:
+            return float(fallback.stat().st_mtime)
+        except Exception:
+            pass
+    return None

@@ -14,6 +14,7 @@ from typing import Any, Dict, List
 
 from .config_authority import resolve_section
 from .metric_contract import METRIC_CONTRACT_VERSION
+from .spark_memory_spine import load_cognitive_insights_runtime_snapshot
 
 SPARK_DIR = Path.home() / ".spark"
 COGNITIVE_FILE = SPARK_DIR / "cognitive_insights.json"
@@ -109,7 +110,11 @@ def _count_chip_insights(chip_dir: Path) -> int:
 
 
 def _count_stored_learnings(path: Path) -> int:
-    data = _read_json(path, {})
+    data: Any
+    if path.name == "cognitive_insights.json":
+        data = load_cognitive_insights_runtime_snapshot(json_fallback_path=path)
+    else:
+        data = _read_json(path, {})
     if isinstance(data, dict):
         if "insights" in data and isinstance(data.get("insights"), list):
             return len(data.get("insights") or [])

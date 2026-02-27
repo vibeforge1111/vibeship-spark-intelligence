@@ -26,6 +26,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from .spark_memory_spine import load_cognitive_insights_runtime_snapshot
+
 SPARK_DIR = Path.home() / ".spark"
 TUNEABLES_PATH = SPARK_DIR / "tuneables.json"
 EFFECTIVENESS_PATH = SPARK_DIR / "advisor" / "effectiveness.json"
@@ -315,16 +317,17 @@ class AutoTuner:
 
         # --- Cognitive insights ---
         try:
-            cog = _read_json(COGNITIVE_INSIGHTS_PATH)
-            insights = cog.get("insights", [])
-            if isinstance(insights, list):
-                health.cognitive_growth = float(len(insights))
-                validated = sum(
-                    1 for i in insights
-                    if isinstance(i, dict) and i.get("times_validated", 0) > 0
-                )
-                if insights:
-                    health.feedback_loop_closure = validated / len(insights)
+            cog = load_cognitive_insights_runtime_snapshot(
+                json_fallback_path=COGNITIVE_INSIGHTS_PATH
+            )
+            insights = list(cog.values()) if isinstance(cog, dict) else []
+            health.cognitive_growth = float(len(insights))
+            validated = sum(
+                1 for i in insights
+                if isinstance(i, dict) and int(i.get("times_validated", 0) or 0) > 0
+            )
+            if insights:
+                health.feedback_loop_closure = validated / len(insights)
         except Exception:
             pass
 

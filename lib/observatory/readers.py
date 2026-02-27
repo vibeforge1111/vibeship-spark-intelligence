@@ -11,6 +11,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from ..spark_memory_spine import load_cognitive_insights_runtime_snapshot
+from ..spark_memory_spine import runtime_snapshot_mtime
 from .config import spark_dir
 
 _SD = spark_dir()
@@ -270,7 +272,9 @@ def read_meta_ralph(max_recent: int = 15) -> dict[str, Any]:
 
 def read_cognitive(max_recent: int = 15) -> dict[str, Any]:
     d: dict[str, Any] = {"stage": 6, "name": "Cognitive Learner"}
-    ci = _load_json(_SD / "cognitive_insights.json") or {}
+    ci = load_cognitive_insights_runtime_snapshot(
+        json_fallback_path=_SD / "cognitive_insights.json"
+    )
     if not isinstance(ci, dict):
         ci = {}
     d["total_insights"] = len(ci)
@@ -294,7 +298,7 @@ def read_cognitive(max_recent: int = 15) -> dict[str, Any]:
     # Sort by reliability desc, take top N
     top_reliability.sort(key=lambda x: (-x["reliability"], -x["validations"]))
     d["top_insights"] = top_reliability[:max_recent]
-    d["mtime"] = _file_mtime(_SD / "cognitive_insights.json")
+    d["mtime"] = runtime_snapshot_mtime(json_fallback_path=_SD / "cognitive_insights.json")
     return d
 
 

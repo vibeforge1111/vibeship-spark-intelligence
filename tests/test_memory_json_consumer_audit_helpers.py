@@ -38,3 +38,18 @@ def test_build_report_aggregates_hits():
     assert totals.get("runtime_hits") == 1
     assert totals.get("docs_hits") == 1
 
+
+def test_iter_repo_files_skips_pycache_and_pyc(tmp_path):
+    mod = _load_module()
+    (tmp_path / "lib").mkdir(parents=True)
+    (tmp_path / "lib" / "__pycache__").mkdir(parents=True)
+    keep = tmp_path / "lib" / "x.py"
+    skip_cache = tmp_path / "lib" / "__pycache__" / "x.cpython-313.pyc"
+    skip_pyc = tmp_path / "lib" / "y.pyc"
+    keep.write_text("ok", encoding="utf-8")
+    skip_cache.write_text("cache", encoding="utf-8")
+    skip_pyc.write_text("bytecode", encoding="utf-8")
+    paths = [str(p) for p in mod._iter_repo_files(tmp_path)]
+    assert str(keep) in paths
+    assert str(skip_cache) not in paths
+    assert str(skip_pyc) not in paths

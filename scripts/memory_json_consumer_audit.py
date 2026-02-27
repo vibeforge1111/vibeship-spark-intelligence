@@ -35,6 +35,18 @@ class Hit:
 
 def _iter_repo_files(root: Path) -> Iterable[Path]:
     include_roots = ("lib", "scripts", "hooks", "tests", "docs")
+    skip_suffixes = {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".svg",
+        ".pdf",
+        ".db",
+        ".sqlite",
+        ".pyc",
+        ".pyo",
+    }
     for rel in include_roots:
         base = root / rel
         if not base.exists():
@@ -42,7 +54,9 @@ def _iter_repo_files(root: Path) -> Iterable[Path]:
         for path in base.rglob("*"):
             if not path.is_file():
                 continue
-            if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".svg", ".pdf", ".db", ".sqlite"}:
+            if "__pycache__" in path.parts:
+                continue
+            if path.suffix.lower() in skip_suffixes:
                 continue
             yield path
 
@@ -201,4 +215,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

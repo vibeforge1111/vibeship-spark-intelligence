@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..spark_memory_spine import load_cognitive_insights_runtime_snapshot
 from .config import ObservatoryConfig, spark_dir
 from .linker import flow_link, fmt_num, fmt_ts
 from .readers import _count_jsonl, _load_json, _tail_jsonl
@@ -185,7 +186,9 @@ def _export_cognitive(explore_dir: Path, limit: int) -> int:
     """Export cognitive insights as individual pages + index."""
     out = explore_dir / "cognitive"
     out.mkdir(parents=True, exist_ok=True)
-    ci = _load_json(_SD / "cognitive_insights.json") or {}
+    ci = load_cognitive_insights_runtime_snapshot(
+        json_fallback_path=_SD / "cognitive_insights.json"
+    )
     if not isinstance(ci, dict):
         return 0
 

@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional
 from .outcome_log import read_outcomes
 from .primitive_filter import is_primitive_text
 from .advisory_quarantine import record_quarantine_item
+from .spark_memory_spine import load_cognitive_insights_runtime_snapshot
 
 COGNITIVE_FILE = Path.home() / ".spark" / "cognitive_insights.json"
 CHIP_INSIGHTS_DIR = Path.home() / ".spark" / "chip_insights"
@@ -267,11 +268,8 @@ def _coerce_readiness(row: Dict[str, Any], confidence: float = 0.0) -> float:
 
 
 def _collect_cognitive(limit: int = 6) -> List[Dict[str, Any]]:
-    if not COGNITIVE_FILE.exists():
-        return []
-    try:
-        data = json.loads(COGNITIVE_FILE.read_text(encoding="utf-8"))
-    except Exception:
+    data = load_cognitive_insights_runtime_snapshot(json_fallback_path=COGNITIVE_FILE)
+    if not data:
         return []
 
     rows: List[Dict[str, Any]] = []
@@ -282,6 +280,8 @@ def _collect_cognitive(limit: int = 6) -> List[Dict[str, Any]]:
             rows = [r for r in data.get("insights", {}).values() if isinstance(r, dict)]
         elif isinstance(data.get("insights"), list):
             rows = [r for r in data.get("insights", []) if isinstance(r, dict)]
+        else:
+            rows = [r for r in data.values() if isinstance(r, dict)]
 
     rows = rows[-max(0, limit):]
     evidence: List[Dict[str, Any]] = []
@@ -325,7 +325,7 @@ def _collect_cognitive(limit: int = 6) -> List[Dict[str, Any]]:
                 "id": str(row.get("key") or row.get("insight_key") or text[:48]),
                 "text": text,
                 "confidence": confidence,
-                "created_at": float(row.get("timestamp") or row.get("created_at") or 0.0),
+                "created_at": _coerce_ts(row.get("timestamp") or row.get("created_at") or 0.0, 0.0),
                 "meta": {
                     "advisory_quality": adv_q,
                     "advisory_readiness": round(readiness, 4),

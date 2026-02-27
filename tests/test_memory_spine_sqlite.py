@@ -1,9 +1,12 @@
 import sqlite3
+import json
 
 from lib.cognitive_learner import CognitiveCategory
 from lib.cognitive_learner import CognitiveInsight
 from lib.cognitive_learner import CognitiveLearner
 from lib.spark_memory_spine import dual_write_cognitive_insights
+from lib.spark_memory_spine import load_cognitive_insights_runtime_snapshot
+from lib.spark_memory_spine import runtime_snapshot_mtime
 
 
 def test_memory_spine_dual_write_round_trip(tmp_path, monkeypatch):
@@ -104,3 +107,52 @@ def test_cognitive_learner_sqlite_canonical_mode_with_json_mirror(tmp_path, monk
     insights_path.unlink()
     restored = CognitiveLearner()
     assert "wisdom:sqlite-canonical" in restored.insights
+
+
+def test_runtime_snapshot_prefers_sqlite_before_json_fallback(tmp_path, monkeypatch):
+    db_path = tmp_path / "spark_memory_spine.db"
+    insights_path = tmp_path / "cognitive_insights.json"
+
+    monkeypatch.setenv("SPARK_MEMORY_SPINE_CANONICAL", "1")
+    monkeypatch.setenv("SPARK_MEMORY_SPINE_DB", str(db_path))
+
+    payload = {
+        "reasoning:sqlite": {
+            "category": "reasoning",
+            "insight": "SQLite canonical snapshot should be used first.",
+            "confidence": 0.8,
+            "context": "memory migration",
+            "evidence": [],
+            "counter_examples": [],
+            "created_at": "2026-02-27T00:00:00",
+            "times_validated": 1,
+            "times_contradicted": 0,
+            "promoted": False,
+            "promoted_to": None,
+            "last_validated_at": None,
+            "source": "test",
+            "action_domain": "system",
+            "emotion_state": {},
+            "advisory_quality": {},
+            "advisory_readiness": 0.5,
+            "reliability": 0.8,
+        }
+    }
+    out = dual_write_cognitive_insights(payload)
+    assert out["ok"] is True
+
+    # Deliberately divergent JSON fallback payload.
+    insights_path.write_text(json.dumps({"json_only": {"insight": "legacy"}}), encoding="utf-8")
+    snap = load_cognitive_insights_runtime_snapshot(json_fallback_path=insights_path)
+    assert "reasoning:sqlite" in snap
+    assert "json_only" not in snap
+
+
+def test_runtime_snapshot_mtime_uses_available_source(tmp_path, monkeypatch):
+    db_path = tmp_path / "spark_memory_spine.db"
+    insights_path = tmp_path / "cognitive_insights.json"
+    monkeypatch.setenv("SPARK_MEMORY_SPINE_DB", str(db_path))
+
+    insights_path.write_text(json.dumps({"a": {"insight": "x"}}), encoding="utf-8")
+    mtime = runtime_snapshot_mtime(json_fallback_path=insights_path)
+    assert isinstance(mtime, float)
