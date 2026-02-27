@@ -1,6 +1,6 @@
 # Spark Alpha Implementation Status
 
-Last updated: 2026-02-27 (local branch snapshot, alpha log-path centralization + observatory runtime reference alignment)
+Last updated: 2026-02-27 (local branch snapshot, alpha suppression observability alignment + LLM-area surface reduction)
 Branch: feat/spark-alpha
 
 ## Done so far
@@ -529,6 +529,39 @@ Branch: feat/spark-alpha
 - Simplified runtime LLM setup/preferences flow by removing packet-lookup LLM preference plumbing.
 - Updated observatory advisory reverse-engineering render output to show `packet_sqlite_lookup_enabled` instead of removed rerank knob.
 - Regression slice: `pytest tests/test_intelligence_llm_preferences.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `157 passed`.
+
+81. `b0fdd21` - `feat(alpha-observability): track suppression burden across kpi and review reports`
+- Added explicit alpha suppression event accounting in KPI scorecard metrics (`lib/carmack_kpi.py`):
+  - `alpha_suppressed`
+  - `alpha_suppression_events`
+  - `suppression_burden`
+- Expanded failure snapshot event interest list to include alpha suppression/error outcomes.
+- Updated review/controlled-delta summaries to report suppression share and treat suppression-dominant windows as noisy.
+- Added focused regression coverage in:
+  - `tests/test_carmack_kpi.py`
+  - `tests/test_advisory_self_review.py`
+- Regression slice: `pytest tests/test_carmack_kpi.py tests/test_advisory_self_review.py -q` -> `9 passed`.
+
+82. `c8e07e2` - `refactor(alpha-pr09): retire packet_rerank llm area and trim config surface`
+- Removed packet-level `packet_rerank` LLM rerank step from relaxed advisory candidate lookup.
+- Removed `packet_rerank_*` keys from:
+  - LLM dispatch registry/defaults
+  - LLM prompt catalog
+  - tuneables schema
+  - baseline config
+  - LLM-area observatory host mapping
+- Updated LLM dispatch registry tests for reduced area count.
+- Regression slice: `pytest tests/test_llm_dispatch.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_intelligence_llm_preferences.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `182 passed`.
+
+83. `e6af80e` - `refactor(alpha-pr09): remove unused drift_diagnose llm area`
+- Removed the dead `drift_diagnose` LLM area surface (no active runtime callsite) from:
+  - LLM dispatch registry/defaults
+  - LLM prompt catalog
+  - tuneables schema
+  - baseline config
+  - LLM-area observatory host mapping
+- Updated LLM dispatch registry tests for the new reduced total.
+- Regression slice: `pytest tests/test_llm_dispatch.py tests/test_tuneables_alignment.py tests/test_pr1_config_authority.py tests/test_intelligence_llm_preferences.py tests/test_cross_surface_drift_checker.py tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py -q` -> `184 passed`.
 
 ### Runtime/data repairs applied in local Spark state
 
