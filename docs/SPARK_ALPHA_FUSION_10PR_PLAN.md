@@ -77,6 +77,7 @@ Completed commits:
 57. `5bcded9` PR-04 follow-up: integrated bounded ACT-R compaction into periodic runtime context sync with explicit env caps and policy tests
 58. `48223e5` PR-10 follow-up: extracted implicit-feedback loop into shared module and removed alpha route dependency on legacy advisory_engine internals
 59. `e12e3a5` PR-05 follow-up: added readiness-aware relaxed packet lookup scoring/flooring and candidate readiness diagnostics
+60. `de6222c` PR-05 follow-up: made packet lookup miss-path contracts deterministic (`lookup_relaxed -> None`, `lookup_relaxed_candidates -> []`)
 
 Current measured state:
 1. `production_loop_report.py`: `READY (19/19 passed)`
@@ -100,6 +101,7 @@ Current measured state:
 13. Runtime compaction regression slice: `pytest tests/test_context_sync_policy.py` -> `7 passed`; `pytest tests/test_memory_compaction.py tests/test_memory_spine_sqlite.py tests/test_cognitive_learner.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_tuneables_alignment.py` -> `93 passed`
 14. Advisory decoupling regression slice: `pytest tests/test_advisory_engine_alpha.py tests/test_advisory_engine_evidence.py tests/test_advisory_engine_on_pre_tool.py tests/test_advisory_orchestrator.py tests/test_advisory_dual_path_router.py tests/test_context_sync_policy.py` -> `41 passed`; `python -m py_compile ...` pass
 15. Retrieval/readiness regression slice: `pytest tests/test_advisory_packet_store.py tests/test_advisory_engine_alpha.py tests/test_advisory_orchestrator.py tests/test_tuneables_alignment.py` -> `19 passed`; `pytest tests/test_advisor.py tests/test_advisor_retrieval_routing.py` -> `116 passed`
+16. Retrieval miss-path regression slice: `pytest tests/test_advisory_packet_store.py tests/test_advisor.py tests/test_advisor_retrieval_routing.py` -> `130 passed`; `python -m py_compile lib/advisory_packet_store.py tests/test_advisory_packet_store.py` -> pass
 
 ## Gap vs V2 Simplification Scope
 1. Storage consolidation (128 files -> single spine): partial
