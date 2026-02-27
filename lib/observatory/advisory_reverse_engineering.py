@@ -339,7 +339,7 @@ def _improvement_rows(runtime: Dict[str, Any], tune: Dict[str, Any]) -> List[Dic
             "focus": "Balance emissions against observed follow rate",
             "evidence": f"emit_rate={emit_rate}, follow_rate={follow_rate}",
             "change": "Add per-intent emit target bands and alert when emission drops below floor while follow remains high.",
-            "where": "lib/advisory_orchestrator.py + lib/advisory_engine_alpha.py + reports/runtime diagnostics",
+            "where": "lib/advisory_engine_alpha.py + reports/runtime diagnostics",
         }
     )
 
@@ -413,11 +413,11 @@ def generate_advisory_reverse_engineering(data: Dict[int, Dict[str, Any]]) -> st
     lines.append("| 5. Meta-Ralph quality gate | `lib/meta_ralph.py` | candidate insights | roast history + scored verdicts | Strict gate improves quality but can reduce recall if thresholds are too high. |")
     lines.append("| 6. Cognitive + EIDOS stores | `lib/cognitive_learner.py`, `lib/eidos/*`, `chips/*.jsonl` | gated insights and episodic outcomes | cognitive/eidos/chip stores | Core retrieval substrate for advisory. |")
     lines.append("| 7. Mind write path | `lib/bridge_cycle.py -> lib/mind_bridge.py:sync_recent_insights` | recent high-readiness insights | Mind API + `mind_sync_state.json` + offline queue | If Mind service/auth fails, queue grows and cross-session memory value decays. |")
-    lines.append("| 8. Pre-tool orchestrator | `lib/advisory_orchestrator.py:on_pre_tool` -> `lib/advisory_engine_alpha.py:on_pre_tool` | session state + packet store + advisor | decision ledger + alpha engine log + advisory state | Packet hit/miss route determines latency and retrieval depth. |")
+    lines.append("| 8. Pre-tool advisory runtime | `lib/advisory_engine_alpha.py:on_pre_tool` | session state + packet store + advisor | decision ledger + alpha engine log + advisory state | Packet hit/miss route determines latency and retrieval depth. |")
     lines.append("| 9. Retrieval fanout | `lib/advisor.py:advise` | bank, cognitive, chips, mind, tool, eidos, replay | in-memory advice bundle + advice log | Mind is optional and gated; no direct emit from memory without gate. |")
     lines.append("| 10. Gate + suppression | `lib/advisory_gate.py:evaluate` | phase, cooldown state, tool/input context | gate decisions (emitted/suppressed) | Main suppressors: shown TTL, global dedupe, tool cooldown, budget cap. |")
     lines.append("| 11. Dedupe + synth + emit | `lib/advisory_engine_alpha.py` + `lib/advisory_synthesizer.py` + emitter | emitted decisions and policy | stdout advisory, shown markers, packet updates | Text repeat and global dedupe can block even when gate emitted candidates. |")
-    lines.append("| 12. Post-tool feedback loop | `lib/advisory_orchestrator.py:on_post_tool` -> `lib/advisory_engine_alpha.py:on_post_tool` | execution success/failure + recent delivery | implicit feedback, outcome trackers, packet outcome stats | This loop tunes future ranking and effectiveness tracking. |")
+    lines.append("| 12. Post-tool feedback loop | `lib/advisory_engine_alpha.py:on_post_tool` | execution success/failure + recent delivery | implicit feedback, outcome trackers, packet outcome stats | This loop tunes future ranking and effectiveness tracking. |")
     lines.append("")
 
     lines.append("## Mind: Actual Role In The Current System")

@@ -189,7 +189,7 @@ def generate_topic_finder() -> str:
 def generate_glossary() -> str:
     """Create a glossary for observatory/system terms."""
     terms = [
-        ("Advisory Engine", "The advisory runtime (`lib/advisory_orchestrator.py` + `lib/advisory_engine_alpha.py`) that retrieves, gates, dedupes, synthesizes, and emits advice."),
+        ("Advisory Engine", "The advisory runtime (`lib/advisory_engine_alpha.py`) that retrieves, gates, dedupes, synthesizes, and emits advice."),
         ("Advisory Gate", "Policy layer (`lib/advisory_gate.py`) that decides emit vs suppress based on phase, score, cooldowns, and relevance."),
         ("Advisory Decision Ledger", "JSONL audit of advisory outcomes (`emitted`, `blocked`, etc.) at `~/.spark/advisory_decision_ledger.jsonl`."),
         ("Advice Source", "Origin of an advisory item (for example: `cognitive`, `eidos`, `mind`, `bank`, `baseline`, `chip`)."),

@@ -2,8 +2,8 @@
 """Deterministic replay arena for Spark advisory champion/challenger evaluation.
 
 Runs identical episodes through:
-- Champion: advisory orchestrator (`lib.advisory_orchestrator.on_pre_tool`)
-- Challenger: alpha advisory engine (`lib.advisory_engine_alpha.on_pre_tool`)
+- Champion lane: alpha advisory engine baseline (`lib.advisory_engine_alpha.on_pre_tool`)
+- Challenger lane: alpha advisory engine (`lib.advisory_engine_alpha.on_pre_tool`)
 
 Scores each route on utility, safety, trace integrity, and latency, then writes:
 - per-run scorecards
@@ -337,10 +337,7 @@ def _run_route(
     episodes: List[Episode],
     trace_prefix: str,
 ) -> List[EpisodeResult]:
-    if route == "orchestrator":
-        from lib.advisory_orchestrator import on_pre_tool as run_on_pre_tool
-        log_path = ALPHA_LOG
-    elif route == "alpha":
+    if route in {"orchestrator", "alpha"}:
         from lib.advisory_engine_alpha import on_pre_tool as run_on_pre_tool
         log_path = ALPHA_LOG
     else:
@@ -433,7 +430,7 @@ def _apply_deterministic_env() -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Run Spark advisory replay arena (orchestrator champion vs alpha challenger).")
+    ap = argparse.ArgumentParser(description="Run Spark advisory replay arena (baseline champion lane vs alpha challenger lane).")
     ap.add_argument("--seed", type=int, default=42, help="Deterministic episode seed.")
     ap.add_argument("--episodes", type=int, default=120, help="Number of episodes to replay.")
     ap.add_argument("--episodes-file", type=str, default="", help="Optional JSON file containing replay episodes.")
