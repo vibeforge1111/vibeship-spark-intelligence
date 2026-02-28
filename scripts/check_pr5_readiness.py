@@ -171,6 +171,27 @@ def _semantic_context_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _production_noise_gate_summary(
+    report: Dict[str, Any],
+    *,
+    min_expected_noise_rows: int,
+    min_recall: float,
+    max_fp_rate: float,
+) -> Dict[str, Any]:
+    expected_noise = int(report.get("expected_noise_rows") or 0)
+    recall = float(report.get("recall") or 0.0)
+    fp_rate = float(report.get("false_positive_rate") or 0.0)
+    coverage_ok = expected_noise >= max(1, int(min_expected_noise_rows))
+    return {
+        "expected_noise_coverage_gate": bool(coverage_ok),
+        "production_noise_recall_gate": bool(coverage_ok and recall >= float(min_recall)),
+        "production_noise_fp_gate": bool(fp_rate <= float(max_fp_rate)),
+        "expected_noise_rows": expected_noise,
+        "recall": recall,
+        "false_positive_rate": fp_rate,
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Run PR-05 readiness gate checks.")
     ap.add_argument("--precision-floor", type=float, default=0.30, help="Minimum acceptable overall P@5.")
@@ -180,6 +201,24 @@ def main() -> int:
     ap.add_argument("--route-min-rows", type=int, default=200, help="Minimum route telemetry rows required for gate validity.")
     ap.add_argument("--route-empty-max", type=float, default=0.05, help="Maximum acceptable empty-route share.")
     ap.add_argument("--reason-unknown-max", type=float, default=0.05, help="Maximum acceptable unknown-reason share.")
+    ap.add_argument(
+        "--production-noise-min-expected",
+        type=int,
+        default=20,
+        help="Minimum expected-noise rows required for production noise recall validity.",
+    )
+    ap.add_argument(
+        "--production-noise-min-recall",
+        type=float,
+        default=0.90,
+        help="Minimum acceptable production hard-noise recall.",
+    )
+    ap.add_argument(
+        "--production-noise-max-fp-rate",
+        type=float,
+        default=0.15,
+        help="Maximum acceptable production signal false-positive rate.",
+    )
     ap.add_argument("--run-replay", action="store_true", help="Run replay arena and include promotion signal.")
     ap.add_argument("--replay-seed", type=int, default=42, help="Replay seed when --run-replay is enabled.")
     ap.add_argument("--replay-episodes", type=int, default=24, help="Replay episode count when --run-replay is enabled.")
@@ -197,6 +236,19 @@ def main() -> int:
     semantic_rows = _tail_jsonl(SEMANTIC_LOG, max_lines=max(100, int(args.route_log_lines)))
     routes = _route_mix_summary(route_rows)
     semantic_context = _semantic_context_summary(semantic_rows)
+    from lib.advisory_content_quality import build_production_noise_report
+
+    production_noise = build_production_noise_report(
+        spark_dir=Path.home() / ".spark",
+        max_rows_per_source=max(250, int(args.route_log_lines)),
+        detail_rows=240,
+    )
+    production_noise_gates = _production_noise_gate_summary(
+        production_noise,
+        min_expected_noise_rows=max(1, int(args.production_noise_min_expected)),
+        min_recall=float(args.production_noise_min_recall),
+        max_fp_rate=float(args.production_noise_max_fp_rate),
+    )
     route_row_count = int(routes.get("rows") or 0)
     empty_route_rate = float(routes.get("empty_route_rate") or 0.0)
     unknown_reason_rate = float(routes.get("unknown_reason_rate") or 0.0)
@@ -208,6 +260,9 @@ def main() -> int:
         "route_coverage_gate": route_row_count >= max(1, int(args.route_min_rows)),
         "route_empty_gate": empty_route_rate <= float(args.route_empty_max),
         "reason_unknown_gate": unknown_reason_rate <= float(args.reason_unknown_max),
+        "production_noise_coverage_gate": bool(production_noise_gates.get("expected_noise_coverage_gate")),
+        "production_noise_recall_gate": bool(production_noise_gates.get("production_noise_recall_gate")),
+        "production_noise_fp_gate": bool(production_noise_gates.get("production_noise_fp_gate")),
     }
 
     replay_payload: Dict[str, Any] = {}
@@ -236,6 +291,9 @@ def main() -> int:
             "route_min_rows": int(args.route_min_rows),
             "route_empty_max": float(args.route_empty_max),
             "reason_unknown_max": float(args.reason_unknown_max),
+            "production_noise_min_expected": int(args.production_noise_min_expected),
+            "production_noise_min_recall": float(args.production_noise_min_recall),
+            "production_noise_max_fp_rate": float(args.production_noise_max_fp_rate),
             "run_replay": bool(args.run_replay),
             "replay_seed": int(args.replay_seed),
             "replay_episodes": int(args.replay_episodes),
@@ -249,6 +307,8 @@ def main() -> int:
         },
         "route_telemetry": routes,
         "semantic_context": semantic_context,
+        "production_noise_regression": production_noise,
+        "production_noise_gate_summary": production_noise_gates,
         "replay": replay_payload,
         "gates": gates,
         "pass": all(bool(v) for v in gates.values()),

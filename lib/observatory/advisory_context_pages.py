@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from ..advisory_content_quality import build_production_noise_report
 from .config import spark_dir
 from .linker import flow_link, fmt_num
 from .readers import _coerce_decision_outcome
@@ -1126,6 +1127,173 @@ def _retrieval_route_forensics_page(detail_rows: int = 450) -> str:
     return "\n".join(lines)
 
 
+def _advisory_content_quality_forensics_page(detail_rows: int = 520) -> str:
+    report = build_production_noise_report(
+        spark_dir=_SD,
+        max_rows_per_source=1600,
+        detail_rows=max(120, int(detail_rows)),
+    )
+
+    detail = report.get("detailed_rows") if isinstance(report.get("detailed_rows"), list) else []
+    false_neg = (
+        report.get("false_negative_examples")
+        if isinstance(report.get("false_negative_examples"), list)
+        else []
+    )
+    false_pos = (
+        report.get("false_positive_examples")
+        if isinstance(report.get("false_positive_examples"), list)
+        else []
+    )
+    signature_counts = (
+        report.get("hard_noise_signature_counts")
+        if isinstance(report.get("hard_noise_signature_counts"), dict)
+        else {}
+    )
+    rule_counts = (
+        report.get("classifier_rule_counts")
+        if isinstance(report.get("classifier_rule_counts"), dict)
+        else {}
+    )
+
+    def _safe_int(value: Any) -> int:
+        try:
+            return int(value)
+        except Exception:
+            return 0
+
+    def _safe_float(value: Any) -> float:
+        try:
+            return float(value)
+        except Exception:
+            return 0.0
+
+    recall = _safe_float(report.get("recall"))
+    fp_rate = _safe_float(report.get("false_positive_rate"))
+    lines = [
+        "---",
+        "title: Advisory Content Quality Forensics",
+        "tags:",
+        "  - observatory",
+        "  - advisory",
+        "  - content-quality",
+        "  - noise-regression",
+        "  - context-first",
+        "---",
+        "",
+        "# Advisory Content Quality Forensics",
+        "",
+        f"> {flow_link()} | [[stages/08-advisory|Stage 8: Advisory]]",
+        "",
+        "## Summary",
+        "",
+        f"- Rows analyzed: `{_safe_int(report.get('rows_analyzed'))}`",
+        f"- Rows by source: `{report.get('rows_by_source')}`",
+        f"- Expected hard-noise rows: `{_safe_int(report.get('expected_noise_rows'))}`",
+        f"- Expected signal rows: `{_safe_int(report.get('expected_signal_rows'))}`",
+        f"- Classifier recall on hard-noise signatures: `{recall * 100.0:.1f}%`",
+        f"- Signal false-positive rate: `{fp_rate * 100.0:.1f}%`",
+        "",
+        "## Hard Noise Signatures",
+        "",
+        "| Signature | Count |",
+        "|-----------|------:|",
+    ]
+    if signature_counts:
+        for key, value in sorted(signature_counts.items(), key=lambda item: int(item[1]), reverse=True):
+            lines.append(f"| {key} | {_safe_int(value)} |")
+    else:
+        lines.append("| _none_ | 0 |")
+    lines.append("")
+
+    lines.extend(
+        [
+            "## Classifier Rule Distribution (Top 20)",
+            "",
+            "| Rule | Count |",
+            "|------|------:|",
+        ]
+    )
+    if rule_counts:
+        for key, value in sorted(rule_counts.items(), key=lambda item: int(item[1]), reverse=True)[:20]:
+            lines.append(f"| {key} | {_safe_int(value)} |")
+    else:
+        lines.append("| _none_ | 0 |")
+    lines.append("")
+
+    lines.extend(
+        [
+            f"## False Negative Examples (Latest {min(120, len(false_neg))})",
+            "",
+            "| source | id | classifier_rule | hard_reason | snippet |",
+            "|--------|----|-----------------|-------------|---------|",
+        ]
+    )
+    if false_neg:
+        for row in false_neg[:120]:
+            snippet = _norm_text(row.get("snippet")).replace("|", "\\|")
+            lines.append(
+                f"| {_norm_text(row.get('source')) or '?'} | {_norm_text(row.get('id')) or '?'} | "
+                f"{_norm_text(row.get('classifier_rule')) or 'none'} | "
+                f"{_norm_text(row.get('hard_noise_reason')) or '-'} | {snippet or '-'} |"
+            )
+    else:
+        lines.append("| _none_ | - | - | - | - |")
+    lines.append("")
+
+    lines.extend(
+        [
+            f"## False Positive Examples (Latest {min(120, len(false_pos))})",
+            "",
+            "| source | id | classifier_rule | expected_signal | snippet |",
+            "|--------|----|-----------------|-----------------|---------|",
+        ]
+    )
+    if false_pos:
+        for row in false_pos[:120]:
+            snippet = _norm_text(row.get("snippet")).replace("|", "\\|")
+            lines.append(
+                f"| {_norm_text(row.get('source')) or '?'} | {_norm_text(row.get('id')) or '?'} | "
+                f"{_norm_text(row.get('classifier_rule')) or 'none'} | "
+                f"{'yes' if bool(row.get('expected_signal')) else 'no'} | {snippet or '-'} |"
+            )
+    else:
+        lines.append("| _none_ | - | - | - | - |")
+    lines.append("")
+
+    lines.extend(
+        [
+            f"## Detailed Content Rows (Latest {len(detail)})",
+            "",
+            "| source | id | classifier | rule | hard_noise | hard_reason | expected_signal | snippet |",
+            "|--------|----|------------|------|------------|-------------|-----------------|---------|",
+        ]
+    )
+    for row in detail:
+        snippet = _norm_text(row.get("snippet")).replace("|", "\\|")
+        lines.append(
+            f"| {_norm_text(row.get('source')) or '?'} | {_norm_text(row.get('id')) or '?'} | "
+            f"{'noise' if bool(row.get('classifier_is_noise')) else 'signal'} | "
+            f"{_norm_text(row.get('classifier_rule')) or 'none'} | "
+            f"{'yes' if bool(row.get('hard_noise')) else 'no'} | "
+            f"{_norm_text(row.get('hard_noise_reason')) or '-'} | "
+            f"{'yes' if bool(row.get('expected_signal')) else 'no'} | {snippet or '-'} |"
+        )
+    lines.append("")
+    lines.extend(
+        [
+            "## Hard Questions For Next Cycle",
+            "",
+            "- Which false-negative signatures are still entering promotion and CLAUDE contexts?",
+            "- Are false positives suppressing reusable architecture guidance we actually want to keep?",
+            "- Which source contributes the highest share of hard-noise misses, and what upstream gate should own it?",
+            "- How many hard-noise misses also appear in emitted advisories in the same window?",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def generate_advisory_context_pages(data: dict[int, dict[str, Any]]) -> dict[str, str]:
     """Generate additional observatory pages for context-rich advisory diagnostics."""
     return {
@@ -1135,4 +1303,5 @@ def generate_advisory_context_pages(data: dict[int, dict[str, Any]]) -> dict[str
         "advisory_context_drift.md": _context_drift_page(),
         "advisory_data_integrity.md": _data_integrity_page(data),
         "retrieval_route_forensics.md": _retrieval_route_forensics_page(),
+        "advisory_content_quality_forensics.md": _advisory_content_quality_forensics_page(),
     }

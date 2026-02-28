@@ -146,11 +146,13 @@ def test_generate_advisory_context_pages_with_engine_fallback_and_integrity_flag
         "advisory_context_drift.md",
         "advisory_data_integrity.md",
         "retrieval_route_forensics.md",
+        "advisory_content_quality_forensics.md",
     }
     assert "Decision source used for lineage: `advisory_engine_alpha_fallback`" in pages["advisory_trace_lineage.md"]
     assert "Decision source: `advisory_engine_alpha_fallback`" in pages["advisory_suppression_replay.md"]
     assert "Warning: decision ledger missing; observatory is using fallback source" in pages["advisory_data_integrity.md"]
     assert "external review result status inconsistent with error response" in pages["advisory_data_integrity.md"]
+    assert "Advisory Content Quality Forensics" in pages["advisory_content_quality_forensics.md"]
 
 
 def test_context_drift_page_contains_dimension_rows(monkeypatch, tmp_path: Path) -> None:

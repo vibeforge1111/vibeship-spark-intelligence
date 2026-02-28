@@ -59,3 +59,36 @@ def test_semantic_context_summary_buckets_rows():
     assert buckets.get("gated_or_filtered_after_candidates") == 1
     assert buckets.get("non_empty") == 1
     assert out.get("rescue_used_count") == 1
+
+
+def test_production_noise_gate_summary_thresholds():
+    mod = _load_module()
+    out = mod._production_noise_gate_summary(
+        {
+            "expected_noise_rows": 40,
+            "recall": 0.91,
+            "false_positive_rate": 0.12,
+        },
+        min_expected_noise_rows=20,
+        min_recall=0.90,
+        max_fp_rate=0.15,
+    )
+    assert out.get("expected_noise_coverage_gate") is True
+    assert out.get("production_noise_recall_gate") is True
+    assert out.get("production_noise_fp_gate") is True
+
+
+def test_production_noise_gate_summary_fails_on_low_coverage():
+    mod = _load_module()
+    out = mod._production_noise_gate_summary(
+        {
+            "expected_noise_rows": 4,
+            "recall": 1.0,
+            "false_positive_rate": 0.01,
+        },
+        min_expected_noise_rows=20,
+        min_recall=0.90,
+        max_fp_rate=0.15,
+    )
+    assert out.get("expected_noise_coverage_gate") is False
+    assert out.get("production_noise_recall_gate") is False
