@@ -458,6 +458,50 @@ class SemanticRetriever:
         semantic_candidates: List[Tuple[str, float]] = []
         embedding_available = False
 
+        def _append_keyword_fallback(reason_suffix: str) -> int:
+            query_lower = query.lower()
+            query_words = set(re.findall(r"[a-z0-9]+", query_lower))
+            if not query_words:
+                return 0
+            scored: List[Tuple[float, str, Any]] = []
+            for key, insight in insights.items():
+                if key in seen:
+                    continue
+                text = getattr(insight, "insight", "") or ""
+                ctx = getattr(insight, "context", "") or ""
+                combined = f"{text} {ctx}".lower()
+                combined_words = set(re.findall(r"[a-z0-9]+", combined))
+                if not combined_words:
+                    continue
+                overlap = len(query_words & combined_words)
+                if overlap == 0:
+                    continue
+                jaccard = overlap / len(query_words | combined_words)
+                scored.append((jaccard, key, insight))
+            if not scored:
+                return 0
+            scored.sort(key=lambda t: t[0], reverse=True)
+            added = 0
+            for jaccard, key, insight in scored[: limit * 2]:
+                if key in seen:
+                    continue
+                seen.add(key)
+                added += 1
+                # Map jaccard to a pseudo-similarity score.
+                pseudo_sim = min(1.0, 0.5 + jaccard)
+                results.append(
+                    SemanticResult(
+                        insight_key=key,
+                        insight_text=getattr(insight, "insight", ""),
+                        semantic_sim=pseudo_sim,
+                        source_type="semantic",
+                        category=self._infer_category(insight),
+                        priority=self._infer_priority(pseudo_sim),
+                        why=f"Keyword: {jaccard:.2f} overlap {reason_suffix}",
+                    )
+                )
+            return added
+
         # Trigger rules (optional)
         if self.config.get("triggers_enabled", False):
             trigger_matches = self.trigger_matcher.match(context)
@@ -561,44 +605,13 @@ class SemanticRetriever:
                         why=f"Semantic: {sim:.2f} similar",
                     )
                 )
+            if not semantic_candidates:
+                # Guard against vector-index misses when embeddings are available.
+                # Without this, retrieval can collapse to empty even when lexical overlap exists.
+                _append_keyword_fallback("(embedding-empty)")
         else:
             # Keyword fallback when embeddings unavailable (graceful degradation)
-            query_lower = query.lower()
-            query_words = set(re.findall(r"[a-z0-9]+", query_lower))
-            if query_words:
-                scored: List[Tuple[float, str, Any]] = []
-                for key, insight in insights.items():
-                    if key in seen:
-                        continue
-                    text = getattr(insight, "insight", "") or ""
-                    ctx = getattr(insight, "context", "") or ""
-                    combined = f"{text} {ctx}".lower()
-                    combined_words = set(re.findall(r"[a-z0-9]+", combined))
-                    if not combined_words:
-                        continue
-                    overlap = len(query_words & combined_words)
-                    if overlap == 0:
-                        continue
-                    jaccard = overlap / len(query_words | combined_words)
-                    scored.append((jaccard, key, insight))
-                scored.sort(key=lambda t: t[0], reverse=True)
-                for jaccard, key, insight in scored[:limit * 2]:
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    # Map jaccard to a pseudo-similarity score
-                    pseudo_sim = min(1.0, 0.5 + jaccard)
-                    results.append(
-                        SemanticResult(
-                            insight_key=key,
-                            insight_text=getattr(insight, "insight", ""),
-                            semantic_sim=pseudo_sim,
-                            source_type="semantic",
-                            category=self._infer_category(insight),
-                            priority=self._infer_priority(pseudo_sim),
-                            why=f"Keyword: {jaccard:.2f} overlap (no embeddings)",
-                        )
-                    )
+            _append_keyword_fallback("(no-embeddings)")
 
         # Enrich scores
         for r in results:
@@ -607,6 +620,8 @@ class SemanticRetriever:
                 r.recency_score = self._compute_recency(insight)
                 r.outcome_score = self._get_outcome_effectiveness(r.insight_key, insight)
 
+        raw_result_count = len(results)
+
         # Filter noise insights from results (semantic only, triggers are pre-curated)
         noise_fn = self._get_noise_filter()
         if noise_fn:
@@ -614,6 +629,7 @@ class SemanticRetriever:
                 r for r in results
                 if r.source_type == "trigger" or not noise_fn(r.insight_text)
             ]
+        post_noise_count = len(results)
 
         # Category exclusions (semantic results only)
         exclude = set(self.config.get("category_exclude") or [])
@@ -630,6 +646,7 @@ class SemanticRetriever:
             r for r in results
             if r.source_type == "trigger" or r.semantic_sim >= min_sim
         ]
+        post_similarity_count = len(results)
 
         # Exclude noisy categories if configured
         exclude = {str(c).lower() for c in (self.config.get("exclude_categories") or []) if c}
@@ -645,6 +662,8 @@ class SemanticRetriever:
         # Filter by fusion score
         min_fusion = float(self.config.get("min_fusion_score", 0.5))
         results = [r for r in results if r.fusion_score >= min_fusion]
+        post_fusion_count = len(results)
+        rescue_used = False
         if not results and self.config.get("empty_result_rescue_enabled", True):
             results = self._rescue_empty_results(
                 candidates=pre_gate_results,
@@ -652,6 +671,7 @@ class SemanticRetriever:
                 min_similarity=min_sim,
                 min_fusion_score=min_fusion,
             )
+            rescue_used = bool(results)
 
         # Sort by fusion score
         results.sort(key=lambda r: r.fusion_score, reverse=True)
@@ -675,6 +695,11 @@ class SemanticRetriever:
             results=final_results,
             embedding_available=embedding_available,
             elapsed_ms=int((time.time() - start_ts) * 1000),
+            raw_result_count=raw_result_count,
+            post_noise_count=post_noise_count,
+            post_similarity_count=post_similarity_count,
+            post_fusion_count=post_fusion_count,
+            rescue_used=rescue_used,
         )
 
         return final_results
@@ -978,6 +1003,11 @@ class SemanticRetriever:
         results: List[SemanticResult],
         embedding_available: bool,
         elapsed_ms: int,
+        raw_result_count: int = 0,
+        post_noise_count: int = 0,
+        post_similarity_count: int = 0,
+        post_fusion_count: int = 0,
+        rescue_used: bool = False,
     ) -> None:
         if not self.config.get("log_retrievals", True):
             return
@@ -1009,6 +1039,11 @@ class SemanticRetriever:
                 "trigger_hits": int(trigger_hits),
                 "embedding_available": bool(embedding_available),
                 "elapsed_ms": int(elapsed_ms),
+                "raw_result_count": int(raw_result_count),
+                "post_noise_count": int(post_noise_count),
+                "post_similarity_count": int(post_similarity_count),
+                "post_fusion_count": int(post_fusion_count),
+                "rescue_used": bool(rescue_used),
                 "final_results": [
                     {
                         "key": r.insight_key,

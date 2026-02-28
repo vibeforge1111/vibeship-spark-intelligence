@@ -365,6 +365,61 @@ def test_auto_mode_can_override_high_risk_escalation_when_over_budget(monkeypatc
     assert route["escalated"] is True
 
 
+def test_auto_mode_allows_empty_primary_rescue_even_when_over_budget(monkeypatch, tmp_path):
+    _patch_advisor_runtime(monkeypatch, tmp_path)
+
+    class _SlowEmptyPrimaryRetriever:
+        def __init__(self):
+            self.calls = []
+
+        def retrieve(self, query: str, _insights, limit: int = 8):
+            import time as _time
+
+            self.calls.append(query)
+            _time.sleep(0.02)
+            if "failure pattern and fix" in query:
+                return [
+                    SimpleNamespace(
+                        insight_key="facet:rescue",
+                        insight_text="facet rescue result",
+                        semantic_sim=0.74,
+                        trigger_conf=0.0,
+                        fusion_score=0.74,
+                        source_type="semantic",
+                        why="facet retrieval",
+                    )
+                ][:limit]
+            return []
+
+    slow = _SlowEmptyPrimaryRetriever()
+    monkeypatch.setattr(semantic_retriever_mod, "get_semantic_retriever", lambda: slow)
+
+    advisor = advisor_mod.SparkAdvisor()
+    advisor.retrieval_policy = _policy_with(
+        advisor,
+        mode="auto",
+        escalate_on_high_risk=False,
+        max_queries=3,
+        agentic_query_limit=2,
+        fast_path_budget_ms=1,
+        deny_escalation_when_over_budget=True,
+        allow_high_risk_over_budget_escalation=False,
+        min_results_no_escalation=3,
+        min_top_score_no_escalation=0.7,
+    )
+
+    advice = advisor._get_semantic_cognitive_advice(
+        "Edit",
+        "auth token refresh failure with memory retrieval mismatch",
+    )
+    route = _load_last_route(tmp_path / "retrieval_router.jsonl")
+
+    assert advice
+    assert len(slow.calls) > 1  # primary + rescue facet
+    assert route["escalated"] is True
+    assert "deny_over_budget" not in (route.get("reasons") or [])
+
+
 def test_hybrid_agentic_mode_always_escalates(monkeypatch, tmp_path):
     _patch_advisor_runtime(monkeypatch, tmp_path)
     fake = _FakeRetriever(primary_count=3, primary_score=0.9)

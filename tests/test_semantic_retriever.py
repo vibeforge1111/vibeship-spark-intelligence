@@ -98,3 +98,18 @@ def test_auto_runtime_recalibrates_default_thresholds(monkeypatch):
     assert retriever.config["min_fusion_score"] <= 0.10
     assert retriever.config["rescue_min_similarity"] <= 0.10
     assert retriever.config["rescue_min_fusion_score"] <= 0.05
+
+
+def test_embeddings_empty_search_falls_back_to_keyword_overlap(monkeypatch):
+    retriever = _make_retriever(rescue_enabled=True)
+    monkeypatch.setattr(semantic_retriever_module, "embed_text", lambda _q: [1.0])
+    monkeypatch.setattr(retriever.index, "search", lambda _vec, limit=10: [])
+
+    insights = {
+        "k1": SimpleNamespace(insight="Use glob before edit to verify file paths", reliability=0.9),
+        "k2": SimpleNamespace(insight="Auth token validation in middleware", reliability=0.8),
+    }
+    results = retriever.retrieve("glob file path verification", insights, limit=3)
+
+    assert results
+    assert any("embedding-empty" in (r.why or "") for r in results)

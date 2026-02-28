@@ -87,6 +87,34 @@ _TRANSCRIPT_ARTIFACT_PATTERNS = (
     re.compile(r"^\s*user wanted[:\s]", re.I),
     re.compile(r"^\s*#\s*spark\s", re.I),
 )
+_RETRIEVAL_REWRITE_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "be",
+    "by",
+    "for",
+    "from",
+    "how",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "this",
+    "to",
+    "with",
+}
+_RETRIEVAL_REWRITE_GENERIC_PATTERNS = (
+    re.compile(r"^\s*failure pattern and fix\s*$", re.I),
+    re.compile(r"^\s*error handling and remediation\s*$", re.I),
+    re.compile(r"^\s*general debugging guidance\s*$", re.I),
+)
 RECENT_OUTCOMES_MAX = 5000
 # Defaults — overridden by config-authority resolution in _load_advisor_config().
 REPLAY_ADVISORY_ENABLED = True
@@ -187,7 +215,7 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "include_tool_specific_advice": False,
         "semantic_use_embeddings": False,
         "semantic_limit": 10,
-        "max_queries": 1,
+        "max_queries": 2,
         "agentic_query_limit": 1,
         "agentic_deadline_ms": 500,
         "agentic_rate_limit": 0.20,
@@ -2910,6 +2938,47 @@ class SparkAdvisor:
     # -- LLM area hooks (opt-in via llm_areas tuneable section) --
 
     @staticmethod
+    def _retrieval_rewrite_anchor_tokens(text: str) -> set[str]:
+        out: set[str] = set()
+        for token in re.findall(r"[a-z0-9_./-]+", str(text or "").lower()):
+            cleaned = token.strip("._-/")
+            if len(cleaned) < 3:
+                continue
+            if cleaned in _RETRIEVAL_REWRITE_STOPWORDS:
+                continue
+            if cleaned.isdigit():
+                continue
+            out.add(cleaned)
+        return out
+
+    @staticmethod
+    def _retrieval_rewrite_usable(original: str, rewritten: str, tool_name: str) -> bool:
+        base = str(original or "").strip()
+        candidate = str(rewritten or "").strip()
+        if not candidate:
+            return False
+        for pattern in _RETRIEVAL_REWRITE_GENERIC_PATTERNS:
+            if pattern.search(candidate):
+                return False
+        if candidate.lower() == base.lower():
+            return False
+
+        original_tokens = SparkAdvisor._retrieval_rewrite_anchor_tokens(base)
+        tool_tokens = SparkAdvisor._retrieval_rewrite_anchor_tokens(str(tool_name or ""))
+        if tool_tokens:
+            original_tokens |= tool_tokens
+        rewritten_tokens = SparkAdvisor._retrieval_rewrite_anchor_tokens(candidate)
+
+        if not original_tokens:
+            return len(rewritten_tokens) >= 2
+
+        overlap = len(original_tokens & rewritten_tokens)
+        if len(original_tokens) <= 2:
+            return overlap >= 1
+        required = max(2, int(math.ceil(len(original_tokens) * 0.35)))
+        return overlap >= required
+
+    @staticmethod
     def _llm_area_retrieval_rewrite(query: str, tool_name: str) -> str:
         """LLM area: rewrite retrieval query for better recall.
 
@@ -2925,8 +2994,9 @@ class SparkAdvisor:
                 tool_name=tool_name or "unknown",
             )
             result = llm_area_call("retrieval_rewrite", prompt, fallback=query)
-            if result.used_llm and result.text and result.text != query:
-                return result.text
+            rewritten = str(result.text or "").strip()
+            if result.used_llm and SparkAdvisor._retrieval_rewrite_usable(query, rewritten, tool_name):
+                return rewritten
             return query
         except Exception:
             return query
@@ -3131,6 +3201,7 @@ class SparkAdvisor:
             should_escalate
             and mode == "auto"
             and primary_over_budget
+            and primary_count > 0
             and bool(policy.get("deny_escalation_when_over_budget", True))
             and (
                 (not high_risk)

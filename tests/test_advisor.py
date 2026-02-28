@@ -875,7 +875,46 @@ class TestMindRetrievalGating:
 
 
 # ---------------------------------------------------------------------------
-# 16. AdviceOutcome dataclass
+# 16. Retrieval rewrite guardrails
+# ---------------------------------------------------------------------------
+
+class TestRetrievalRewriteGuardrails:
+
+    def test_rewrite_rejects_generic_degraded_query(self, monkeypatch, tmp_path):
+        adv = _build_advisor(monkeypatch, tmp_path)
+
+        class _Result:
+            used_llm = True
+            text = "failure pattern and fix"
+
+        monkeypatch.setattr("lib.llm_area_prompts.format_prompt", lambda *_a, **_kw: "prompt")
+        monkeypatch.setattr("lib.llm_dispatch.llm_area_call", lambda *_a, **_kw: _Result())
+
+        out = adv._llm_area_retrieval_rewrite(
+            "Edit src/server/auth.py to fix token refresh race condition",
+            "Edit",
+        )
+        assert out == "Edit src/server/auth.py to fix token refresh race condition"
+
+    def test_rewrite_accepts_anchor_preserving_query(self, monkeypatch, tmp_path):
+        adv = _build_advisor(monkeypatch, tmp_path)
+
+        class _Result:
+            used_llm = True
+            text = "Fix token refresh race in src/server/auth.py with lock-based update"
+
+        monkeypatch.setattr("lib.llm_area_prompts.format_prompt", lambda *_a, **_kw: "prompt")
+        monkeypatch.setattr("lib.llm_dispatch.llm_area_call", lambda *_a, **_kw: _Result())
+
+        out = adv._llm_area_retrieval_rewrite(
+            "Edit src/server/auth.py to fix token refresh race condition",
+            "Edit",
+        )
+        assert out == _Result.text
+
+
+# ---------------------------------------------------------------------------
+# 17. AdviceOutcome dataclass
 # ---------------------------------------------------------------------------
 
 class TestAdviceOutcome:
