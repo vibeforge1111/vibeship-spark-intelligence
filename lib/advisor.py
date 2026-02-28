@@ -2368,6 +2368,33 @@ class SparkAdvisor:
         trace_id: Optional[str] = None,
     ) -> None:
         payload = dict(entry or {})
+        route = str(payload.get("route") or "").strip()
+        if not route:
+            route = "unknown"
+        payload["route"] = route
+
+        reason = str(payload.get("reason") or "").strip()
+        if not reason:
+            reasons = payload.get("reasons")
+            if isinstance(reasons, list):
+                for candidate in reasons:
+                    token = str(candidate or "").strip()
+                    if token:
+                        reason = token
+                        break
+            if not reason:
+                if route == "empty":
+                    reason = "no_candidates"
+                elif route == "semantic-agentic":
+                    reason = "agentic_route_success"
+                elif route == "semantic":
+                    reason = "semantic_route_success"
+                elif route == "minimax_fast_rerank":
+                    reason = "applied" if bool(payload.get("routed")) else "skipped"
+                else:
+                    reason = "unspecified"
+        payload["reason"] = reason
+
         payload.setdefault("trace_id", str(trace_id or "").strip() or None)
         payload["ts"] = time.time()
         _append_jsonl_capped(RETRIEVAL_ROUTE_LOG, payload, RETRIEVAL_ROUTE_LOG_MAX)
@@ -2786,7 +2813,10 @@ class SparkAdvisor:
                         "trace_id": str(trace_id or "").strip(),
                         "route": "minimax_fast_rerank",
                         "routed": rerank_meta.get("used", False),
-                        "reason": str(rerank_meta.get("reason", "")),
+                        "reason": str(
+                            rerank_meta.get("reason")
+                            or ("applied" if bool(rerank_meta.get("used", False)) else "skipped")
+                        ),
                         "model": str(rerank_meta.get("model", "")),
                         "top_k": int(rerank_meta.get("top_k", 0)),
                         "order_len": int(rerank_meta.get("order_len", 0)),
@@ -2802,7 +2832,11 @@ class SparkAdvisor:
                         "trace_id": str(trace_id or "").strip(),
                         "route": "minimax_fast_rerank",
                         "routed": False,
-                        "reason": str(rerank_gate_meta.get("reason", "")),
+                        "reason": str(
+                            rerank_gate_meta.get("reason")
+                            or rerank_gate_meta.get("decision")
+                            or "skipped"
+                        ),
                         "decision": str(rerank_gate_meta.get("decision", "")),
                         "complexity_score": int((rerank_gate_meta.get("analysis") or {}).get("score", 0)),
                         "complexity_threshold": int((rerank_gate_meta.get("analysis") or {}).get("threshold", 0)),
@@ -3161,6 +3195,7 @@ class SparkAdvisor:
                     "domain_profile_enabled": bool(policy.get("domain_profile_enabled", True)),
                     "mode": mode,
                     "route": "empty",
+                    "reason": str(escalate_reasons[0] if escalate_reasons else "no_candidates"),
                     "escalated": should_escalate,
                     "primary_count": primary_count,
                     "primary_top_score": round(primary_top_score, 4),
@@ -3343,6 +3378,7 @@ class SparkAdvisor:
                 "mode": mode,
                 "gate_strategy": gate_strategy,
                 "route": semantic_source,
+                "reason": route_reason,
                 "escalated": used_agentic,
                 "primary_count": primary_count,
                 "primary_top_score": round(primary_top_score, 4),

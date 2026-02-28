@@ -92,13 +92,50 @@ def _run_replay_arena(seed: int, episodes: int, out_dir: Path) -> Dict[str, Any]
 def _route_mix_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     route_counter: Counter[str] = Counter()
     reason_counter: Counter[str] = Counter()
+    missing_route_fields = 0
+    missing_reason_fields = 0
+    empty_route_count = 0
+    unknown_reason_count = 0
+
     for row in rows:
-        route_counter[str(row.get("route") or "unknown")] += 1
-        reason_counter[str(row.get("reason") or "unknown")] += 1
+        route_raw = str(row.get("route") or "").strip()
+        route = route_raw or "unknown"
+        if not route_raw:
+            missing_route_fields += 1
+        if route == "empty":
+            empty_route_count += 1
+        route_counter[route] += 1
+
+        reason_raw = str(row.get("reason") or "").strip()
+        reason = reason_raw
+        if not reason:
+            reasons = row.get("reasons")
+            if isinstance(reasons, list):
+                for candidate in reasons:
+                    token = str(candidate or "").strip()
+                    if token:
+                        reason = token
+                        break
+        if not reason:
+            missing_reason_fields += 1
+            reason = "unknown"
+        if reason == "unknown":
+            unknown_reason_count += 1
+        reason_counter[reason] += 1
+
+    row_count = len(rows)
     return {
-        "rows": len(rows),
+        "rows": row_count,
         "route_mix": dict(route_counter),
         "reason_mix": dict(reason_counter),
+        "missing_route_fields": missing_route_fields,
+        "missing_reason_fields": missing_reason_fields,
+        "empty_route_count": empty_route_count,
+        "unknown_reason_count": unknown_reason_count,
+        "missing_route_rate": (missing_route_fields / row_count) if row_count else 0.0,
+        "missing_reason_rate": (missing_reason_fields / row_count) if row_count else 0.0,
+        "empty_route_rate": (empty_route_count / row_count) if row_count else 0.0,
+        "unknown_reason_rate": (unknown_reason_count / row_count) if row_count else 0.0,
     }
 
 
@@ -108,6 +145,9 @@ def main() -> int:
     ap.add_argument("--latency-p95-max-ms", type=float, default=2000.0, help="Maximum acceptable p95 latency (ms).")
     ap.add_argument("--noise-rate-max", type=float, default=0.05, help="Maximum acceptable overall noise rate.")
     ap.add_argument("--route-log-lines", type=int, default=1200, help="How many recent route rows to summarize.")
+    ap.add_argument("--route-min-rows", type=int, default=200, help="Minimum route telemetry rows required for gate validity.")
+    ap.add_argument("--route-empty-max", type=float, default=0.05, help="Maximum acceptable empty-route share.")
+    ap.add_argument("--reason-unknown-max", type=float, default=0.05, help="Maximum acceptable unknown-reason share.")
     ap.add_argument("--run-replay", action="store_true", help="Run replay arena and include promotion signal.")
     ap.add_argument("--replay-seed", type=int, default=42, help="Replay seed when --run-replay is enabled.")
     ap.add_argument("--replay-episodes", type=int, default=24, help="Replay episode count when --run-replay is enabled.")
@@ -123,11 +163,17 @@ def main() -> int:
 
     route_rows = _tail_jsonl(RETRIEVAL_ROUTE_LOG, max_lines=max(100, int(args.route_log_lines)))
     routes = _route_mix_summary(route_rows)
+    route_row_count = int(routes.get("rows") or 0)
+    empty_route_rate = float(routes.get("empty_route_rate") or 0.0)
+    unknown_reason_rate = float(routes.get("unknown_reason_rate") or 0.0)
 
     gates = {
         "precision_gate": precision >= float(args.precision_floor),
         "latency_gate": latency_p95 <= float(args.latency_p95_max_ms),
         "noise_gate": noise <= float(args.noise_rate_max),
+        "route_coverage_gate": route_row_count >= max(1, int(args.route_min_rows)),
+        "route_empty_gate": empty_route_rate <= float(args.route_empty_max),
+        "reason_unknown_gate": unknown_reason_rate <= float(args.reason_unknown_max),
     }
 
     replay_payload: Dict[str, Any] = {}
@@ -153,6 +199,9 @@ def main() -> int:
             "latency_p95_max_ms": float(args.latency_p95_max_ms),
             "noise_rate_max": float(args.noise_rate_max),
             "route_log_lines": int(args.route_log_lines),
+            "route_min_rows": int(args.route_min_rows),
+            "route_empty_max": float(args.route_empty_max),
+            "reason_unknown_max": float(args.reason_unknown_max),
             "run_replay": bool(args.run_replay),
             "replay_seed": int(args.replay_seed),
             "replay_episodes": int(args.replay_episodes),
