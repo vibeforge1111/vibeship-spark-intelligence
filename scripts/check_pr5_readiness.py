@@ -137,8 +137,13 @@ def main() -> int:
             episodes=int(args.replay_episodes),
             out_dir=OUT_DIR,
         )
+        # Replay stdout currently exposes gate fields at top-level.
+        # Keep a nested fallback for backward compatibility.
         promotion = replay_payload.get("promotion") or {}
-        gates["replay_promotion_gate"] = bool(promotion.get("promotion_gate_pass"))
+        gate_value = replay_payload.get("promotion_gate_pass")
+        if gate_value is None:
+            gate_value = promotion.get("promotion_gate_pass")
+        gates["replay_promotion_gate"] = bool(gate_value)
 
     report = {
         "run_id": run_id,
