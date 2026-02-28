@@ -170,6 +170,12 @@ def summarize_claude(rows: List[Dict[str, Any]], *, window_minutes: int = 60) ->
     payload_truncated = sum(1 for r in win if bool(r.get("payload_truncated")))
     capture_failures = sum(1 for r in win if not bool(r.get("capture_ok", True)))
 
+    # Claude hook payloads may omit full tool_result bodies while still emitting a
+    # valid post-tool event. Fidelity should gate on post/pre pairing, while
+    # payload richness is tracked separately.
+    event_capture_rate = _safe_ratio(result_events, max(1, pre_events))
+    payload_capture_rate = _safe_ratio(captured_results, max(1, result_events))
+
     return {
         "provider": "claude",
         "available": True,
@@ -188,7 +194,8 @@ def summarize_claude(rows: List[Dict[str, Any]], *, window_minutes: int = 60) ->
         },
         "kpis": {
             "workflow_event_ratio": round(_safe_ratio(workflow, max(1, total)), 4),
-            "tool_result_capture_rate": round(_safe_ratio(captured_results, max(1, pre_events)), 4),
+            "tool_result_capture_rate": round(event_capture_rate, 4),
+            "tool_result_payload_capture_rate": round(payload_capture_rate, 4),
             "truncated_tool_result_ratio": round(_safe_ratio(truncated_results, max(1, result_events)), 4),
             "skipped_by_filter_ratio": 0.0,
             "mode_shadow_ratio": 0.0,
@@ -366,8 +373,8 @@ def _render_markdown(
         "",
         "## Providers",
         "",
-        "| Provider | Status | workflow_event_ratio | tool_result_capture_rate | truncated_tool_result_ratio | skipped_by_filter_ratio | mode_shadow_ratio |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+        "| Provider | Status | workflow_event_ratio | tool_result_capture_rate | tool_result_payload_capture_rate | truncated_tool_result_ratio | skipped_by_filter_ratio | mode_shadow_ratio |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
 
     provider_alerts = alerts.get("providers") if isinstance(alerts.get("providers"), dict) else {}
@@ -375,7 +382,7 @@ def _render_markdown(
         summary = provider_summaries.get(provider) if isinstance(provider_summaries.get(provider), dict) else {}
         alert = provider_alerts.get(provider) if isinstance(provider_alerts.get(provider), dict) else {}
         if not summary.get("available"):
-            lines.append(f"| {provider} | unavailable | - | - | - | - | - |")
+            lines.append(f"| {provider} | unavailable | - | - | - | - | - | - |")
             continue
         k = summary.get("kpis") if isinstance(summary.get("kpis"), dict) else {}
         lines.append(
@@ -386,6 +393,7 @@ def _render_markdown(
                     str(alert.get("level") or "unknown"),
                     str(k.get("workflow_event_ratio", 0.0)),
                     str(k.get("tool_result_capture_rate", 0.0)),
+                    str(k.get("tool_result_payload_capture_rate", 0.0)),
                     str(k.get("truncated_tool_result_ratio", 0.0)),
                     str(k.get("skipped_by_filter_ratio", 0.0)),
                     str(k.get("mode_shadow_ratio", 0.0)),

@@ -83,7 +83,39 @@ def test_summarize_claude_from_observe_rows():
     assert out["window_rows"] == 2
     assert out["kpis"]["workflow_event_ratio"] == 1.0
     assert out["kpis"]["tool_result_capture_rate"] == 1.0
+    assert out["kpis"]["tool_result_payload_capture_rate"] == 1.0
     assert out["kpis"]["truncated_tool_result_ratio"] == 1.0
+
+
+def test_summarize_claude_separates_event_pairing_from_payload_capture():
+    rows = [
+        {
+            "ts": 2100.0,
+            "source": "claude_code",
+            "workflow_event": True,
+            "pre_event": True,
+            "tool_result_event": False,
+            "tool_result_captured": False,
+            "tool_result_truncated": False,
+            "payload_truncated": False,
+            "capture_ok": True,
+        },
+        {
+            "ts": 2101.0,
+            "source": "claude_code",
+            "workflow_event": True,
+            "pre_event": False,
+            "tool_result_event": True,
+            "tool_result_captured": False,
+            "tool_result_truncated": False,
+            "payload_truncated": False,
+            "capture_ok": True,
+        },
+    ]
+    out = wf.summarize_claude(rows, window_minutes=60)
+    assert out["available"] is True
+    assert out["kpis"]["tool_result_capture_rate"] == 1.0
+    assert out["kpis"]["tool_result_payload_capture_rate"] == 0.0
 
 
 def test_evaluate_alerts_escalates_to_critical_when_stale_and_repeated(tmp_path):
