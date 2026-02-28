@@ -240,7 +240,7 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
     report_center_summary = generate_report_center(obs_dir=obs_dir)
 
     # Generate stage pages
-    files_written = 25  # flow + reverse + 13 advisory context pages + tuneables_dive + llm_areas + comprehensive + playbook + recovery + 5 readability pages
+    files_written = 26  # flow + reverse + 14 advisory context pages + tuneables_dive + llm_areas + comprehensive + playbook + recovery + 5 readability pages
     files_written += int(report_center_summary.get("files_written") or 0)
     if curriculum_summary.get("written"):
         files_written += 1  # eidos_curriculum.md

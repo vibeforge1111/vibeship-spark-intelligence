@@ -293,6 +293,7 @@ def generate_flow_dashboard(data: dict[int, dict[str, Any]]) -> str:
     sections.append("- [[advisory_trace_lineage|Advisory Trace Lineage]] - trace-level lineage from capture through feedback")
     sections.append("- [[advisory_emission_lineage_deep|Advisory Emission Lineage Deep Dive]] - latest 100 advisories reverse-engineered end-to-end (trace first, stage-by-stage)")
     sections.append("- [[meta_ralph_trace_binding_health|Meta-Ralph Trace Binding Health]] - 4h/24h trace coverage and missing-trace sources")
+    sections.append("- [[intelligence_intake_lifecycle|Intelligence Intake Lifecycle]] - full intake ledger: received -> verdict -> stored/dropped with reasons")
     sections.append("- [[advisory_unknown_helpfulness_burndown|Unknown Helpfulness Burn-Down]] - daily unknown-label reduction and queue health")
     sections.append("- [[advisory_suppression_replay|Suppression Decision Replay]] - blocked advisories with reason replay and trace drill")
     sections.append("- [[advisory_context_drift|Context Drift Panel]] - distribution drift across tools, routes, providers, and suppression")

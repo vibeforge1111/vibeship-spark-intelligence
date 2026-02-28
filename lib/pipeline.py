@@ -706,6 +706,7 @@ def store_deep_learnings(
     try:
         from lib.cognitive_learner import get_cognitive_learner, CognitiveCategory
         from lib.meta_ralph import get_meta_ralph, RoastVerdict
+        from lib.intelligence_observability import log_intelligence_flow_event
         learner = get_cognitive_learner()
         ralph = get_meta_ralph()
 
@@ -722,12 +723,35 @@ def store_deep_learnings(
             debug["attempted"] = int(debug.get("attempted", 0)) + 1
             roast_payload = dict(roast_context or {})
             trace_hint = str(trace_id or roast_payload.get("trace_id") or "").strip()
+            category_text = str(getattr(category, "value", category) or "")
+            item_id = log_intelligence_flow_event(
+                stage="pipeline_intake",
+                action="received",
+                text=insight_text,
+                source=source,
+                category=category_text,
+                context=context,
+                trace_id=trace_hint or None,
+                extra={"events_processed": events_processed},
+            )
             if trace_hint:
                 roast_payload["trace_id"] = trace_hint
             roast_payload.setdefault("source", source)
             roast_payload.setdefault("context_excerpt", str(context or "")[:240])
             roast_result = ralph.roast(insight_text, source=source, context=roast_payload)
             verdict_value = str(getattr(roast_result.verdict, "value", roast_result.verdict) or "gate_rejected").lower()
+            log_intelligence_flow_event(
+                stage="pipeline_meta_ralph",
+                action="verdict",
+                text=insight_text,
+                source=source,
+                category=category_text,
+                context=context,
+                trace_id=trace_hint or None,
+                item_id=item_id,
+                verdict=verdict_value,
+                extra={"score_total": getattr(getattr(roast_result, "score", None), "total", None)},
+            )
 
             # Keep strict default, but allow low-volume pipeline cycles to pass non-primitive verdicts.
             allow_low_volume_pass = (
@@ -749,13 +773,50 @@ def store_deep_learnings(
                 ))
                 if ok:
                     debug["stored"] = int(debug.get("stored", 0)) + 1
+                    log_intelligence_flow_event(
+                        stage="pipeline_store",
+                        action="stored",
+                        text=final_text,
+                        source=source,
+                        category=category_text,
+                        context=context,
+                        trace_id=trace_hint or None,
+                        item_id=item_id,
+                        reason="pipeline_add_insight",
+                        stored=True,
+                    )
                 else:
                     skipped = debug.setdefault("skipped", {})
                     skipped["storage_rejected"] = int(skipped.get("storage_rejected", 0)) + 1
+                    log_intelligence_flow_event(
+                        stage="pipeline_store",
+                        action="dropped",
+                        text=final_text,
+                        source=source,
+                        category=category_text,
+                        context=context,
+                        trace_id=trace_hint or None,
+                        item_id=item_id,
+                        reason="storage_rejected",
+                        stored=False,
+                    )
                 return ok
 
             skipped = debug.setdefault("skipped", {})
             skipped[verdict_value] = int(skipped.get(verdict_value, 0)) + 1
+            log_intelligence_flow_event(
+                stage="pipeline_meta_ralph",
+                action="dropped",
+                text=insight_text,
+                source=source,
+                category=category_text,
+                context=context,
+                trace_id=trace_hint or None,
+                item_id=item_id,
+                verdict=verdict_value,
+                reason=f"verdict:{verdict_value}",
+                stored=False,
+            )
             return False
 
         # Tool effectiveness insights

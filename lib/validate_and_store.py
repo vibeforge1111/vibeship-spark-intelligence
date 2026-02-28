@@ -155,7 +155,40 @@ def validate_and_store_insight(
         except Exception:
             return ""
 
+    trace_hint = str(trace_id or "").strip()
+    try:
+        from .intelligence_observability import log_intelligence_flow_event
+        item_id = log_intelligence_flow_event(
+            stage="intake",
+            action="received",
+            text=text,
+            source=source,
+            category=str(getattr(category, "value", category) or ""),
+            context=context,
+            trace_id=trace_hint or None,
+            extra={
+                "return_details": bool(return_details),
+                "record_exposure": bool(record_exposure),
+            },
+        )
+    except Exception:
+        log_intelligence_flow_event = None  # type: ignore[assignment]
+        item_id = ""
+
     if not text or not str(text).strip():
+        if log_intelligence_flow_event:
+            log_intelligence_flow_event(
+                stage="intake",
+                action="dropped",
+                text=text,
+                source=source,
+                category=str(getattr(category, "value", category) or ""),
+                context=context,
+                trace_id=trace_hint or None,
+                item_id=item_id,
+                reason="empty_text",
+                stored=False,
+            )
         return _result(False)
 
     # Rollback switch: bypass validation, direct write
@@ -172,11 +205,51 @@ def validate_and_store_insight(
                 record_exposure=record_exposure,
             )
             if result is None:
+                if log_intelligence_flow_event:
+                    log_intelligence_flow_event(
+                        stage="store",
+                        action="dropped",
+                        text=text,
+                        source=source,
+                        category=str(getattr(category, "value", category) or ""),
+                        context=context,
+                        trace_id=trace_hint or None,
+                        item_id=item_id,
+                        reason="bypass_storage_rejected",
+                        stored=False,
+                    )
                 return _result(False, stored_text=text)
             final_text = str(getattr(result, "insight", text) or text)
+            if log_intelligence_flow_event:
+                log_intelligence_flow_event(
+                    stage="store",
+                    action="stored",
+                    text=final_text,
+                    source=source,
+                    category=str(getattr(category, "value", category) or ""),
+                    context=context,
+                    trace_id=trace_hint or None,
+                    item_id=item_id,
+                    insight_key=_derive_key(cog, final_text),
+                    stored=True,
+                    reason="bypass_enabled",
+                )
             return _result(True, insight_key=_derive_key(cog, final_text), stored_text=final_text)
         except Exception as e:
             log_debug("validate_and_store", "bypass_write_failed", e)
+            if log_intelligence_flow_event:
+                log_intelligence_flow_event(
+                    stage="store",
+                    action="error",
+                    text=text,
+                    source=source,
+                    category=str(getattr(category, "value", category) or ""),
+                    context=context,
+                    trace_id=trace_hint or None,
+                    item_id=item_id,
+                    reason=f"bypass_exception:{type(e).__name__}",
+                    stored=False,
+                )
             return _result(False)
 
     _record("total_attempted")
@@ -186,7 +259,6 @@ def validate_and_store_insight(
         from .meta_ralph import get_meta_ralph, RoastVerdict
         ralph = get_meta_ralph()
         roast_payload = dict(roast_context or {})
-        trace_hint = str(trace_id or "").strip()
         if trace_hint and not roast_payload.get("trace_id"):
             roast_payload["trace_id"] = trace_hint
         if context and not roast_payload.get("context_excerpt"):
@@ -196,13 +268,57 @@ def validate_and_store_insight(
 
         roast_result = ralph.roast(text, source=source, context=roast_payload)
         verdict = roast_result.verdict
+        if log_intelligence_flow_event:
+            log_intelligence_flow_event(
+                stage="meta_ralph",
+                action="verdict",
+                text=text,
+                source=source,
+                category=str(getattr(category, "value", category) or ""),
+                context=context,
+                trace_id=trace_hint or None,
+                item_id=item_id,
+                verdict=str(getattr(verdict, "value", verdict)),
+                reason="roast_complete",
+                extra={
+                    "score_total": getattr(getattr(roast_result, "score", None), "total", None),
+                },
+            )
 
         if verdict == RoastVerdict.PRIMITIVE:
             _record("roast_primitive")
+            if log_intelligence_flow_event:
+                log_intelligence_flow_event(
+                    stage="meta_ralph",
+                    action="dropped",
+                    text=text,
+                    source=source,
+                    category=str(getattr(category, "value", category) or ""),
+                    context=context,
+                    trace_id=trace_hint or None,
+                    item_id=item_id,
+                    verdict="primitive",
+                    reason="primitive",
+                    stored=False,
+                )
             return False
 
         if verdict == RoastVerdict.DUPLICATE:
             _record("roast_duplicate")
+            if log_intelligence_flow_event:
+                log_intelligence_flow_event(
+                    stage="meta_ralph",
+                    action="dropped",
+                    text=text,
+                    source=source,
+                    category=str(getattr(category, "value", category) or ""),
+                    context=context,
+                    trace_id=trace_hint or None,
+                    item_id=item_id,
+                    verdict="duplicate",
+                    reason="duplicate",
+                    stored=False,
+                )
             return False
 
         if verdict == RoastVerdict.NEEDS_WORK:
@@ -230,6 +346,18 @@ def validate_and_store_insight(
         except Exception:
             pass
         log_debug("validate_and_store", "meta_ralph_failed_quarantined_continuing", e)
+        if log_intelligence_flow_event:
+            log_intelligence_flow_event(
+                stage="meta_ralph",
+                action="error",
+                text=text,
+                source=source,
+                category=str(getattr(category, "value", category) or ""),
+                context=context,
+                trace_id=trace_hint or None,
+                item_id=item_id,
+                reason=f"meta_ralph_exception:{type(e).__name__}",
+            )
         # Fall through to cognitive storage (true fail-open)
 
     # Step 2: Store through cognitive learner (has built-in noise filter)
@@ -247,13 +375,54 @@ def validate_and_store_insight(
         if result is not None:
             _record("stored")
             final_text = str(getattr(result, "insight", text) or text)
-            return _result(True, insight_key=_derive_key(cog, final_text), stored_text=final_text)
+            insight_key = _derive_key(cog, final_text)
+            if log_intelligence_flow_event:
+                log_intelligence_flow_event(
+                    stage="store",
+                    action="stored",
+                    text=final_text,
+                    source=source,
+                    category=str(getattr(category, "value", category) or ""),
+                    context=context,
+                    trace_id=trace_hint or None,
+                    item_id=item_id,
+                    insight_key=insight_key,
+                    stored=True,
+                    reason="cognitive_add_insight",
+                )
+            return _result(True, insight_key=insight_key, stored_text=final_text)
         else:
             _record("noise_filtered")
+            if log_intelligence_flow_event:
+                log_intelligence_flow_event(
+                    stage="store",
+                    action="dropped",
+                    text=text,
+                    source=source,
+                    category=str(getattr(category, "value", category) or ""),
+                    context=context,
+                    trace_id=trace_hint or None,
+                    item_id=item_id,
+                    reason="noise_filtered",
+                    stored=False,
+                )
             return _result(False, stored_text=text)
     except Exception as e:
         _record("storage_failed")
         log_debug("validate_and_store", "cognitive_store_failed", e)
+        if log_intelligence_flow_event:
+            log_intelligence_flow_event(
+                stage="store",
+                action="error",
+                text=text,
+                source=source,
+                category=str(getattr(category, "value", category) or ""),
+                context=context,
+                trace_id=trace_hint or None,
+                item_id=item_id,
+                reason=f"storage_exception:{type(e).__name__}",
+                stored=False,
+            )
         return _result(False, stored_text=text)
 
 

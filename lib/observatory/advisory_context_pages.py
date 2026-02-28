@@ -2712,6 +2712,153 @@ def _intelligence_signal_tables_page() -> str:
     return "\n".join(lines)
 
 
+def _intelligence_intake_lifecycle_page() -> str:
+    rows, stats = _read_jsonl(_SD / "intelligence_flow_events.jsonl", max_rows=120000)
+    rows = sorted(rows, key=_extract_ts, reverse=True)
+    by_item: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        item_id = _norm_text(row.get("item_id"))
+        if not item_id:
+            continue
+        by_item[item_id].append(row)
+
+    item_summaries: list[dict[str, Any]] = []
+    for item_id, item_rows in by_item.items():
+        ordered = sorted(item_rows, key=_extract_ts)
+        first = ordered[0]
+        last = ordered[-1]
+        trace_id = _norm_text(first.get("trace_id") or last.get("trace_id"))
+        source = _norm_text(first.get("source") or last.get("source")) or "unknown"
+        category = _norm_text(first.get("category") or last.get("category")) or "-"
+        text = _norm_text(first.get("text_excerpt") or last.get("text_excerpt"))
+        verdicts = [str(r.get("verdict") or "").strip() for r in ordered if str(r.get("verdict") or "").strip()]
+        reasons = [str(r.get("reason") or "").strip() for r in ordered if str(r.get("reason") or "").strip()]
+        actions = [f"{_norm_text(r.get('stage'))}:{_norm_text(r.get('action'))}" for r in ordered]
+        item_summaries.append(
+            {
+                "item_id": item_id,
+                "first_ts": _extract_ts(first),
+                "last_ts": _extract_ts(last),
+                "trace_id": trace_id,
+                "source": source,
+                "category": category,
+                "text": text,
+                "actions": actions,
+                "last_action": _norm_text(last.get("action")) or "-",
+                "last_stage": _norm_text(last.get("stage")) or "-",
+                "verdict": verdicts[-1] if verdicts else "-",
+                "reason": reasons[-1] if reasons else "-",
+                "stored": _norm_text(last.get("stored")),
+            }
+        )
+    item_summaries.sort(key=lambda row: row.get("last_ts", 0.0), reverse=True)
+
+    stage_counts = Counter(_norm_text(row.get("stage")) or "-" for row in rows)
+    action_counts = Counter(_norm_text(row.get("action")) or "-" for row in rows)
+    source_counts = Counter(_norm_text(row.get("source")) or "-" for row in rows)
+    reason_counts = Counter(_norm_text(row.get("reason")) or "-" for row in rows if _norm_text(row.get("reason")))
+
+    lines = [
+        "---",
+        "title: Intelligence Intake Lifecycle",
+        "tags:",
+        "  - observatory",
+        "  - intake",
+        "  - lifecycle",
+        "  - traceability",
+        "---",
+        "",
+        "# Intelligence Intake Lifecycle",
+        "",
+        f"> {flow_link()} | [[advisory_emission_lineage_deep|Advisory Emission Lineage Deep Dive]]",
+        "",
+        "Complete intake ledger for intelligence candidates entering Spark and what happened to each one.",
+        "",
+        "## Ledger Stats",
+        "",
+        f"- Rows loaded: `{len(rows)}` (file lines: `{stats.get('lines', 0)}`, invalid: `{stats.get('invalid_lines', 0)}`)",
+        f"- Distinct item_ids: `{len(item_summaries)}`",
+        "",
+        "## Stage/Action Distribution",
+        "",
+        "| dimension | top entries |",
+        "|-----------|-------------|",
+        f"| stage | {_md_escape('; '.join(f'{k}:{v}' for k, v in stage_counts.most_common(8)) or '-')} |",
+        f"| action | {_md_escape('; '.join(f'{k}:{v}' for k, v in action_counts.most_common(8)) or '-')} |",
+        f"| source | {_md_escape('; '.join(f'{k}:{v}' for k, v in source_counts.most_common(8)) or '-')} |",
+        f"| reason | {_md_escape('; '.join(f'{k}:{v}' for k, v in reason_counts.most_common(8)) or '-')} |",
+        "",
+        f"## Item Lifecycle Table (Latest {min(len(item_summaries), 220)})",
+        "",
+        "| last ts | item_id | trace | source | category | stage/action | verdict | stored | reason | text excerpt |",
+        "|---------|---------|-------|--------|----------|--------------|---------|--------|--------|--------------|",
+    ]
+    for row in item_summaries[:220]:
+        stage_action = f"{_norm_text(row.get('last_stage'))}:{_norm_text(row.get('last_action'))}"
+        lines.append(
+            f"| {_fmt_ts(_to_float(row.get('last_ts'), 0.0))} | `{_short(_norm_text(row.get('item_id')), 18)}` | "
+            f"`{_short(_norm_text(row.get('trace_id')) or '-', 20)}` | {_md_escape(_norm_text(row.get('source')))} | "
+            f"{_md_escape(_norm_text(row.get('category')))} | {_md_escape(stage_action, 42)} | "
+            f"{_md_escape(_norm_text(row.get('verdict')))} | {_md_escape(_norm_text(row.get('stored')) or '-')} | "
+            f"{_md_escape(_norm_text(row.get('reason')) or '-')} | {_md_escape(_norm_text(row.get('text')), 115)} |"
+        )
+    if not item_summaries:
+        lines.append("| - | - | - | - | - | - | - | - | - | - |")
+    lines.append("")
+
+    lines.extend(
+        [
+            f"## Per-Item Event Trails (Latest {min(len(item_summaries), 120)})",
+            "",
+            "Each trail shows exactly what happened to the item across intake, Meta-Ralph, and storage stages.",
+            "",
+        ]
+    )
+    for idx, summary in enumerate(item_summaries[:120], start=1):
+        item_id = _norm_text(summary.get("item_id"))
+        trails = sorted(by_item.get(item_id, []), key=_extract_ts)
+        lines.extend(
+            [
+                f"### {idx}. `{item_id}`",
+                "",
+                f"- Trace: `{_norm_text(summary.get('trace_id')) or '-'}` | source=`{_norm_text(summary.get('source')) or '-'}` | category=`{_norm_text(summary.get('category')) or '-'}`",
+                f"- Text: {_norm_text(summary.get('text')) or '-'}",
+                "",
+            ]
+        )
+        for row in trails:
+            stage = _norm_text(row.get("stage")) or "-"
+            action = _norm_text(row.get("action")) or "-"
+            verdict = _norm_text(row.get("verdict")) or "-"
+            stored = _norm_text(row.get("stored")) or "-"
+            reason = _norm_text(row.get("reason")) or "-"
+            lines.append(
+                f"- `{_fmt_ts(_extract_ts(row))}` stage=`{stage}` action=`{action}` verdict=`{verdict}` stored=`{stored}` reason=`{reason}`"
+            )
+        lines.append("")
+
+    lines.extend(
+        [
+            f"## Raw Intake Events (Latest {min(len(rows), 1200)})",
+            "",
+            "| ts | item_id | trace | stage | action | source | verdict | stored | reason | excerpt |",
+            "|----|---------|-------|-------|--------|--------|---------|--------|--------|---------|",
+        ]
+    )
+    for row in rows[:1200]:
+        lines.append(
+            f"| {_fmt_ts(_extract_ts(row))} | `{_short(_norm_text(row.get('item_id')), 18)}` | "
+            f"`{_short(_norm_text(row.get('trace_id')) or '-', 20)}` | {_md_escape(_norm_text(row.get('stage')) or '-')} | "
+            f"{_md_escape(_norm_text(row.get('action')) or '-')} | {_md_escape(_norm_text(row.get('source')) or '-')} | "
+            f"{_md_escape(_norm_text(row.get('verdict')) or '-')} | {_md_escape(_norm_text(row.get('stored')) or '-')} | "
+            f"{_md_escape(_norm_text(row.get('reason')) or '-')} | {_md_escape(_norm_text(row.get('text_excerpt')) or '-', 105)} |"
+        )
+    if not rows:
+        lines.append("| - | - | - | - | - | - | - | - | - | - |")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _intelligence_constitution_page() -> str:
     lines = [
         "---",
@@ -2764,6 +2911,7 @@ def generate_advisory_context_pages(data: dict[int, dict[str, Any]]) -> dict[str
         "advisory_trace_lineage.md": _trace_lineage_page(data),
         "advisory_emission_lineage_deep.md": _advisory_emission_lineage_deep_page(sample_size=100),
         "meta_ralph_trace_binding_health.md": _meta_ralph_trace_binding_health_page(),
+        "intelligence_intake_lifecycle.md": _intelligence_intake_lifecycle_page(),
         "advisory_unknown_helpfulness_burndown.md": _unknown_helpfulness_page(data),
         "advisory_suppression_replay.md": _suppression_replay_page(),
         "advisory_context_drift.md": _context_drift_page(),
