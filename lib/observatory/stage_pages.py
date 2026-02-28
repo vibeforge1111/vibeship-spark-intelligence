@@ -718,6 +718,11 @@ def _gen_advisory(d: dict, all_data: dict) -> str:
 
     s += "## Deep Dive\n\n"
     s += "- [[../advisory_reverse_engineering|Advisory Reverse Engineering]] - full path map + suppression diagnostics\n"
+    s += "- [[../advisory_trace_lineage|Advisory Trace Lineage]] - trace-level lineage across capture, decision, and feedback\n"
+    s += "- [[../advisory_unknown_helpfulness_burndown|Unknown Helpfulness Burn-Down]] - unknown-label trend and queue burn-down\n"
+    s += "- [[../advisory_suppression_replay|Suppression Decision Replay]] - reason-level blocked advisory replay\n"
+    s += "- [[../advisory_context_drift|Context Drift Panel]] - distribution drift by tool, route, provider, and suppression\n"
+    s += "- [[../advisory_data_integrity|Advisory Data Quality Integrity]] - source/freshness/trace integrity matrix\n"
     s += "- [[../explore/decisions/_index|Advisory Decision Ledger]] — emit/suppress/block decisions\n"
     s += "- [[../explore/feedback/_index|Implicit Feedback Loop]] — per-tool follow rates\n"
     s += "- [[../explore/helpfulness/_index|Helpfulness Calibration]] - watcher labels, conflict trend, and LLM review queue\n"

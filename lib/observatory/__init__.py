@@ -121,6 +121,7 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
     Returns a summary dict with file counts and timing.
     """
     from .advisory_reverse_engineering import generate_advisory_reverse_engineering
+    from .advisory_context_pages import generate_advisory_context_pages
     from .canvas_generator import generate_canvas
     from .explorer import generate_explorer
     from .flow_dashboard import generate_flow_dashboard
@@ -196,6 +197,10 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
     reverse_content = generate_advisory_reverse_engineering(data)
     reverse_path.write_text(reverse_content, encoding="utf-8")
 
+    advisory_context_pages = generate_advisory_context_pages(data)
+    for filename, content in advisory_context_pages.items():
+        (obs_dir / filename).write_text(content, encoding="utf-8")
+
     # Generate tuneables deep dive page
     tuneables_dive_path = obs_dir / "tuneables_deep_dive.md"
     tuneables_dive_content = generate_tuneables_deep_dive(data)
@@ -231,7 +236,7 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
     recovery_path.write_text(recovery_content, encoding="utf-8")
 
     # Generate stage pages
-    files_written = 12  # flow + reverse + tuneables_dive + llm_areas + comprehensive + playbook + recovery + 5 readability pages
+    files_written = 17  # flow + reverse + 5 advisory context pages + tuneables_dive + llm_areas + comprehensive + playbook + recovery + 5 readability pages
     if curriculum_summary.get("written"):
         files_written += 1  # eidos_curriculum.md
     for filename, content in generate_all_stage_pages(data):
