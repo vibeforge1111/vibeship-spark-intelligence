@@ -57,3 +57,30 @@ def test_build_production_noise_report_detects_known_live_noise_shapes(tmp_path:
     assert isinstance(report.get("false_positive_examples"), list)
     assert isinstance(report.get("detailed_rows"), list)
 
+
+def test_production_noise_report_treats_failure_telemetry_as_non_signal(tmp_path: Path) -> None:
+    spark_dir = tmp_path / ".spark"
+    spark_dir.mkdir(parents=True, exist_ok=True)
+    (spark_dir / "cognitive_insights.json").write_text(
+        json.dumps(
+            {
+                "telemetry_like": {
+                    "insight": "[SPARK] Use Bash for git operations. Be aware exec_command has shown a transient 33% failure rate."
+                },
+                "clear_signal": {
+                    "insight": "Use Glob first to verify file paths before Edit so refactors target the right files."
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = build_production_noise_report(
+        spark_dir=spark_dir,
+        max_rows_per_source=20,
+        detail_rows=20,
+    )
+    rows = report.get("detailed_rows") or []
+    telemetry_rows = [r for r in rows if r.get("id") == "telemetry_like"]
+    assert telemetry_rows
+    assert telemetry_rows[0].get("expected_signal") is False

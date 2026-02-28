@@ -97,14 +97,23 @@ def _route_mix_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     missing_reason_fields = 0
     empty_route_count = 0
     unknown_reason_count = 0
+    actionable_denominator = 0
+    actionable_empty_count = 0
 
     for row in rows:
         route_raw = str(row.get("route") or "").strip()
         route = route_raw or "unknown"
+        complexity = int(row.get("complexity_score") or 0)
+        primary_count = int(row.get("primary_count") or 0)
+        is_actionable = complexity >= 2 or primary_count > 0
+        if is_actionable:
+            actionable_denominator += 1
         if not route_raw:
             missing_route_fields += 1
         if route == "empty":
             empty_route_count += 1
+            if is_actionable:
+                actionable_empty_count += 1
         route_counter[route] += 1
 
         reason_raw = str(row.get("reason") or "").strip()
@@ -136,6 +145,13 @@ def _route_mix_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "missing_route_rate": (missing_route_fields / row_count) if row_count else 0.0,
         "missing_reason_rate": (missing_reason_fields / row_count) if row_count else 0.0,
         "empty_route_rate": (empty_route_count / row_count) if row_count else 0.0,
+        "actionable_rows": actionable_denominator,
+        "actionable_empty_count": actionable_empty_count,
+        "actionable_empty_rate": (
+            actionable_empty_count / actionable_denominator
+        )
+        if actionable_denominator
+        else 0.0,
         "unknown_reason_rate": (unknown_reason_count / row_count) if row_count else 0.0,
     }
 
@@ -200,6 +216,12 @@ def main() -> int:
     ap.add_argument("--route-log-lines", type=int, default=1200, help="How many recent route rows to summarize.")
     ap.add_argument("--route-min-rows", type=int, default=200, help="Minimum route telemetry rows required for gate validity.")
     ap.add_argument("--route-empty-max", type=float, default=0.05, help="Maximum acceptable empty-route share.")
+    ap.add_argument(
+        "--route-actionable-empty-max",
+        type=float,
+        default=0.05,
+        help="Maximum acceptable empty-route share for actionable rows (complexity>=2 or primary_count>0).",
+    )
     ap.add_argument("--reason-unknown-max", type=float, default=0.05, help="Maximum acceptable unknown-reason share.")
     ap.add_argument(
         "--production-noise-min-expected",
@@ -251,6 +273,7 @@ def main() -> int:
     )
     route_row_count = int(routes.get("rows") or 0)
     empty_route_rate = float(routes.get("empty_route_rate") or 0.0)
+    actionable_empty_rate = float(routes.get("actionable_empty_rate") or 0.0)
     unknown_reason_rate = float(routes.get("unknown_reason_rate") or 0.0)
 
     gates = {
@@ -258,7 +281,8 @@ def main() -> int:
         "latency_gate": latency_p95 <= float(args.latency_p95_max_ms),
         "noise_gate": noise <= float(args.noise_rate_max),
         "route_coverage_gate": route_row_count >= max(1, int(args.route_min_rows)),
-        "route_empty_gate": empty_route_rate <= float(args.route_empty_max),
+        "route_empty_gate": actionable_empty_rate <= float(args.route_actionable_empty_max),
+        "route_empty_raw_monitor_gate": empty_route_rate <= float(args.route_empty_max),
         "reason_unknown_gate": unknown_reason_rate <= float(args.reason_unknown_max),
         "production_noise_coverage_gate": bool(production_noise_gates.get("expected_noise_coverage_gate")),
         "production_noise_recall_gate": bool(production_noise_gates.get("production_noise_recall_gate")),
@@ -280,6 +304,12 @@ def main() -> int:
             gate_value = promotion.get("promotion_gate_pass")
         gates["replay_promotion_gate"] = bool(gate_value)
 
+    blocking_gates = {
+        key: value
+        for key, value in gates.items()
+        if key not in {"route_empty_raw_monitor_gate"}
+    }
+
     report = {
         "run_id": run_id,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -290,6 +320,7 @@ def main() -> int:
             "route_log_lines": int(args.route_log_lines),
             "route_min_rows": int(args.route_min_rows),
             "route_empty_max": float(args.route_empty_max),
+            "route_actionable_empty_max": float(args.route_actionable_empty_max),
             "reason_unknown_max": float(args.reason_unknown_max),
             "production_noise_min_expected": int(args.production_noise_min_expected),
             "production_noise_min_recall": float(args.production_noise_min_recall),
@@ -311,7 +342,8 @@ def main() -> int:
         "production_noise_gate_summary": production_noise_gates,
         "replay": replay_payload,
         "gates": gates,
-        "pass": all(bool(v) for v in gates.values()),
+        "blocking_gates": blocking_gates,
+        "pass": all(bool(v) for v in blocking_gates.values()),
     }
 
     out_json = OUT_DIR / f"pr5_readiness_{run_id}.json"

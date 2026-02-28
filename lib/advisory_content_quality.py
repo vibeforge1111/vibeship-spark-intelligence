@@ -42,6 +42,13 @@ _SIGNAL_HINT_RE = re.compile(
     r"dedupe|cooldown|fallback|rerank|distillation)\b",
     re.I,
 )
+_TELEMETRY_LINE_RE = re.compile(
+    r"\b(success rate|failure rate|read failed|tool results? failed|transient failure|"
+    r"\d+%[^.\n]{0,60}\bfailure)\b",
+    re.I,
+)
+_GENERIC_CAUTION_RE = re.compile(r"\b(be aware|be cautious|expect a)\b", re.I)
+_ACTIONABLE_VERB_RE = re.compile(r"\b(use|enforce|validate|check|add|remove|fix|refactor)\b", re.I)
 
 
 def _norm_text(value: Any) -> str:
@@ -175,6 +182,12 @@ def _expected_signal(text: str) -> bool:
     if not _SIGNAL_HINT_RE.search(sample):
         return False
     if sample.endswith("?") and len(sample.split()) <= 20:
+        return False
+    if _TELEMETRY_LINE_RE.search(sample):
+        return False
+    if _GENERIC_CAUTION_RE.search(sample) and not _ACTIONABLE_VERB_RE.search(sample):
+        return False
+    if sample.startswith("[SPARK]") and "failure" in sample.lower():
         return False
     return True
 

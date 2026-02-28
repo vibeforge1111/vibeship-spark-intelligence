@@ -105,6 +105,10 @@ _ACTIONABLE_STANDALONE_RE = re.compile(
     r"^\s*(always\s+)?(use|enforce|validate|check|add|remove|fix|decompose|refactor|gate|benchmark)\b",
     re.I,
 )
+_ACTIONABLE_CAUTION_RE = re.compile(
+    r"\b(be cautious|be careful)\b.*\b(path|paths|token|schema|auth|permission|env)\b",
+    re.I,
+)
 
 
 def _parse_env_bool(name: str) -> bool | None:
@@ -145,20 +149,20 @@ def classify(text: str | None, *, context: str = "generic") -> NoiseDecision:
         return NoiseDecision(True, "empty")
 
     lower = sample.lower()
+    has_actionable_signal = (
+        bool(_ACTIONABLE_STANDALONE_RE.search(sample)) and bool(_REUSABLE_SIGNAL_RE.search(lower))
+    ) or bool(_ACTIONABLE_CAUTION_RE.search(sample))
 
     if is_session_boilerplate(sample):
         return NoiseDecision(True, "session_boilerplate")
-    if is_primitive_text(sample):
-        return NoiseDecision(True, "primitive_pattern")
     if _CHUNK_ID_TELEMETRY_RE.search(sample):
         return NoiseDecision(True, "chunk_id_telemetry")
     if _CSS_FRAGMENT_RE.search(sample):
         return NoiseDecision(True, "css_fragment")
     if _GENERIC_SENTIMENT_RE.search(sample):
         return NoiseDecision(True, "generic_sentiment")
-    has_actionable_signal = bool(_ACTIONABLE_STANDALONE_RE.search(sample)) and bool(
-        _REUSABLE_SIGNAL_RE.search(lower)
-    )
+    if is_primitive_text(sample) and not has_actionable_signal:
+        return NoiseDecision(True, "primitive_pattern")
     if is_common_noise(sample) and not has_actionable_signal:
         return NoiseDecision(True, "common_noise")
     if _XML_RE.search(sample):

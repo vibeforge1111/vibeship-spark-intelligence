@@ -43,6 +43,21 @@ def test_route_mix_summary_tracks_empty_and_unknown_rates():
     assert abs(float(out.get("unknown_reason_rate") or 0.0) - (2 / 3)) < 1e-9
 
 
+def test_route_mix_summary_tracks_actionable_empty_rate():
+    mod = _load_module()
+    out = mod._route_mix_summary(
+        [
+            {"route": "empty", "complexity_score": 1, "primary_count": 0},
+            {"route": "empty", "complexity_score": 2, "primary_count": 0},
+            {"route": "semantic", "complexity_score": 3, "primary_count": 1},
+            {"route": "empty", "complexity_score": 0, "primary_count": 1},
+        ]
+    )
+    assert out.get("actionable_rows") == 3
+    assert out.get("actionable_empty_count") == 2
+    assert abs(float(out.get("actionable_empty_rate") or 0.0) - (2 / 3)) < 1e-9
+
+
 def test_semantic_context_summary_buckets_rows():
     mod = _load_module()
     out = mod._semantic_context_summary(

@@ -58,6 +58,14 @@ def test_classify_allows_actionable_always_validate_guidance():
     assert decision.rule == "none"
 
 
+def test_classify_allows_contextual_caution_on_path_handling():
+    decision = classify(
+        "Be cautious when navigating paths with spaces in Bash because quoting mistakes can break file operations."
+    )
+    assert decision.is_noise is False
+    assert decision.rule == "none"
+
+
 def test_classify_allows_conversational_technical_instruction():
     decision = classify("Can you enforce schema validation at the API boundary to prevent payload drift?")
     assert decision.is_noise is False
