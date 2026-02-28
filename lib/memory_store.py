@@ -1047,6 +1047,7 @@ def retrieve(
     project_key: Optional[str] = None,
     limit: int = 6,
     candidate_limit: int = 50,
+    use_embeddings: bool = True,
 ) -> List[Dict[str, Any]]:
     q = (query or "").strip()
     if not q:
@@ -1154,15 +1155,16 @@ def retrieve(
         if not items:
             return []
 
-        vectors = _embed_texts([q])
-        if vectors:
-            qvec = vectors[0]
-            vecs = _fetch_vectors(conn, [i["entry_id"] for i in items])
-            for it in items:
-                vec = vecs.get(it["entry_id"])
-                if vec:
-                    cos = _cosine(qvec, vec)
-                    it["score"] = (0.6 * it["score"]) + (0.4 * cos)
+        if use_embeddings:
+            vectors = _embed_texts([q])
+            if vectors:
+                qvec = vectors[0]
+                vecs = _fetch_vectors(conn, [i["entry_id"] for i in items])
+                for it in items:
+                    vec = vecs.get(it["entry_id"])
+                    if vec:
+                        cos = _cosine(qvec, vec)
+                        it["score"] = (0.6 * it["score"]) + (0.4 * cos)
 
         guard_cfg = _load_memory_retrieval_guard_config()
         guard_enabled = bool(guard_cfg.get("enabled", True))

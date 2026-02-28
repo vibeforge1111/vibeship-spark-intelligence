@@ -87,6 +87,77 @@ def _load_last_route(path: Path):
     return json.loads(lines[-1])
 
 
+def _disable_advice_sources(monkeypatch, advisor: advisor_mod.SparkAdvisor) -> None:
+    noop = lambda *_a, **_kw: []
+    for name in (
+        "_get_cognitive_advice",
+        "_get_chip_advice",
+        "_get_mind_advice",
+        "_get_opportunity_advice",
+        "_get_surprise_advice",
+        "_get_skill_advice",
+        "_get_eidos_advice",
+        "_get_convo_advice",
+        "_get_engagement_advice",
+        "_get_niche_advice",
+        "_get_replay_counterfactual_advice",
+        "_get_workflow_advice",
+    ):
+        monkeypatch.setattr(advisor, name, noop)
+
+
+def test_advise_skips_bank_source_when_disabled(monkeypatch, tmp_path):
+    _patch_advisor_runtime(monkeypatch, tmp_path)
+    advisor = advisor_mod.SparkAdvisor()
+    _disable_advice_sources(monkeypatch, advisor)
+    advisor.retrieval_policy = _policy_with(
+        advisor,
+        include_bank_advice=False,
+        include_tool_specific_advice=False,
+    )
+
+    def _raise_if_called(_context: str):
+        raise AssertionError("bank source should be disabled")
+
+    monkeypatch.setattr(advisor, "_get_bank_advice", _raise_if_called)
+    monkeypatch.setattr(advisor, "_get_tool_specific_advice", lambda _tool: [])
+    out = advisor.advise(
+        "Edit",
+        {"file_path": "lib/advisor.py"},
+        "tighten retrieval gating",
+        include_mind=False,
+        track_retrieval=False,
+        log_recent=False,
+    )
+    assert out == []
+
+
+def test_advise_skips_tool_specific_source_when_disabled(monkeypatch, tmp_path):
+    _patch_advisor_runtime(monkeypatch, tmp_path)
+    advisor = advisor_mod.SparkAdvisor()
+    _disable_advice_sources(monkeypatch, advisor)
+    advisor.retrieval_policy = _policy_with(
+        advisor,
+        include_bank_advice=False,
+        include_tool_specific_advice=False,
+    )
+
+    def _raise_if_called(_tool_name: str):
+        raise AssertionError("tool-specific source should be disabled")
+
+    monkeypatch.setattr(advisor, "_get_bank_advice", lambda _ctx: [])
+    monkeypatch.setattr(advisor, "_get_tool_specific_advice", _raise_if_called)
+    out = advisor.advise(
+        "Bash",
+        {"command": "pytest -q"},
+        "debug retrieval latency",
+        include_mind=False,
+        track_retrieval=False,
+        log_recent=False,
+    )
+    assert out == []
+
+
 def test_embeddings_only_mode_skips_agentic_queries(monkeypatch, tmp_path):
     _patch_advisor_runtime(monkeypatch, tmp_path)
     fake = _FakeRetriever(primary_count=3, primary_score=0.9)
@@ -149,6 +220,7 @@ def test_auto_mode_escalates_for_complex_high_risk_query(monkeypatch, tmp_path):
         advisor,
         mode="auto",
         complexity_threshold=2,
+        escalate_on_high_risk=True,
         max_queries=4,
         agentic_query_limit=3,
         min_results_no_escalation=1,
@@ -163,6 +235,134 @@ def test_auto_mode_escalates_for_complex_high_risk_query(monkeypatch, tmp_path):
     assert advice
     assert len(fake.calls) > 1
     assert any(item.source == "semantic-agentic" for item in advice)
+
+
+def test_auto_mode_denies_high_risk_escalation_when_over_budget(monkeypatch, tmp_path):
+    _patch_advisor_runtime(monkeypatch, tmp_path)
+
+    class _SlowPrimaryRetriever:
+        def __init__(self):
+            self.calls = []
+
+        def retrieve(self, query: str, _insights, limit: int = 8):
+            import time as _time
+            self.calls.append(query)
+            # Force primary route over its fast-path budget.
+            _time.sleep(0.02)
+            if "failure pattern and fix" in query:
+                return [
+                    SimpleNamespace(
+                        insight_key="facet:auth",
+                        insight_text="facet fallback fix",
+                        semantic_sim=0.7,
+                        trigger_conf=0.0,
+                        fusion_score=0.7,
+                        source_type="semantic",
+                        why="facet retrieval",
+                    )
+                ][:limit]
+            return [
+                SimpleNamespace(
+                    insight_key="primary:auth",
+                    insight_text="primary retrieval result",
+                    semantic_sim=0.9,
+                    trigger_conf=0.0,
+                    fusion_score=0.9,
+                    source_type="semantic",
+                    why="primary retrieval",
+                )
+            ][:limit]
+
+    slow = _SlowPrimaryRetriever()
+    monkeypatch.setattr(semantic_retriever_mod, "get_semantic_retriever", lambda: slow)
+
+    advisor = advisor_mod.SparkAdvisor()
+    advisor.retrieval_policy = _policy_with(
+        advisor,
+        mode="auto",
+        escalate_on_high_risk=True,
+        max_queries=4,
+        agentic_query_limit=3,
+        fast_path_budget_ms=1,
+        deny_escalation_when_over_budget=True,
+        allow_high_risk_over_budget_escalation=False,
+        min_results_no_escalation=10,
+        min_top_score_no_escalation=0.95,
+    )
+
+    advice = advisor._get_semantic_cognitive_advice(
+        "Bash",
+        "auth token session retrieval failure in production",
+    )
+    route = _load_last_route(tmp_path / "retrieval_router.jsonl")
+
+    assert advice
+    assert len(slow.calls) == 1  # primary only, no facet fanout
+    assert route["escalated"] is False
+    assert "deny_over_budget" in (route.get("reasons") or [])
+
+
+def test_auto_mode_can_override_high_risk_escalation_when_over_budget(monkeypatch, tmp_path):
+    _patch_advisor_runtime(monkeypatch, tmp_path)
+
+    class _SlowPrimaryRetriever:
+        def __init__(self):
+            self.calls = []
+
+        def retrieve(self, query: str, _insights, limit: int = 8):
+            import time as _time
+            self.calls.append(query)
+            _time.sleep(0.02)
+            if "failure pattern and fix" in query:
+                return [
+                    SimpleNamespace(
+                        insight_key="facet:auth",
+                        insight_text="facet fallback fix",
+                        semantic_sim=0.72,
+                        trigger_conf=0.0,
+                        fusion_score=0.72,
+                        source_type="semantic",
+                        why="facet retrieval",
+                    )
+                ][:limit]
+            return [
+                SimpleNamespace(
+                    insight_key="primary:auth",
+                    insight_text="primary retrieval result",
+                    semantic_sim=0.9,
+                    trigger_conf=0.0,
+                    fusion_score=0.9,
+                    source_type="semantic",
+                    why="primary retrieval",
+                )
+            ][:limit]
+
+    slow = _SlowPrimaryRetriever()
+    monkeypatch.setattr(semantic_retriever_mod, "get_semantic_retriever", lambda: slow)
+
+    advisor = advisor_mod.SparkAdvisor()
+    advisor.retrieval_policy = _policy_with(
+        advisor,
+        mode="auto",
+        escalate_on_high_risk=True,
+        max_queries=4,
+        agentic_query_limit=3,
+        fast_path_budget_ms=1,
+        deny_escalation_when_over_budget=True,
+        allow_high_risk_over_budget_escalation=True,
+        min_results_no_escalation=10,
+        min_top_score_no_escalation=0.95,
+    )
+
+    advice = advisor._get_semantic_cognitive_advice(
+        "Bash",
+        "auth token session retrieval failure in production",
+    )
+    route = _load_last_route(tmp_path / "retrieval_router.jsonl")
+
+    assert advice
+    assert len(slow.calls) > 1  # primary + facets
+    assert route["escalated"] is True
 
 
 def test_hybrid_agentic_mode_always_escalates(monkeypatch, tmp_path):
@@ -247,6 +447,7 @@ def test_auto_mode_respects_agentic_rate_cap(monkeypatch, tmp_path):
         advisor,
         mode="auto",
         gate_strategy="minimal",
+        escalate_on_high_risk=True,
         agentic_rate_limit=0.0,
         agentic_rate_window=20,
         max_queries=4,
@@ -297,6 +498,7 @@ def test_agentic_deadline_prevents_facet_fanout(monkeypatch, tmp_path):
         advisor,
         mode="auto",
         gate_strategy="minimal",
+        escalate_on_high_risk=True,
         agentic_deadline_ms=10,
         max_queries=4,
         agentic_query_limit=3,

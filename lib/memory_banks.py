@@ -441,7 +441,15 @@ def retrieve(query: str, project_key: Optional[str] = None, limit: int = 6) -> L
     try:
         from lib.memory_store import retrieve as store_retrieve
 
-        out = store_retrieve(query, project_key=project_key, limit=limit)
+        # Advisory pre-tool path uses memory bank as a supplemental lane;
+        # prefer low-latency lexical retrieval here.
+        out = store_retrieve(
+            query,
+            project_key=project_key,
+            limit=limit,
+            candidate_limit=max(20, int(limit) * 8),
+            use_embeddings=False,
+        )
         for it in out:
             text = (it.get("text") or "").strip()
             if _is_telemetry_memory(text):

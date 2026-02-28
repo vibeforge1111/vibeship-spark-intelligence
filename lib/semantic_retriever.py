@@ -392,13 +392,21 @@ class SemanticIndex:
             row = conn.execute("SELECT COUNT(*) FROM insights_vec").fetchone()
             return row[0] if row else 0
 
-    def search(self, query_vec: List[float], limit: int = 10) -> List[Tuple[str, float]]:
+    def search(
+        self,
+        query_vec: List[float],
+        limit: int = 10,
+        allowed_keys: Optional[set[str]] = None,
+    ) -> List[Tuple[str, float]]:
         if not query_vec:
             return []
         qnorm = math.sqrt(sum(x * x for x in query_vec)) or 1.0
         items = self._load_cache()
+        allowed = set(allowed_keys) if allowed_keys else None
         scores: List[Tuple[str, float]] = []
         for key, vec, vnorm in items:
+            if allowed is not None and key not in allowed:
+                continue
             dot = 0.0
             for a, b in zip(query_vec, vec):
                 dot += a * b
@@ -421,12 +429,24 @@ class SemanticRetriever:
                 loaded["min_fusion_score"] = min(float(loaded.get("min_fusion_score", 0.50)), 0.10)
                 loaded["rescue_min_similarity"] = min(float(loaded.get("rescue_min_similarity", 0.30)), 0.10)
                 loaded["rescue_min_fusion_score"] = min(float(loaded.get("rescue_min_fusion_score", 0.20)), 0.05)
+        # Guardrail: cap initial read-path backfill so first retrieval stays within pre-tool latency budgets.
+        # Large corpora will still converge as writes/reads continue; this only prevents cold-start spikes.
+        loaded["index_backfill_limit"] = max(
+            20,
+            min(120, int(loaded.get("index_backfill_limit", 120) or 120)),
+        )
         self.config = loaded
         self.trigger_matcher = TriggerMatcher(self.config.get("trigger_rules_file"))
         self.index = SemanticIndex(cache_ttl_s=int(self.config.get("index_cache_ttl_seconds", 120)))
         self._index_warmed = False
 
-    def retrieve(self, context: str, insights: Dict[str, Any], limit: int = 8) -> List[SemanticResult]:
+    def retrieve(
+        self,
+        context: str,
+        insights: Dict[str, Any],
+        limit: int = 8,
+        use_embeddings: bool = True,
+    ) -> List[SemanticResult]:
         if not context:
             return []
 
@@ -508,10 +528,21 @@ class SemanticRetriever:
                 self._index_warmed = True
 
         # Semantic search
-        qvec = embed_text(query)
+        qvec = embed_text(query) if use_embeddings else None
         if qvec:
             embedding_available = True
-            semantic_candidates = self.index.search(qvec, limit=limit * 3)
+            try:
+                semantic_candidates = self.index.search(
+                    qvec,
+                    limit=limit * 3,
+                    allowed_keys=set(insights.keys()),
+                )
+            except TypeError as exc:
+                # Backward-compatible with test fakes/stubs that still expose search(vec, limit).
+                if "allowed_keys" in str(exc):
+                    semantic_candidates = self.index.search(qvec, limit=limit * 3)
+                else:
+                    raise
             for key, sim in semantic_candidates:
                 if key in seen:
                     continue
@@ -1021,6 +1052,11 @@ def _load_config(path: Optional[Path] = None) -> Dict[str, Any]:
             config["triggers_enabled"] = bool(triggers.get("enabled"))
         if "rules_file" in triggers:
             config["trigger_rules_file"] = triggers.get("rules_file")
+    # Keep interactive retrieval responsive by bounding cold-start backfill size.
+    config["index_backfill_limit"] = max(
+        20,
+        min(120, int(config.get("index_backfill_limit", 120) or 120)),
+    )
 
     return config
 

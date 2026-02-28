@@ -132,6 +132,9 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "profile": "local_free",
         "mode": "auto",  # auto | embeddings_only | hybrid_agentic
         "gate_strategy": "minimal",  # minimal | extended
+        "include_bank_advice": False,
+        "include_tool_specific_advice": False,
+        "semantic_use_embeddings": False,
         "semantic_limit": 8,
         "max_queries": 2,
         "agentic_query_limit": 2,
@@ -140,8 +143,11 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "agentic_rate_window": 50,
         "fast_path_budget_ms": 250,
         # Latency-tail guard: if primary semantic retrieval already exceeded budget, do not add
-        # additional agentic facet queries (unless high-risk terms are present).
+        # additional agentic facet queries by default.
         "deny_escalation_when_over_budget": True,
+        # Optional escape hatch for safety-critical use cases that require deeper
+        # retrieval even when latency budget is already exceeded.
+        "allow_high_risk_over_budget_escalation": False,
         "prefilter_enabled": True,
         "prefilter_max_insights": 300,
         "prefilter_drop_low_signal": True,
@@ -177,14 +183,18 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "profile": "balanced_spend",
         "mode": "auto",
         "gate_strategy": "minimal",
+        "include_bank_advice": False,
+        "include_tool_specific_advice": False,
+        "semantic_use_embeddings": False,
         "semantic_limit": 10,
-        "max_queries": 3,
-        "agentic_query_limit": 3,
-        "agentic_deadline_ms": 700,
+        "max_queries": 1,
+        "agentic_query_limit": 1,
+        "agentic_deadline_ms": 500,
         "agentic_rate_limit": 0.20,
         "agentic_rate_window": 80,
         "fast_path_budget_ms": 250,
         "deny_escalation_when_over_budget": True,
+        "allow_high_risk_over_budget_escalation": False,
         "prefilter_enabled": True,
         "prefilter_max_insights": 500,
         "prefilter_drop_low_signal": True,
@@ -200,7 +210,7 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "min_results_no_escalation": 4,
         "min_top_score_no_escalation": 0.72,
         "escalate_on_weak_primary": False,
-        "escalate_on_high_risk": True,
+        "escalate_on_high_risk": False,
         "escalate_on_trigger": False,
         "domain_profile_enabled": True,
         "domain_profiles": {
@@ -222,6 +232,9 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "profile": "quality_max",
         "mode": "hybrid_agentic",
         "gate_strategy": "extended",
+        "include_bank_advice": True,
+        "include_tool_specific_advice": True,
+        "semantic_use_embeddings": True,
         "semantic_limit": 12,
         "max_queries": 4,
         "agentic_query_limit": 4,
@@ -230,6 +243,7 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "agentic_rate_window": 80,
         "fast_path_budget_ms": 350,
         "deny_escalation_when_over_budget": False,
+        "allow_high_risk_over_budget_escalation": True,
         "prefilter_enabled": True,
         "prefilter_max_insights": 800,
         "prefilter_drop_low_signal": True,
@@ -1128,6 +1142,35 @@ class SparkAdvisor:
         except Exception:
             pass  # Cross-encoder is optional
 
+        # Warm embedding backend at startup so first retrieval query avoids
+        # model/init overhead on the interactive advisory path.
+        try:
+            from .embeddings import embed_texts
+
+            embed_texts(["spark advisory warmup"])
+        except Exception:
+            pass
+
+        # Warm semantic index once at startup so first pre-tool advisory call
+        # doesn't pay index backfill cost on the interactive path.
+        try:
+            from .semantic_retriever import get_semantic_retriever
+
+            retriever = get_semantic_retriever()
+            insights = dict(getattr(self.cognitive, "insights", {}) or {})
+            if retriever and insights and getattr(retriever, "_index_warmed", False) is False:
+                noise_fn = getattr(self.cognitive, "is_noise_insight", None)
+                if not callable(noise_fn):
+                    noise_fn = None
+                warm_limit = max(
+                    20,
+                    min(120, int((getattr(retriever, "config", {}) or {}).get("index_backfill_limit", 120) or 120)),
+                )
+                retriever.index.ensure_index(insights, max_items=warm_limit, noise_filter=noise_fn)
+                retriever._index_warmed = True
+        except Exception:
+            pass  # Semantic warmup is optional
+
     @staticmethod
     def _coerce_category_bucket(raw: Any) -> Dict[str, Any]:
         """Normalize per-category effectiveness bucket into a stable schema."""
@@ -1905,12 +1948,14 @@ class SparkAdvisor:
                                 retrieval_keys_present.add(key)
                         policy.update(overrides)
                     for key in (
-                        "mode", "gate_strategy", "semantic_limit",
+                        "mode", "gate_strategy", "include_bank_advice",
+                        "include_tool_specific_advice", "semantic_use_embeddings", "semantic_limit",
                         "semantic_context_min", "semantic_lexical_min",
                         "semantic_strong_override", "max_queries",
                         "agentic_query_limit", "agentic_deadline_ms",
                         "agentic_rate_limit", "agentic_rate_window",
                         "fast_path_budget_ms", "deny_escalation_when_over_budget",
+                        "allow_high_risk_over_budget_escalation",
                         "prefilter_enabled", "prefilter_max_insights",
                         "prefilter_drop_low_signal", "lexical_weight",
                         "intent_coverage_weight", "support_boost_weight",
@@ -1955,6 +2000,12 @@ class SparkAdvisor:
         policy["gate_strategy"] = str(policy.get("gate_strategy") or "minimal").strip().lower()
         if policy["gate_strategy"] not in {"minimal", "extended"}:
             policy["gate_strategy"] = "minimal"
+        policy["include_bank_advice"] = _parse_bool(policy.get("include_bank_advice", True), True)
+        policy["include_tool_specific_advice"] = _parse_bool(
+            policy.get("include_tool_specific_advice", True),
+            True,
+        )
+        policy["semantic_use_embeddings"] = _parse_bool(policy.get("semantic_use_embeddings", True), True)
         policy["semantic_limit"] = max(4, int(policy.get("semantic_limit", 8) or 8))
         policy["semantic_context_min"] = max(
             0.0, min(1.0, float(policy.get("semantic_context_min", 0.15) or 0.15))
@@ -1980,6 +2031,9 @@ class SparkAdvisor:
         policy["fast_path_budget_ms"] = max(50, int(policy.get("fast_path_budget_ms", 250) or 250))
         policy["deny_escalation_when_over_budget"] = bool(
             policy.get("deny_escalation_when_over_budget", True)
+        )
+        policy["allow_high_risk_over_budget_escalation"] = bool(
+            policy.get("allow_high_risk_over_budget_escalation", False)
         )
         policy["prefilter_enabled"] = bool(policy.get("prefilter_enabled", True))
         prefilter_raw = policy.get("prefilter_max_insights", 500)
@@ -2622,10 +2676,12 @@ class SparkAdvisor:
                     pass
             return cached
 
+        policy = self._effective_retrieval_policy(tool_name=tool_name, context=context)
         advice_list: List[Advice] = []
 
         # 1. Query memory banks (fast local)
-        advice_list.extend(self._get_bank_advice(context))
+        if bool(policy.get("include_bank_advice", True)):
+            advice_list.extend(self._get_bank_advice(context))
 
         # 2. Query cognitive insights (semantic-first path)
         try:
@@ -2653,7 +2709,8 @@ class SparkAdvisor:
             advice_list.extend(self._get_mind_advice(context))
 
         # 4. Get tool-specific learnings
-        advice_list.extend(self._get_tool_specific_advice(tool_name))
+        if bool(policy.get("include_tool_specific_advice", True)):
+            advice_list.extend(self._get_tool_specific_advice(tool_name))
 
         # 5. Get opportunity-scanner prompts (Socratic opportunity lens)
         advice_list.extend(
@@ -2707,7 +2764,6 @@ class SparkAdvisor:
 
         # Fast LLM-assisted rerank for shortlists where ranking quality can materially
         # improve relevance without requiring full cross-encoder cost.
-        policy = self._effective_retrieval_policy(tool_name=tool_name, context=context)
         min_candidates = max(MAX_ADVICE_ITEMS, int(policy.get("minimax_fast_rerank_min_items", 12) or 12))
         if len(advice_list) > min_candidates:
             should_use_minimax, rerank_gate_meta = self._should_use_minimax_fast_rerank(
@@ -2904,6 +2960,7 @@ class SparkAdvisor:
         fast_path_budget_ms = int(policy.get("fast_path_budget_ms", 250) or 250)
         prefilter_enabled = bool(policy.get("prefilter_enabled", True))
         prefilter_max_insights = int(policy.get("prefilter_max_insights", 500))
+        use_semantic_embeddings = bool(policy.get("semantic_use_embeddings", True))
         lexical_weight = float(
             policy.get("lexical_weight", DEFAULT_SEMANTIC_FUSION_WEIGHTS["lexical_weight"])
             or DEFAULT_SEMANTIC_FUSION_WEIGHTS["lexical_weight"]
@@ -2974,8 +3031,22 @@ class SparkAdvisor:
         context = self._llm_area_retrieval_rewrite(context, tool_name)
 
         primary_start = time.perf_counter()
+        def _retrieve_rows(query_text: str):
+            try:
+                return retriever.retrieve(
+                    query_text,
+                    active_insights,
+                    limit=semantic_limit,
+                    use_embeddings=use_semantic_embeddings,
+                )
+            except TypeError as exc:
+                # Backward-compat for retriever fakes/tests without the new kwarg.
+                if "unexpected keyword argument 'use_embeddings'" in str(exc):
+                    return retriever.retrieve(query_text, active_insights, limit=semantic_limit)
+                raise
+
         try:
-            primary_results = list(retriever.retrieve(context, active_insights, limit=semantic_limit))
+            primary_results = list(_retrieve_rows(context))
         except Exception:
             primary_results = []
         primary_elapsed_ms = int((time.perf_counter() - primary_start) * 1000)
@@ -3027,7 +3098,10 @@ class SparkAdvisor:
             and mode == "auto"
             and primary_over_budget
             and bool(policy.get("deny_escalation_when_over_budget", True))
-            and not high_risk
+            and (
+                (not high_risk)
+                or (not bool(policy.get("allow_high_risk_over_budget_escalation", False)))
+            )
         ):
             should_escalate = False
             escalate_reasons.append("deny_over_budget")
@@ -3068,7 +3142,7 @@ class SparkAdvisor:
                 escalate_reasons.append("agentic_deadline")
                 break
             try:
-                query_results = retriever.retrieve(q, active_insights, limit=semantic_limit)
+                query_results = _retrieve_rows(q)
                 facet_queries_executed.append(q)
             except Exception:
                 continue
@@ -3302,6 +3376,9 @@ class SparkAdvisor:
                 "fast_path_budget_ms": fast_path_budget_ms,
                 "fast_path_elapsed_ms": primary_elapsed_ms,
                 "fast_path_over_budget": primary_over_budget,
+                "allow_high_risk_over_budget_escalation": bool(
+                    policy.get("allow_high_risk_over_budget_escalation", False)
+                ),
                 "complexity_score": analysis.get("score"),
                 "complexity_threshold": analysis.get("threshold"),
                 "complexity_hits": analysis.get("complexity_hits") or [],
