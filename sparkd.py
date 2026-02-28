@@ -20,7 +20,7 @@ import re
 import secrets
 import time
 from collections import defaultdict, deque
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from threading import Lock
 from threading import Thread
@@ -771,7 +771,7 @@ def main():
         return
 
     print(f"sparkd listening on http://127.0.0.1:{PORT}")
-    server = HTTPServer(("127.0.0.1", PORT), Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     stop_event = False
 
     def _shutdown(signum=None, frame=None):
