@@ -7,6 +7,7 @@ event capture -> queue -> engine decisions -> emitted advisory -> feedback.
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -34,6 +35,56 @@ _BLOCKING_EVENTS = {
     "no_ranked_advice",
     "exception",
 }
+
+_ACTION_VERBS = (
+    "use",
+    "run",
+    "check",
+    "verify",
+    "compare",
+    "trace",
+    "retry",
+    "add",
+    "remove",
+    "refactor",
+    "gate",
+    "inspect",
+    "log",
+    "checkpoint",
+    "align",
+    "split",
+    "sample",
+    "audit",
+    "rewrite",
+)
+_TRANSFER_CUES = ("if ", "when ", "before ", "after ", "always ", "never ")
+_TRANSIENT_CUES = (
+    "chunk id",
+    "session:",
+    "task-notification",
+    "wall time:",
+    "process exited with code",
+    "traceback",
+    "tool failed then recovered",
+)
+_CONVERSATIONAL_PATTERNS = [
+    re.compile(r"^\s*(it worked|sounds good|sure|thanks)\b", re.IGNORECASE),
+    re.compile(r"\bcan we\b", re.IGNORECASE),
+    re.compile(r"\blet'?s do it\b", re.IGNORECASE),
+    re.compile(r"\buser expressed satisfaction\b", re.IGNORECASE),
+    re.compile(r"\buser persistently asking\b", re.IGNORECASE),
+]
+_TELEMETRY_PATTERNS = [
+    re.compile(r"\bchunk id:\s*[a-f0-9]{4,}\b", re.IGNORECASE),
+    re.compile(r"\bexec_command failed\b", re.IGNORECASE),
+    re.compile(r"\bprocess exited with code\b", re.IGNORECASE),
+    re.compile(r"\bwall time:\b", re.IGNORECASE),
+    re.compile(r"<task-notification>", re.IGNORECASE),
+    re.compile(r"\btool ['\"]?[a-z0-9_ -]+['\"]? failed then recovered\b", re.IGNORECASE),
+    re.compile(r"\bexit code\s+\d+\b", re.IGNORECASE),
+]
+_CSS_PATTERN = re.compile(r"#[\w-]+\s*\{[^}]*\}|\{[^}]*\b(position|display|padding|margin)\b[^}]*\}", re.IGNORECASE)
+_LABEL_WEIGHT = {"none": 0, "weak": 1, "medium": 2, "strong": 3}
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -130,12 +181,156 @@ def _norm_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _short(text: str, limit: int = 170) -> str:
+    txt = " ".join(_norm_text(text).split())
+    if len(txt) <= limit:
+        return txt
+    return txt[: max(0, limit - 3)] + "..."
+
+
+def _md_escape(value: Any, limit: int | None = None) -> str:
+    text = _norm_text(value)
+    if limit is not None:
+        text = _short(text, limit)
+    return text.replace("|", "\\|")
+
+
 def _trace_from_row(row: dict[str, Any]) -> str:
     for key in ("trace_id", "outcome_trace_id", "trace"):
         value = _norm_text(row.get(key))
         if value:
             return value
     return ""
+
+
+def _is_telemetry_text(text: str) -> bool:
+    txt = _norm_text(text)
+    if not txt:
+        return False
+    if _CSS_PATTERN.search(txt):
+        return True
+    return any(p.search(txt) for p in _TELEMETRY_PATTERNS)
+
+
+def _is_conversational_text(text: str) -> bool:
+    txt = _norm_text(text)
+    if not txt:
+        return False
+    return any(p.search(txt) for p in _CONVERSATIONAL_PATTERNS)
+
+
+def _extract_text(row: dict[str, Any]) -> str:
+    candidates = (
+        row.get("text"),
+        row.get("advice_text"),
+        row.get("insight"),
+        row.get("signal"),
+        row.get("summary"),
+        row.get("notes"),
+        row.get("event"),
+    )
+    for value in candidates:
+        txt = _norm_text(value)
+        if txt:
+            return txt
+    return ""
+
+
+def _label_score(label: str) -> int:
+    return _LABEL_WEIGHT.get(label, 0)
+
+
+def _pick_decay_policy(text: str, transfer_score: str) -> str:
+    txt = _norm_text(text).lower()
+    if _is_telemetry_text(txt):
+        return "prune_next_cycle"
+    if _is_conversational_text(txt):
+        return "short_window"
+    if any(cue in txt for cue in _TRANSIENT_CUES):
+        return "short_window"
+    if transfer_score in {"strong", "medium"}:
+        return "long_window"
+    return "medium_window"
+
+
+def _score_actionability(text: str) -> str:
+    txt = _norm_text(text).lower()
+    if not txt or _is_telemetry_text(txt) or _is_conversational_text(txt):
+        return "none"
+    if any(f"{verb} " in txt for verb in _ACTION_VERBS):
+        if any(token in txt for token in ("file", "tool", "trace", "config", "route", "gate", "memory", "retriev")):
+            return "strong"
+        return "medium"
+    if any(token in txt for token in ("should", "consider", "need to")):
+        return "weak"
+    return "none"
+
+
+def _score_context_fit(row: dict[str, Any], text: str) -> str:
+    tool = _norm_text(row.get("tool") or row.get("tool_name"))
+    trace = _trace_from_row(row)
+    txt = _norm_text(text).lower()
+    if _is_telemetry_text(txt) or _is_conversational_text(txt):
+        return "weak"
+    has_tool_mention = bool(tool) and tool.lower() in txt
+    has_scope = bool(trace) or bool(_norm_text(row.get("session_id"))) or bool(_norm_text(row.get("route")))
+    if has_tool_mention and has_scope:
+        return "strong"
+    if has_scope:
+        return "medium"
+    return "weak"
+
+
+def _score_causal_confidence(row: dict[str, Any], text: str) -> str:
+    if _is_telemetry_text(text) or _is_conversational_text(text):
+        return "none"
+    helpful_label = _norm_text(row.get("helpfulness_label") or row.get("helpful_label")).lower()
+    if helpful_label in _KNOWN_LABELS:
+        return "strong"
+    if _norm_text(row.get("validation_result")) in {"validated", "contradicted"}:
+        return "medium"
+    if row.get("followed") is True or bool(_norm_text(row.get("implicit_signal"))):
+        return "weak"
+    return "none"
+
+
+def _score_transfer(text: str) -> str:
+    txt = _norm_text(text).lower()
+    if not txt:
+        return "none"
+    if _is_telemetry_text(txt) or _is_conversational_text(txt):
+        return "none"
+    if any(cue in txt for cue in _TRANSFER_CUES) and any(verb in txt for verb in _ACTION_VERBS):
+        return "strong"
+    if any(verb in txt for verb in _ACTION_VERBS):
+        return "medium"
+    return "weak"
+
+
+def _keepability_verdict(row: dict[str, Any], text: str) -> tuple[str, dict[str, str], str]:
+    actionability = _score_actionability(text)
+    context_fit = _score_context_fit(row, text)
+    causal = _score_causal_confidence(row, text)
+    transfer = _score_transfer(text)
+    decay = _pick_decay_policy(text, transfer)
+
+    dims = {
+        "actionability": actionability,
+        "context_fit": context_fit,
+        "causal_confidence": causal,
+        "transfer_score": transfer,
+        "decay_policy": decay,
+    }
+
+    if _is_telemetry_text(text):
+        return "drop", dims, "Telemetry residue that should stay in ops logs, not intelligence memory."
+    if _is_conversational_text(text):
+        return "drop", dims, "Conversational residue should be rewritten into explicit guidance before keeping."
+    if _label_score(actionability) >= 2 and _label_score(context_fit) >= 1 and _label_score(transfer) >= 2:
+        return "keep", dims, "Actionable pattern with enough context shape and transfer value."
+    if _label_score(actionability) >= 1 or _label_score(context_fit) >= 2:
+        return "rewrite", dims, "Potentially useful but phrasing/context is weak; rewrite before keeping."
+    return "drop", dims, "Low actionability and weak transfer; not worth long-lived intelligence storage."
 
 
 def _load_decision_rows(limit: int = 10000) -> tuple[list[dict[str, Any]], str, Path]:
@@ -1294,6 +1489,432 @@ def _advisory_content_quality_forensics_page(detail_rows: int = 520) -> str:
     return "\n".join(lines)
 
 
+def _iter_cognitive_items(limit: int = 220) -> list[dict[str, Any]]:
+    payload = _read_json(_SD / "cognitive_insights.json")
+    rows: list[dict[str, Any]] = []
+    for key, value in payload.items():
+        if not isinstance(value, dict):
+            continue
+        row = dict(value)
+        row["insight_key"] = key
+        row["trace_id"] = _norm_text(row.get("trace_id"))
+        row["_ts"] = _extract_ts(
+            row,
+            keys=("created_at", "updated_at", "last_validated_at", "ts", "timestamp"),
+        )
+        rows.append(row)
+    rows.sort(key=lambda r: float(r.get("_ts") or 0.0), reverse=True)
+    return rows[: max(120, int(limit))]
+
+
+def _keepability_gate_page() -> str:
+    memory_rows = _iter_cognitive_items(limit=240)
+    emission_rows, _ = _read_jsonl(_SD / "advisory_emit.jsonl", max_rows=3500)
+    quality_rows, _ = _read_jsonl(_SD / "advisor" / "advisory_quality_events.jsonl", max_rows=3500)
+
+    emission_rows = sorted(emission_rows, key=_extract_ts, reverse=True)[:140]
+    quality_rows = sorted(quality_rows, key=_extract_ts, reverse=True)[:160]
+
+    lines = [
+        "---",
+        "title: Keepability Gate Review",
+        "tags:",
+        "  - observatory",
+        "  - advisory",
+        "  - memory",
+        "  - keepability",
+        "  - context-first",
+        "---",
+        "",
+        "# Keepability Gate Review",
+        "",
+        f"> {flow_link()} | [[stages/06-cognitive_learner|Stage 6]] | [[stages/08-advisory|Stage 8]]",
+        "",
+        "This page is context-first and item-first. It does not start with headline rates.",
+        "Each row is judged by the same keepability dimensions before rules or thresholds are changed.",
+        "",
+        "## Keepability Dimensions",
+        "",
+        "| Dimension | What we ask |",
+        "|-----------|-------------|",
+        "| actionability | Does this text instruct a concrete next step? |",
+        "| context-fit | Is it grounded in the current tool/task context rather than generic residue? |",
+        "| causal confidence | Is there meaningful evidence that it influenced outcomes? |",
+        "| transfer score | Will this still help in future sessions and adjacent tasks? |",
+        "| expiry/decay policy | Should this persist, be rewritten, or decay quickly? |",
+        "",
+        f"## Memory Cohort (Latest {len(memory_rows)})",
+        "",
+        "| ts | source | key | snippet | actionability | context-fit | causal | transfer | decay | verdict | rationale |",
+        "|----|--------|-----|---------|---------------|-------------|--------|----------|-------|---------|-----------|",
+    ]
+
+    for row in memory_rows:
+        text = _extract_text(row)
+        verdict, dims, rationale = _keepability_verdict(row, text)
+        lines.append(
+            f"| {_fmt_ts(_extract_ts(row, keys=('created_at','last_validated_at','ts')))} | "
+            f"{_norm_text(row.get('source')) or 'unknown'} | "
+            f"{_short(_norm_text(row.get('insight_key')), 36)} | "
+            f"{_md_escape(text, 170)} | "
+            f"{dims['actionability']} | {dims['context_fit']} | {dims['causal_confidence']} | "
+            f"{dims['transfer_score']} | {dims['decay_policy']} | {verdict} | {_short(rationale, 88)} |"
+        )
+    lines.append("")
+
+    lines.extend(
+        [
+            f"## Advisory Emission Cohort (Latest {len(emission_rows)})",
+            "",
+            "| ts | tool | trace | advisory text | actionability | context-fit | transfer | decay | verdict | rationale |",
+            "|----|------|-------|---------------|---------------|-------------|----------|-------|---------|-----------|",
+        ]
+    )
+    for row in emission_rows:
+        text = _extract_text(row)
+        verdict, dims, rationale = _keepability_verdict(row, text)
+        lines.append(
+            f"| {_fmt_ts(_extract_ts(row))} | {_norm_text(row.get('tool_name')) or '?'} | "
+            f"`{_short(_trace_from_row(row), 18) or '-'}` | {_md_escape(text, 170)} | "
+            f"{dims['actionability']} | {dims['context_fit']} | {dims['transfer_score']} | "
+            f"{dims['decay_policy']} | {verdict} | {_short(rationale, 88)} |"
+        )
+    lines.append("")
+
+    lines.extend(
+        [
+            f"## Quality Event Cohort (Latest {len(quality_rows)})",
+            "",
+            "| ts | source_hint | trace | advisory text | helpfulness | actionability | causal | transfer | verdict | rationale |",
+            "|----|------------|-------|---------------|-------------|---------------|--------|----------|---------|-----------|",
+        ]
+    )
+    for row in quality_rows:
+        text = _extract_text(row)
+        verdict, dims, rationale = _keepability_verdict(row, text)
+        helpfulness = _norm_text(row.get("helpfulness_label") or row.get("helpful_label") or "unknown")
+        lines.append(
+            f"| {_fmt_ts(_extract_ts(row, keys=('emitted_ts','recorded_at','ts')))} | "
+            f"{_norm_text(row.get('source_hint')) or '?'} | `{_short(_trace_from_row(row), 18) or '-'}` | "
+            f"{_md_escape(text, 170)} | {helpfulness} | {dims['actionability']} | "
+            f"{dims['causal_confidence']} | {dims['transfer_score']} | {verdict} | {_short(rationale, 88)} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _context_trace_cohorts_page(sample_size: int = 150) -> str:
+    queue_rows, _ = _read_jsonl(_SD / "queue" / "events.jsonl", max_rows=22000)
+    retrieval_rows, _ = _read_jsonl(_SD / "advisor" / "retrieval_router.jsonl", max_rows=22000)
+    emit_rows, _ = _read_jsonl(_SD / "advisory_emit.jsonl", max_rows=22000)
+    outcome_rows, _ = _read_jsonl(_SD / "outcomes.jsonl", max_rows=22000)
+    feedback_rows, _ = _read_jsonl(_SD / "advice_feedback.jsonl", max_rows=22000)
+
+    queue_by_trace: dict[str, dict[str, Any]] = {}
+    for row in sorted(queue_rows, key=_extract_ts, reverse=True):
+        trace = _trace_from_row(row) or _norm_text((row.get("data") or {}).get("trace_id"))
+        if trace and trace not in queue_by_trace:
+            queue_by_trace[trace] = row
+
+    retrieval_by_trace: dict[str, dict[str, Any]] = {}
+    for row in sorted(retrieval_rows, key=_extract_ts, reverse=True):
+        trace = _trace_from_row(row)
+        if trace and trace not in retrieval_by_trace:
+            retrieval_by_trace[trace] = row
+
+    emit_by_trace: dict[str, dict[str, Any]] = {}
+    for row in sorted(emit_rows, key=_extract_ts, reverse=True):
+        trace = _trace_from_row(row)
+        if trace and trace not in emit_by_trace:
+            emit_by_trace[trace] = row
+
+    outcome_by_trace: dict[str, dict[str, Any]] = {}
+    for row in sorted(outcome_rows, key=_extract_ts, reverse=True):
+        trace = _trace_from_row(row)
+        if trace and trace not in outcome_by_trace:
+            outcome_by_trace[trace] = row
+
+    feedback_by_trace: dict[str, dict[str, Any]] = {}
+    for row in sorted(feedback_rows, key=_extract_ts, reverse=True):
+        trace = _trace_from_row(row)
+        if trace and trace not in feedback_by_trace:
+            feedback_by_trace[trace] = row
+
+    ordered_traces: list[str] = []
+    for source in (emit_by_trace, retrieval_by_trace, outcome_by_trace, queue_by_trace):
+        for trace in source.keys():
+            if trace and trace not in ordered_traces:
+                ordered_traces.append(trace)
+            if len(ordered_traces) >= max(120, int(sample_size)):
+                break
+        if len(ordered_traces) >= max(120, int(sample_size)):
+            break
+
+    def _capture_context(row: dict[str, Any] | None) -> str:
+        if not isinstance(row, dict):
+            return "-"
+        data = row.get("data") if isinstance(row.get("data"), dict) else {}
+        tool_input = row.get("tool_input") if isinstance(row.get("tool_input"), dict) else {}
+        tool_input = tool_input or (data.get("tool_input") if isinstance(data.get("tool_input"), dict) else {})
+        parts = [
+            _norm_text(row.get("event_type") or row.get("hook_event")),
+            _norm_text(row.get("tool_name") or data.get("tool_name")),
+            _short(_norm_text(tool_input.get("description") or tool_input.get("command") or tool_input.get("pattern")), 85),
+        ]
+        return _short(" | ".join(part for part in parts if part), 150)
+
+    def _retrieval_context(row: dict[str, Any] | None) -> str:
+        if not isinstance(row, dict):
+            return "-"
+        route = _norm_text(row.get("route") or "unknown")
+        reason = _norm_text(row.get("reason") or "unknown")
+        detail = f"route={route}; reason={reason}; primary={_norm_text(row.get('primary_count')) or '0'}"
+        return _short(detail, 150)
+
+    def _outcome_context(out_row: dict[str, Any] | None, fb_row: dict[str, Any] | None) -> str:
+        if isinstance(out_row, dict):
+            txt = _short(_norm_text(out_row.get("text")), 100)
+            return _short(
+                f"{_norm_text(out_row.get('event_type')) or 'outcome'} | "
+                f"{_norm_text(out_row.get('polarity')) or '?'} | {txt}",
+                160,
+            )
+        if isinstance(fb_row, dict):
+            return _short(
+                f"feedback status={_norm_text(fb_row.get('status')) or '?'}; "
+                f"helpful={_norm_text(fb_row.get('helpful')) or '?'}; "
+                f"source={_norm_text(fb_row.get('source')) or '?'}",
+                160,
+            )
+        return "-"
+
+    def _trace_verdict(capture_txt: str, retrieval_txt: str, emission_txt: str, outcome_txt: str) -> tuple[str, str]:
+        has_gap = "-" in (capture_txt, retrieval_txt, emission_txt)
+        if has_gap:
+            return "partial", "Missing stage context in the trace chain."
+        if _is_telemetry_text(emission_txt):
+            return "misaligned", "Emission carries operational residue instead of guidance."
+        if "route=empty" in retrieval_txt and emission_txt != "-":
+            return "misaligned", "Retrieval was empty yet advisory still emitted generic guidance."
+        if emission_txt != "-" and outcome_txt == "-":
+            return "unknown", "No clear outcome or feedback context attached to this trace."
+        return "coherent", "Trace has capture, retrieval, emission, and outcome context."
+
+    lines = [
+        "---",
+        "title: Context Trace Cohorts",
+        "tags:",
+        "  - observatory",
+        "  - advisory",
+        "  - context-first",
+        "  - traces",
+        "---",
+        "",
+        "# Context Trace Cohorts",
+        "",
+        f"> {flow_link()} | [[stages/01-event_capture|Stage 1]] -> [[stages/08-advisory|Stage 8]]",
+        "",
+        "End-to-end context table over 100+ traces. This is the primary surface for semantic debugging before metric tuning.",
+        "",
+        f"## Cross-Stage Trace Table (Latest {len(ordered_traces)})",
+        "",
+        "| trace | capture context | retrieval context | emission text | outcome/feedback | context verdict | analyst note |",
+        "|------|------------------|-------------------|---------------|------------------|----------------|--------------|",
+    ]
+
+    for trace in ordered_traces:
+        capture_txt = _capture_context(queue_by_trace.get(trace))
+        retrieval_txt = _retrieval_context(retrieval_by_trace.get(trace))
+        emission_txt = _short(_extract_text(emit_by_trace.get(trace, {})), 130) if trace in emit_by_trace else "-"
+        outcome_txt = _outcome_context(outcome_by_trace.get(trace), feedback_by_trace.get(trace))
+        verdict, note = _trace_verdict(capture_txt, retrieval_txt, emission_txt, outcome_txt)
+        lines.append(
+            f"| `{_short(trace, 22)}` | {_md_escape(capture_txt)} | "
+            f"{_md_escape(retrieval_txt)} | {_md_escape(emission_txt)} | "
+            f"{_md_escape(outcome_txt)} | {verdict} | {_short(note, 95)} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _intelligence_signal_tables_page() -> str:
+    memory_rows = _iter_cognitive_items(limit=260)
+    quality_rows, _ = _read_jsonl(_SD / "advisor" / "advisory_quality_events.jsonl", max_rows=5000)
+    quality_rows = sorted(quality_rows, key=_extract_ts, reverse=True)
+
+    false_wisdom_rows: list[dict[str, Any]] = []
+    for row in memory_rows:
+        text = _extract_text(row)
+        if not text:
+            continue
+        if _is_telemetry_text(text) and (
+            bool(row.get("promoted")) or int(row.get("times_validated") or 0) >= 5 or float(row.get("reliability") or 0.0) >= 0.6
+        ):
+            false_wisdom_rows.append(
+                {
+                    "source": _norm_text(row.get("source")) or "cognitive",
+                    "id": _norm_text(row.get("insight_key"))[:48],
+                    "text": text,
+                    "why_looked_good": _short(
+                        f"validated={_norm_text(row.get('times_validated')) or '0'}; "
+                        f"reliability={_norm_text(row.get('reliability')) or '0'}; "
+                        f"promoted={_norm_text(row.get('promoted')) or 'false'}",
+                        130,
+                    ),
+                    "why_not_keepable": "Telemetry residue rewarded by exposure, not durable user value.",
+                    "action": "drop_or_quarantine",
+                }
+            )
+        if len(false_wisdom_rows) >= 140:
+            break
+
+    for row in quality_rows:
+        text = _extract_text(row)
+        if not text or not _is_telemetry_text(text):
+            continue
+        helpfulness = _norm_text(row.get("helpfulness_label") or "unknown")
+        followed = _norm_text(row.get("followed"))
+        if helpfulness in {"helpful", "unknown"} and followed in {"True", "true", "1"}:
+            false_wisdom_rows.append(
+                {
+                    "source": _norm_text(row.get("source_hint")) or "quality",
+                    "id": _norm_text(row.get("event_id"))[:48],
+                    "text": text,
+                    "why_looked_good": _short(
+                        f"helpfulness={helpfulness}; followed={followed}; judge={_norm_text(row.get('judge_source')) or '?'}",
+                        130,
+                    ),
+                    "why_not_keepable": "Follow-through evidence is not enough when advisory content is non-transferable telemetry.",
+                    "action": "rewrite_or_drop",
+                }
+            )
+        if len(false_wisdom_rows) >= 220:
+            break
+
+    compounding_rows: list[dict[str, Any]] = []
+    for row in memory_rows:
+        text = _extract_text(row)
+        if not text:
+            continue
+        verdict, dims, rationale = _keepability_verdict(row, text)
+        if verdict != "keep":
+            continue
+        if dims["transfer_score"] not in {"strong", "medium"}:
+            continue
+        compounding_rows.append(
+            {
+                "source": _norm_text(row.get("source")) or "cognitive",
+                "id": _norm_text(row.get("insight_key"))[:48],
+                "text": text,
+                "reusable_shape": "if->action" if any(cue in text.lower() for cue in _TRANSFER_CUES) else "action_pattern",
+                "boundary": "tool/context specific; validate before promoting globally",
+                "next_rule": "promote_only_if_outcome_linked_and_non_telemetry",
+                "note": rationale,
+            }
+        )
+        if len(compounding_rows) >= 80:
+            break
+
+    lines = [
+        "---",
+        "title: Intelligence Signal Tables",
+        "tags:",
+        "  - observatory",
+        "  - advisory",
+        "  - memory",
+        "  - context-first",
+        "---",
+        "",
+        "# Intelligence Signal Tables",
+        "",
+        f"> {flow_link()} | [[keepability_gate_review|Keepability Gate Review]]",
+        "",
+        "## False Wisdom Table",
+        "",
+        "Rows that looked strong in mechanics but fail semantic keepability.",
+        "",
+        f"| source | id | snippet | why it looked good | why it is not keepable | immediate action |",
+        "|--------|----|---------|--------------------|--------------------------|------------------|",
+    ]
+
+    for row in false_wisdom_rows[:220]:
+        lines.append(
+            f"| {row['source']} | {_short(row['id'], 38)} | {_md_escape(row['text'], 170)} | "
+            f"{_md_escape(row['why_looked_good'], 95)} | "
+            f"{_md_escape(row['why_not_keepable'], 95)} | {row['action']} |"
+        )
+    if not false_wisdom_rows:
+        lines.append("| - | - | - | - | - | - |")
+    lines.append("")
+
+    lines.extend(
+        [
+            "## Compounding Insights Table",
+            "",
+            "Rows with higher transfer potential that should shape future advisory behavior.",
+            "",
+            "| source | id | snippet | reusable shape | boundary condition | next capture rule | note |",
+            "|--------|----|---------|----------------|--------------------|-------------------|------|",
+        ]
+    )
+    for row in compounding_rows[:80]:
+        lines.append(
+            f"| {row['source']} | {_short(row['id'], 38)} | {_md_escape(row['text'], 170)} | "
+            f"{row['reusable_shape']} | {_md_escape(row['boundary'], 78)} | "
+            f"{row['next_rule']} | {_md_escape(row['note'], 90)} |"
+        )
+    if not compounding_rows:
+        lines.append("| - | - | - | - | - | - | - |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _intelligence_constitution_page() -> str:
+    lines = [
+        "---",
+        "title: Intelligence Constitution",
+        "tags:",
+        "  - observatory",
+        "  - advisory",
+        "  - memory",
+        "  - constitution",
+        "---",
+        "",
+        "# Intelligence Constitution",
+        "",
+        "Non-negotiable invariants for what qualifies as intelligence in Spark alpha.",
+        "",
+        "## Invariants",
+        "",
+        "1. Memory is not telemetry: operational residue must stay in ops logs unless rewritten into reusable guidance.",
+        "2. Promotion requires causal context: co-occurrence alone cannot justify long-lived intelligence.",
+        "3. Advice must be context-bound: each advisory should fit the current tool/task moment.",
+        "4. Transfer beats novelty: keep what generalizes across sessions, not what merely appeared recently.",
+        "5. Every insight has expiry: if it cannot survive context shifts, decay or quarantine it.",
+        "6. Observability must be semantic: each stage should expose meaning traces, not only volume and timing.",
+        "7. Rewrites are first-class: potentially useful but weak entries are rewritten before promotion.",
+        "8. Unknown outcomes are debt: unresolved helpfulness must be tracked as uncertainty, not hidden by proxy wins.",
+        "",
+        "## Keepability Gate Contract",
+        "",
+        "| Gate | Required question before keep |",
+        "|------|-------------------------------|",
+        "| Actionability | What concrete action should the user take now? |",
+        "| Context-fit | Why is this relevant to this tool invocation? |",
+        "| Causal confidence | What evidence links this guidance to outcome change? |",
+        "| Transfer score | Will this help in adjacent future tasks? |",
+        "| Expiry/decay | How long should it remain active before revalidation? |",
+        "",
+        "## Review Surfaces",
+        "",
+        "- [[keepability_gate_review|Keepability Gate Review]]",
+        "- [[context_trace_cohorts|Context Trace Cohorts]]",
+        "- [[intelligence_signal_tables|Intelligence Signal Tables]]",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def generate_advisory_context_pages(data: dict[int, dict[str, Any]]) -> dict[str, str]:
     """Generate additional observatory pages for context-rich advisory diagnostics."""
     return {
@@ -1304,4 +1925,8 @@ def generate_advisory_context_pages(data: dict[int, dict[str, Any]]) -> dict[str
         "advisory_data_integrity.md": _data_integrity_page(data),
         "retrieval_route_forensics.md": _retrieval_route_forensics_page(),
         "advisory_content_quality_forensics.md": _advisory_content_quality_forensics_page(),
+        "intelligence_constitution.md": _intelligence_constitution_page(),
+        "keepability_gate_review.md": _keepability_gate_page(),
+        "context_trace_cohorts.md": _context_trace_cohorts_page(),
+        "intelligence_signal_tables.md": _intelligence_signal_tables_page(),
     }
