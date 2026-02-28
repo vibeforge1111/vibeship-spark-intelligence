@@ -24,14 +24,14 @@ function Set-DefaultEnv {
     }
 }
 
-# R3 chip profile defaults (can still be overridden by explicit env before startup).
-Set-DefaultEnv "SPARK_CHIP_REQUIRE_LEARNING_SCHEMA" "1"
-Set-DefaultEnv "SPARK_CHIP_OBSERVER_ONLY" "1"
-Set-DefaultEnv "SPARK_CHIP_MIN_LEARNING_EVIDENCE" "2"
-Set-DefaultEnv "SPARK_CHIP_MIN_CONFIDENCE" "0.65"
-Set-DefaultEnv "SPARK_CHIP_MIN_SCORE" "0.25"
-Set-DefaultEnv "SPARK_CHIP_MERGE_MIN_CONFIDENCE" "0.65"
-Set-DefaultEnv "SPARK_CHIP_MERGE_MIN_QUALITY" "0.62"
+# Keep runtime behavior in tuneables/config_authority; only set alpha safety contract defaults here.
+Set-DefaultEnv "SPARK_ADVISORY_ROUTE" "alpha"
+Set-DefaultEnv "SPARK_ADVISORY_ALPHA_ENABLED" "1"
+Set-DefaultEnv "SPARK_MEMORY_SPINE_CANONICAL" "1"
+Set-DefaultEnv "SPARK_VALIDATE_AND_STORE" "1"
+Set-DefaultEnv "SPARK_BRIDGE_LLM_ADVISORY_SIDECAR_ENABLED" "0"
+Set-DefaultEnv "SPARK_BRIDGE_LLM_EIDOS_SIDECAR_ENABLED" "0"
+Set-DefaultEnv "SPARK_EMBED_BACKEND" "auto"
 
 Write-Host "=== Spark x OpenClaw - Starting ===" -ForegroundColor Cyan
 Write-Host "Repo: $RepoRoot"

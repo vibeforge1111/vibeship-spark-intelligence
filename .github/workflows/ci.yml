@@ -60,6 +60,34 @@ jobs:
         run: |
           python scripts/alpha_preflight_bundle.py --ci-mode --json-only
 
+  alpha-smoke:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Alpha Gate Burn-In (Smoke Prep)
+        run: |
+          python scripts/alpha_gate_burn_in.py --run-label ci_smoke --strict-margin 1 --distillation-margin 1
+
+      - name: Alpha Smoke Gates
+        run: |
+          python scripts/production_loop_report.py
+          python scripts/strict_attribution_smoke.py
+          python scripts/spark_alpha_replay_arena.py --seed 42 --episodes 8 --min-consecutive-wins 3
+
   integration-smoke:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
