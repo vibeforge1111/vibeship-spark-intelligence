@@ -43,6 +43,13 @@ class TestLoadConfig(unittest.TestCase):
         self.assertTrue(cfg["advisory_review_fail_on_persistent_blind_spots"])
         self.assertTrue(cfg["advisory_review_auto_remediate_integrity"])
         self.assertEqual(cfg["advisory_review_integrity_remediate_max_engine_rows"], 60000)
+        self.assertTrue(cfg["advisory_usefulness_cycle_enabled"])
+        self.assertEqual(cfg["advisory_usefulness_cycle_window_hours"], 4)
+        self.assertEqual(cfg["advisory_usefulness_cycle_max_candidates"], 80)
+        self.assertEqual(cfg["advisory_usefulness_cycle_apply_limit"], 40)
+        self.assertEqual(cfg["advisory_usefulness_cycle_min_confidence"], 0.72)
+        self.assertEqual(cfg["advisory_usefulness_cycle_providers"], "auto")
+        self.assertEqual(cfg["advisory_usefulness_cycle_timeout_s"], 180)
         self.assertTrue(cfg["memory_quality_observatory_enabled"])
 
     def test_overrides_from_file(self, tmp_path=None):
@@ -231,6 +238,13 @@ class TestRunDueTasks(unittest.TestCase):
             "advisory_review_fail_on_persistent_blind_spots": True,
             "advisory_review_auto_remediate_integrity": True,
             "advisory_review_integrity_remediate_max_engine_rows": 60000,
+            "advisory_usefulness_cycle_enabled": True,
+            "advisory_usefulness_cycle_window_hours": 4,
+            "advisory_usefulness_cycle_max_candidates": 80,
+            "advisory_usefulness_cycle_apply_limit": 40,
+            "advisory_usefulness_cycle_min_confidence": 0.72,
+            "advisory_usefulness_cycle_providers": "auto",
+            "advisory_usefulness_cycle_timeout_s": 180,
             "memory_quality_observatory_enabled": True,
         }
 
@@ -418,7 +432,11 @@ class TestAdvisoryReviewTask(unittest.TestCase):
     """Advisory self-review scheduler task behavior."""
 
     def test_advisory_review_task_success(self):
-        with patch.object(sched, "load_scheduler_config", return_value={"advisory_review_window_hours": 12}), \
+        with patch.object(
+            sched,
+            "load_scheduler_config",
+            return_value={"advisory_review_window_hours": 12, "advisory_usefulness_cycle_enabled": False},
+        ), \
              patch("spark_scheduler.subprocess.run") as mock_run, \
              patch("glob.glob", return_value=[]):  # bypass file-based gap guard
             mock_run.return_value = MagicMock(
@@ -431,7 +449,11 @@ class TestAdvisoryReviewTask(unittest.TestCase):
         self.assertIn("Advisory self-review written", out["message"])
 
     def test_advisory_review_runs_memory_observatory_when_due(self):
-        with patch.object(sched, "load_scheduler_config", return_value={"advisory_review_window_hours": 12}), \
+        with patch.object(
+            sched,
+            "load_scheduler_config",
+            return_value={"advisory_review_window_hours": 12, "advisory_usefulness_cycle_enabled": False},
+        ), \
              patch("spark_scheduler.subprocess.run") as mock_run, \
              patch("glob.glob", return_value=[]):
             mock_run.side_effect = [
@@ -456,6 +478,7 @@ class TestAdvisoryReviewTask(unittest.TestCase):
             "load_scheduler_config",
             return_value={
                 "advisory_review_window_hours": 12,
+                "advisory_usefulness_cycle_enabled": False,
                 "memory_quality_observatory_enabled": False,
             },
         ), patch("spark_scheduler.subprocess.run") as mock_run, \
@@ -480,6 +503,7 @@ class TestAdvisoryReviewTask(unittest.TestCase):
             "advisory_review_fail_on_persistent_blind_spots": False,
             "advisory_review_auto_remediate_integrity": False,
             "advisory_review_integrity_remediate_max_engine_rows": 12345,
+            "advisory_usefulness_cycle_enabled": False,
             "memory_quality_observatory_enabled": False,
         }
         with patch.object(sched, "load_scheduler_config", return_value=cfg), \
@@ -493,7 +517,7 @@ class TestAdvisoryReviewTask(unittest.TestCase):
             out = sched.task_advisory_review({})
 
         self.assertEqual(out["status"], "ok")
-        cmd = mock_run.call_args[0][0]
+        cmd = mock_run.call_args_list[0][0][0]
         self.assertIn("--no-enforce-integrity-gates", cmd)
         self.assertIn("--no-gate-alerts", cmd)
         self.assertIn("--no-fail-on-persistent-blind-spots", cmd)
@@ -502,7 +526,11 @@ class TestAdvisoryReviewTask(unittest.TestCase):
         self.assertIn("12345", cmd)
 
     def test_advisory_review_failure_uses_stdout_when_stderr_empty(self):
-        with patch.object(sched, "load_scheduler_config", return_value={"advisory_review_window_hours": 4}), \
+        with patch.object(
+            sched,
+            "load_scheduler_config",
+            return_value={"advisory_review_window_hours": 4, "advisory_usefulness_cycle_enabled": False},
+        ), \
              patch("spark_scheduler.subprocess.run") as mock_run, \
              patch("glob.glob", return_value=[]):
             mock_run.return_value = MagicMock(
@@ -514,6 +542,43 @@ class TestAdvisoryReviewTask(unittest.TestCase):
 
         self.assertIn("self_review_failed", out.get("error", ""))
         self.assertIn("persistent blind spots", out.get("error", ""))
+
+    def test_advisory_review_runs_usefulness_cycle_when_enabled(self):
+        cfg = {
+            "advisory_review_window_hours": 4,
+            "advisory_review_min_gap_hours": 4,
+            "advisory_review_context_bundle_enabled": False,
+            "advisory_review_context_llm_enabled": False,
+            "advisory_review_integrity_gates_enabled": True,
+            "advisory_review_gate_persist_windows": 2,
+            "advisory_review_gate_alerts_enabled": True,
+            "advisory_review_fail_on_persistent_blind_spots": True,
+            "advisory_review_auto_remediate_integrity": True,
+            "advisory_review_integrity_remediate_max_engine_rows": 60000,
+            "advisory_usefulness_cycle_enabled": True,
+            "advisory_usefulness_cycle_window_hours": 4,
+            "advisory_usefulness_cycle_max_candidates": 16,
+            "advisory_usefulness_cycle_apply_limit": 8,
+            "advisory_usefulness_cycle_min_confidence": 0.7,
+            "advisory_usefulness_cycle_providers": "auto",
+            "advisory_usefulness_cycle_timeout_s": 120,
+            "memory_quality_observatory_enabled": False,
+        }
+        with patch.object(sched, "load_scheduler_config", return_value=cfg), \
+             patch("spark_scheduler.subprocess.run") as mock_run, \
+             patch("glob.glob", return_value=[]):
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stdout="Advisory self-review written: docs/reports/x.md\n", stderr=""),
+                MagicMock(returncode=0, stdout="{\"ok\":true}\n", stderr=""),
+            ]
+            out = sched.task_advisory_review({})
+
+        self.assertEqual(out["status"], "ok")
+        self.assertEqual(out.get("usefulness_cycle", {}).get("status"), "ok")
+        self.assertGreaterEqual(len(mock_run.call_args_list), 2)
+        usefulness_cmd = mock_run.call_args_list[1][0][0]
+        self.assertIn("--apply-limit", usefulness_cmd)
+        self.assertIn("--min-confidence", usefulness_cmd)
 
 if __name__ == "__main__":
     unittest.main()

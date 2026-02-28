@@ -142,6 +142,13 @@ DEFAULT_CONFIG = {
     "advisory_review_fail_on_persistent_blind_spots": True,
     "advisory_review_auto_remediate_integrity": True,
     "advisory_review_integrity_remediate_max_engine_rows": 60000,
+    "advisory_usefulness_cycle_enabled": True,
+    "advisory_usefulness_cycle_window_hours": 4,
+    "advisory_usefulness_cycle_max_candidates": 80,
+    "advisory_usefulness_cycle_apply_limit": 40,
+    "advisory_usefulness_cycle_min_confidence": 0.72,
+    "advisory_usefulness_cycle_providers": "auto",
+    "advisory_usefulness_cycle_timeout_s": 180,
     "memory_quality_observatory_enabled": True,
 }
 
@@ -907,6 +914,51 @@ def task_advisory_review(state: Dict[str, Any]) -> Dict[str, Any]:
     line = (proc.stdout or "").strip().splitlines()
     msg = line[-1] if line else ""
 
+    usefulness_status: Dict[str, Any] = {"status": "skipped", "reason": "disabled"}
+    try:
+        usefulness_enabled = _safe_bool(cfg.get("advisory_usefulness_cycle_enabled", True), True)
+        if usefulness_enabled:
+            usefulness_script = Path(__file__).resolve().parent / "scripts" / "advisory_usefulness_cycle.py"
+            if usefulness_script.exists():
+                usefulness_cmd = [
+                    sys.executable,
+                    str(usefulness_script),
+                    "--window-hours",
+                    str(max(1, int(cfg.get("advisory_usefulness_cycle_window_hours", 4) or 4))),
+                    "--max-candidates",
+                    str(max(5, int(cfg.get("advisory_usefulness_cycle_max_candidates", 80) or 80))),
+                    "--apply-limit",
+                    str(max(1, int(cfg.get("advisory_usefulness_cycle_apply_limit", 40) or 40))),
+                    "--min-confidence",
+                    str(max(0.0, min(1.0, float(cfg.get("advisory_usefulness_cycle_min_confidence", 0.72) or 0.72)))),
+                    "--providers",
+                    str(cfg.get("advisory_usefulness_cycle_providers", "auto") or "auto"),
+                    "--llm-timeout-s",
+                    str(float(cfg.get("advisory_usefulness_cycle_timeout_s", 180) or 180)),
+                    "--source",
+                    "scheduler_4h_cycle",
+                ]
+                usefulness_proc = subprocess.run(
+                    usefulness_cmd,
+                    cwd=str(Path(__file__).resolve().parent),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if usefulness_proc.returncode != 0:
+                    usefulness_status = {
+                        "status": "error",
+                        "error": ((usefulness_proc.stderr or usefulness_proc.stdout or "").strip()[:300]),
+                    }
+                    logger.warning("advisory_usefulness_cycle failed: %s", usefulness_status.get("error", "unknown"))
+                else:
+                    usefulness_status = {"status": "ok"}
+            else:
+                usefulness_status = {"status": "error", "error": f"missing script: {usefulness_script}"}
+    except Exception as exc:
+        usefulness_status = {"status": "error", "error": str(exc)[:300]}
+
     # Keep retrieval quality guardrails fresh at least daily.
     try:
         import glob as _glob
@@ -915,7 +967,7 @@ def task_advisory_review(state: Dict[str, Any]) -> Dict[str, Any]:
         if not observatory_enabled:
             logger.info("memory_quality_observatory: disabled by scheduler config")
             logger.info("advisory_review: %s", msg or "ok")
-            return {"status": "ok", "message": msg}
+            return {"status": "ok", "message": msg, "usefulness_cycle": usefulness_status}
 
         observatory_script = Path(__file__).resolve().parent / "scripts" / "memory_quality_observatory.py"
         if observatory_script.exists():
@@ -950,7 +1002,7 @@ def task_advisory_review(state: Dict[str, Any]) -> Dict[str, Any]:
         logger.warning("memory_quality_observatory integration failed: %s", exc)
 
     logger.info("advisory_review: %s", msg or "ok")
-    return {"status": "ok", "message": msg}
+    return {"status": "ok", "message": msg, "usefulness_cycle": usefulness_status}
 
 
 # ---------------------------------------------------------------------------
