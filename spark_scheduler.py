@@ -140,6 +140,8 @@ DEFAULT_CONFIG = {
     "advisory_review_gate_persist_windows": 2,
     "advisory_review_gate_alerts_enabled": True,
     "advisory_review_fail_on_persistent_blind_spots": True,
+    "advisory_review_auto_remediate_integrity": True,
+    "advisory_review_integrity_remediate_max_engine_rows": 60000,
     "memory_quality_observatory_enabled": True,
 }
 
@@ -880,6 +882,14 @@ def task_advisory_review(state: Dict[str, Any]) -> Dict[str, Any]:
         cmd.append("--no-gate-alerts")
     if not _safe_bool(cfg.get("advisory_review_fail_on_persistent_blind_spots", True), True):
         cmd.append("--no-fail-on-persistent-blind-spots")
+    if not _safe_bool(cfg.get("advisory_review_auto_remediate_integrity", True), True):
+        cmd.append("--no-auto-remediate-integrity")
+    cmd.extend(
+        [
+            "--integrity-remediate-max-engine-rows",
+            str(max(500, int(cfg.get("advisory_review_integrity_remediate_max_engine_rows", 60000) or 60000))),
+        ]
+    )
     proc = subprocess.run(
         cmd,
         cwd=str(Path(__file__).resolve().parent),

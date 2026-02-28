@@ -40,6 +40,8 @@ ALPHA_INLINE_PREFETCH_MAX_JOBS = max(1, min(20, _alpha_inline_jobs))
 JSONL_EXT = ".jsonl"
 ALPHA_LOG = Path.home() / ".spark" / f"advisory_engine_alpha{JSONL_EXT}"
 ALPHA_LOG_MAX_LINES = 2000
+ADVISORY_DECISION_LEDGER_FILE = Path.home() / ".spark" / f"advisory_decision_ledger{JSONL_EXT}"
+ADVISORY_DECISION_LEDGER_MAX_LINES = 12000
 ADVISORY_GLOBAL_DEDUPE_FILE = Path.home() / ".spark" / f"advisory_global_dedupe{JSONL_EXT}"
 ADVISORY_GLOBAL_DEDUPE_MAX_LINES = 5000
 _QUESTION_START_RE = re.compile(
@@ -50,6 +52,19 @@ _CONVERSATIONAL_RE = re.compile(
     r"\b(can you|could you|would you|should we|do we|i('?| a)?m not sure|not sure about)\b",
     re.I,
 )
+_DECISION_OUTCOME_BY_EVENT = {
+    "emitted": "emitted",
+    "gate_no_emit": "blocked",
+    "dedupe_empty": "blocked",
+    "dedupe_gate_empty": "blocked",
+    "question_like_blocked": "blocked",
+    "context_repeat_blocked": "blocked",
+    "text_repeat_blocked": "blocked",
+    "global_dedupe_suppressed": "blocked",
+    "emit_suppressed": "blocked",
+    "no_advice": "blocked",
+    "engine_error": "blocked",
+}
 
 
 def _parse_bool(value: Any, default: bool) -> bool:
@@ -387,6 +402,61 @@ def _log_alpha(
     if isinstance(extra, dict):
         row["extra"] = extra
     _append_jsonl_capped(ALPHA_LOG, row, ALPHA_LOG_MAX_LINES, ensure_ascii=True)
+    _log_decision_ledger(row)
+
+
+def _decision_outcome_for_row(row: Dict[str, Any]) -> str:
+    outcome = str(row.get("outcome") or "").strip().lower()
+    if outcome:
+        return outcome
+    event = str(row.get("event") or "").strip().lower()
+    mapped = _DECISION_OUTCOME_BY_EVENT.get(event)
+    if mapped:
+        return mapped
+    if bool(row.get("emitted")):
+        return "emitted"
+    return ""
+
+
+def _log_decision_ledger(row: Dict[str, Any]) -> None:
+    try:
+        outcome = _decision_outcome_for_row(row)
+        if outcome not in {"emitted", "blocked"}:
+            return
+
+        event = str(row.get("event") or "").strip().lower()
+        extra = row.get("extra") if isinstance(row.get("extra"), dict) else {}
+        gate_reason = ""
+        if isinstance(extra, dict):
+            gate_reason = str(extra.get("gate_reason") or extra.get("reason") or "").strip()
+        if not gate_reason and outcome == "blocked":
+            gate_reason = event
+
+        ledger_row: Dict[str, Any] = {
+            "ts": float(row.get("ts") or time.time()),
+            "event": event,
+            "outcome": outcome,
+            "session_id": str(row.get("session_id") or "").strip(),
+            "tool_name": str(row.get("tool_name") or "").strip(),
+            "tool": str(row.get("tool_name") or row.get("tool") or "").strip(),
+            "trace_id": str(row.get("trace_id") or "").strip(),
+            "route": str(row.get("route") or "alpha").strip() or "alpha",
+            "emitted": bool(row.get("emitted")) if outcome == "emitted" else False,
+            "elapsed_ms": round(max(0.0, float(row.get("elapsed_ms") or 0.0)), 2),
+        }
+        if gate_reason:
+            ledger_row["gate_reason"] = gate_reason
+        if isinstance(extra, dict) and extra:
+            ledger_row["extra"] = extra
+
+        _append_jsonl_capped(
+            ADVISORY_DECISION_LEDGER_FILE,
+            ledger_row,
+            ADVISORY_DECISION_LEDGER_MAX_LINES,
+            ensure_ascii=True,
+        )
+    except Exception as exc:
+        log_debug("advisory_engine_alpha", "decision ledger write failed", exc)
 
 
 def _dedupe_advice_items(advice_items: List[Any]) -> List[Any]:

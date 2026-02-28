@@ -49,6 +49,18 @@ NONBENCH_TRACE_EXCLUDE_PREFIXES = [
 ]
 KNOWN_NEGATIVE_LABELS = {"unhelpful", "harmful", "not_followed"}
 KNOWN_POSITIVE_LABELS = {"helpful"}
+DECISION_BLOCK_EVENTS = {
+    "gate_no_emit",
+    "dedupe_empty",
+    "dedupe_gate_empty",
+    "question_like_blocked",
+    "context_repeat_blocked",
+    "text_repeat_blocked",
+    "global_dedupe_suppressed",
+    "emit_suppressed",
+    "no_advice",
+    "engine_error",
+}
 
 
 def _to_ts(value: Any) -> float:
@@ -949,6 +961,7 @@ def build_report(summary: Dict[str, Any], window_hours: float, now_ts: float) ->
     storybook = summary.get("trace_storybook") or {}
     passed_surpassed = summary.get("passed_surpassed") or {}
     integrity = summary.get("integrity_gates") or {}
+    remediation = summary.get("integrity_remediation") or {}
 
     rep = ra["repeated_texts"][:6]
     repeated_share = round(sum(float(r["share_pct_of_items"]) for r in rep), 2)
@@ -988,6 +1001,38 @@ def build_report(summary: Dict[str, Any], window_hours: float, now_ts: float) ->
         lines.append(f"- Passed: {item}")
     for item in (passed_surpassed.get("surpassed") or []):
         lines.append(f"- Surpassed: {item}")
+
+    if isinstance(remediation, dict) and remediation:
+        lines.extend(["", "## Integrity Auto-Remediation"])
+        before = remediation.get("before") if isinstance(remediation.get("before"), dict) else {}
+        after = remediation.get("after") if isinstance(remediation.get("after"), dict) else {}
+        if before:
+            lines.append(
+                "- Before:"
+                f" ledger={before.get('decision_ledger_rows', 0)},"
+                f" helpfulness={before.get('helpfulness_event_rows', 0)},"
+                f" explicit_feedback={before.get('explicit_feedback_rows', 0)},"
+                f" quality={before.get('quality_event_rows', 0)}"
+            )
+        if after:
+            lines.append(
+                "- After:"
+                f" ledger={after.get('decision_ledger_rows', 0)},"
+                f" helpfulness={after.get('helpfulness_event_rows', 0)},"
+                f" explicit_feedback={after.get('explicit_feedback_rows', 0)},"
+                f" quality={after.get('quality_event_rows', 0)}"
+            )
+        actions = remediation.get("actions") if isinstance(remediation.get("actions"), list) else []
+        if actions:
+            for action in actions:
+                if not isinstance(action, dict):
+                    continue
+                step = _norm_text(action.get("step")) or "unknown_step"
+                ok = bool(action.get("ok"))
+                lines.append(f"- {'OK' if ok else 'WARN'} `{step}` {json.dumps(action, ensure_ascii=False)}")
+        errors = remediation.get("errors") if isinstance(remediation.get("errors"), list) else []
+        for err in errors[:8]:
+            lines.append(f"- ERROR `{err}`")
 
     if isinstance(integrity, dict) and integrity:
         lines.extend(["", "## Integrity Gates"])
@@ -1248,6 +1293,249 @@ def write_context_bundle(summary: Dict[str, Any], out_dir: Path) -> Dict[str, st
     }
 
 
+def _write_jsonl_atomic(path: Path, rows: Sequence[Dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{time.time_ns()}")
+    with tmp.open("w", encoding="utf-8") as fh:
+        for row in rows:
+            if isinstance(row, dict):
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    os.replace(str(tmp), str(path))
+
+
+def _decision_outcome_from_engine_row(row: Dict[str, Any]) -> str:
+    outcome = _norm_text(row.get("outcome")).lower()
+    if outcome in {"emitted", "blocked"}:
+        return outcome
+    event = _norm_text(row.get("event")).lower()
+    if bool(row.get("emitted")) or event == "emitted":
+        return "emitted"
+    if event in DECISION_BLOCK_EVENTS:
+        return "blocked"
+    return ""
+
+
+def _rebuild_decision_ledger_from_engine(
+    *,
+    spark_dir: Path,
+    max_engine_rows: int,
+) -> Dict[str, Any]:
+    engine_rows = _tail_jsonl(spark_dir / "advisory_engine_alpha.jsonl", max(500, int(max_engine_rows)))
+    if not engine_rows:
+        return {"ok": False, "reason": "missing_engine_rows", "written": 0}
+
+    out_rows: List[Dict[str, Any]] = []
+    for row in engine_rows:
+        outcome = _decision_outcome_from_engine_row(row)
+        if not outcome:
+            continue
+        event = _norm_text(row.get("event")).lower() or "unknown"
+        ts = _to_ts(row.get("ts")) or time.time()
+        extra = row.get("extra") if isinstance(row.get("extra"), dict) else {}
+        gate_reason = _norm_text(row.get("gate_reason") or row.get("reason"))
+        if not gate_reason and isinstance(extra, dict):
+            gate_reason = _norm_text(extra.get("gate_reason") or extra.get("reason"))
+        if not gate_reason and outcome == "blocked":
+            gate_reason = event
+
+        entry: Dict[str, Any] = {
+            "ts": float(ts),
+            "event": event,
+            "outcome": outcome,
+            "session_id": _norm_text(row.get("session_id")),
+            "tool_name": _norm_text(row.get("tool_name")),
+            "tool": _norm_text(row.get("tool_name") or row.get("tool")),
+            "trace_id": _norm_text(row.get("trace_id")),
+            "route": _norm_text(row.get("route")) or "alpha",
+            "emitted": bool(outcome == "emitted"),
+            "elapsed_ms": round(max(0.0, _safe_float(row.get("elapsed_ms"), 0.0)), 2),
+        }
+        if gate_reason:
+            entry["gate_reason"] = gate_reason
+        if isinstance(extra, dict) and extra:
+            entry["extra"] = extra
+        out_rows.append(entry)
+
+    if not out_rows:
+        return {"ok": False, "reason": "no_decision_events_in_engine_log", "written": 0}
+
+    _write_jsonl_atomic(spark_dir / "advisory_decision_ledger.jsonl", out_rows)
+    return {"ok": True, "written": len(out_rows), "reason": "rebuilt_from_engine_log"}
+
+
+def _run_quality_spine(spark_dir: Path) -> Dict[str, Any]:
+    from lib.advisory_quality_spine import run_advisory_quality_spine_default
+
+    result = run_advisory_quality_spine_default(spark_dir=spark_dir, write_files=True)
+    return result if isinstance(result, dict) else {}
+
+
+def _run_helpfulness_watcher(spark_dir: Path, *, min_created_at: float) -> Dict[str, Any]:
+    from lib.helpfulness_watcher import run_helpfulness_watcher_default
+
+    result = run_helpfulness_watcher_default(
+        spark_dir=spark_dir,
+        min_created_at=max(0.0, float(min_created_at)),
+        write_files=True,
+    )
+    return result if isinstance(result, dict) else {}
+
+
+def _rating_label_to_feedback(label: str) -> Dict[str, Any]:
+    key = _norm_text(label).lower()
+    if key == "helpful":
+        return {"helpful": True, "followed": True, "status": "acted", "outcome": "good"}
+    if key == "unhelpful":
+        return {"helpful": False, "followed": True, "status": "blocked", "outcome": "bad"}
+    if key == "harmful":
+        return {"helpful": False, "followed": True, "status": "harmful", "outcome": "bad"}
+    if key == "not_followed":
+        return {"helpful": None, "followed": False, "status": "ignored", "outcome": "neutral"}
+    return {"helpful": None, "followed": False, "status": "ignored", "outcome": "neutral"}
+
+
+def _backfill_feedback_from_quality_ratings(
+    *,
+    spark_dir: Path,
+    max_rows: int = 4000,
+) -> Dict[str, Any]:
+    feedback_file = spark_dir / "advice_feedback.jsonl"
+    existing_feedback = list(_load_jsonl(feedback_file))
+    if existing_feedback:
+        return {"ok": True, "skipped": True, "reason": "explicit_feedback_already_present", "written": 0}
+
+    rating_rows = _tail_jsonl(spark_dir / "advisor" / "advisory_quality_ratings.jsonl", max(1, int(max_rows)))
+    if not rating_rows:
+        return {"ok": False, "skipped": True, "reason": "no_quality_ratings_rows", "written": 0}
+
+    feedback_rows: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rating_rows:
+        trace_id = _norm_text(row.get("trace_id"))
+        advice_id = _norm_text(row.get("advice_id"))
+        if not trace_id or not advice_id:
+            continue
+        mapped = _rating_label_to_feedback(_norm_text(row.get("label")))
+        created_at = _to_ts(row.get("ts")) or time.time()
+        key = f"{trace_id}|{advice_id}|{mapped.get('status')}|{int(created_at)}"
+        if key in seen:
+            continue
+        seen.add(key)
+        feedback_rows.append(
+            {
+                "advice_ids": [advice_id],
+                "tool": _norm_text(row.get("tool")),
+                "helpful": mapped.get("helpful"),
+                "followed": bool(mapped.get("followed")) if mapped.get("followed") is not None else None,
+                "status": _norm_text(mapped.get("status")),
+                "outcome": _norm_text(mapped.get("outcome")),
+                "trace_id": trace_id,
+                "run_id": _norm_text(row.get("run_id")),
+                "session_id": _norm_text(row.get("session_id")),
+                "route": _norm_text(row.get("route")) or "alpha",
+                "notes": _norm_text(row.get("notes"))[:200],
+                "source": "quality_rating_backfill",
+                "created_at": float(created_at),
+            }
+        )
+
+    if not feedback_rows:
+        return {"ok": False, "skipped": True, "reason": "no_backfillable_quality_rating_rows", "written": 0}
+
+    _write_jsonl_atomic(feedback_file, feedback_rows[-max(1, int(max_rows)):])
+    return {"ok": True, "skipped": False, "reason": "backfilled_from_quality_ratings", "written": len(feedback_rows)}
+
+
+def auto_remediate_integrity_streams(
+    *,
+    summary: Dict[str, Any],
+    spark_dir: Path,
+    max_engine_rows: int = 60000,
+) -> Dict[str, Any]:
+    before = {
+        "decision_ledger_rows": len(list(_load_jsonl(spark_dir / "advisory_decision_ledger.jsonl"))),
+        "helpfulness_event_rows": len(list(_load_jsonl(spark_dir / "advisor" / "helpfulness_events.jsonl"))),
+        "explicit_feedback_rows": len(list(_load_jsonl(spark_dir / "advice_feedback.jsonl"))),
+        "feedback_request_rows": len(list(_load_jsonl(spark_dir / "advice_feedback_requests.jsonl"))),
+        "quality_event_rows": len(list(_load_jsonl(spark_dir / "advisor" / "advisory_quality_events.jsonl"))),
+    }
+    actions: List[Dict[str, Any]] = []
+    errors: List[str] = []
+
+    if before["decision_ledger_rows"] <= 0:
+        try:
+            actions.append(
+                {
+                    "step": "rebuild_decision_ledger",
+                    **_rebuild_decision_ledger_from_engine(
+                        spark_dir=spark_dir,
+                        max_engine_rows=max(500, int(max_engine_rows)),
+                    ),
+                }
+            )
+        except Exception as exc:
+            errors.append(f"rebuild_decision_ledger_failed:{type(exc).__name__}:{exc}")
+
+    needs_quality_refresh = before["quality_event_rows"] <= 0 or before["helpfulness_event_rows"] <= 0
+    if needs_quality_refresh:
+        try:
+            quality = _run_quality_spine(spark_dir)
+            actions.append(
+                {
+                    "step": "refresh_quality_spine",
+                    "ok": True,
+                    "summary_total_events": _safe_int((quality.get("summary") or {}).get("total_events"), 0),
+                }
+            )
+        except Exception as exc:
+            errors.append(f"refresh_quality_spine_failed:{type(exc).__name__}:{exc}")
+
+    if before["helpfulness_event_rows"] <= 0:
+        try:
+            window_hours = max(4.0, _safe_float(summary.get("window_hours"), 4.0))
+            min_created_at = time.time() - (window_hours * 6.0 * 3600.0)
+            watch = _run_helpfulness_watcher(
+                spark_dir=spark_dir,
+                min_created_at=min_created_at,
+            )
+            actions.append(
+                {
+                    "step": "refresh_helpfulness_events",
+                    "ok": bool(watch.get("ok", False)),
+                    "input_requests_rows": _safe_int((watch.get("inputs") or {}).get("requests_rows"), 0),
+                    "output_total_events": _safe_int((watch.get("summary") or {}).get("total_events"), 0),
+                }
+            )
+        except Exception as exc:
+            errors.append(f"refresh_helpfulness_events_failed:{type(exc).__name__}:{exc}")
+
+    if before["explicit_feedback_rows"] <= 0:
+        try:
+            actions.append(
+                {
+                    "step": "backfill_explicit_feedback_from_quality_ratings",
+                    **_backfill_feedback_from_quality_ratings(spark_dir=spark_dir),
+                }
+            )
+        except Exception as exc:
+            errors.append(f"backfill_explicit_feedback_failed:{type(exc).__name__}:{exc}")
+
+    after = {
+        "decision_ledger_rows": len(list(_load_jsonl(spark_dir / "advisory_decision_ledger.jsonl"))),
+        "helpfulness_event_rows": len(list(_load_jsonl(spark_dir / "advisor" / "helpfulness_events.jsonl"))),
+        "explicit_feedback_rows": len(list(_load_jsonl(spark_dir / "advice_feedback.jsonl"))),
+        "feedback_request_rows": len(list(_load_jsonl(spark_dir / "advice_feedback_requests.jsonl"))),
+        "quality_event_rows": len(list(_load_jsonl(spark_dir / "advisor" / "advisory_quality_events.jsonl"))),
+    }
+    return {
+        "attempted": bool(actions),
+        "before": before,
+        "after": after,
+        "actions": actions,
+        "errors": errors,
+    }
+
+
 def evaluate_integrity_gates(
     *,
     summary: Dict[str, Any],
@@ -1468,6 +1756,17 @@ def main() -> int:
     ap.add_argument("--gate-alert-file", default=str(GATE_ALERTS_FILE), help="JSONL alert sink for persistent gate failures")
     ap.add_argument("--no-gate-alerts", action="store_true", help="Disable writing persistent gate alerts")
     ap.add_argument(
+        "--no-auto-remediate-integrity",
+        action="store_true",
+        help="Disable best-effort remediation of missing advisory integrity streams before gate checks",
+    )
+    ap.add_argument(
+        "--integrity-remediate-max-engine-rows",
+        type=int,
+        default=60000,
+        help="Max advisory engine rows scanned when rebuilding decision ledger from engine log",
+    )
+    ap.add_argument(
         "--no-fail-on-persistent-blind-spots",
         action="store_true",
         help="Do not return non-zero when blind spots persist across required windows",
@@ -1498,6 +1797,12 @@ def main() -> int:
     gate_exit_code = 0
     enforce_gates = not bool(args.no_enforce_integrity_gates)
     if enforce_gates and args.context_mode != "off":
+        if not bool(args.no_auto_remediate_integrity):
+            summary["integrity_remediation"] = auto_remediate_integrity_streams(
+                summary=summary,
+                spark_dir=SPARK_DIR,
+                max_engine_rows=max(500, int(args.integrity_remediate_max_engine_rows)),
+            )
         gate_report = evaluate_integrity_gates(summary=summary, spark_dir=SPARK_DIR)
         persistence = apply_gate_persistence(
             gate_report=gate_report,

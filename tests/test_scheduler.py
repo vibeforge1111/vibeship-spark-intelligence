@@ -41,6 +41,8 @@ class TestLoadConfig(unittest.TestCase):
         self.assertEqual(cfg["advisory_review_gate_persist_windows"], 2)
         self.assertTrue(cfg["advisory_review_gate_alerts_enabled"])
         self.assertTrue(cfg["advisory_review_fail_on_persistent_blind_spots"])
+        self.assertTrue(cfg["advisory_review_auto_remediate_integrity"])
+        self.assertEqual(cfg["advisory_review_integrity_remediate_max_engine_rows"], 60000)
         self.assertTrue(cfg["memory_quality_observatory_enabled"])
 
     def test_overrides_from_file(self, tmp_path=None):
@@ -227,6 +229,8 @@ class TestRunDueTasks(unittest.TestCase):
             "advisory_review_gate_persist_windows": 2,
             "advisory_review_gate_alerts_enabled": True,
             "advisory_review_fail_on_persistent_blind_spots": True,
+            "advisory_review_auto_remediate_integrity": True,
+            "advisory_review_integrity_remediate_max_engine_rows": 60000,
             "memory_quality_observatory_enabled": True,
         }
 
@@ -474,6 +478,8 @@ class TestAdvisoryReviewTask(unittest.TestCase):
             "advisory_review_integrity_gates_enabled": False,
             "advisory_review_gate_alerts_enabled": False,
             "advisory_review_fail_on_persistent_blind_spots": False,
+            "advisory_review_auto_remediate_integrity": False,
+            "advisory_review_integrity_remediate_max_engine_rows": 12345,
             "memory_quality_observatory_enabled": False,
         }
         with patch.object(sched, "load_scheduler_config", return_value=cfg), \
@@ -491,6 +497,9 @@ class TestAdvisoryReviewTask(unittest.TestCase):
         self.assertIn("--no-enforce-integrity-gates", cmd)
         self.assertIn("--no-gate-alerts", cmd)
         self.assertIn("--no-fail-on-persistent-blind-spots", cmd)
+        self.assertIn("--no-auto-remediate-integrity", cmd)
+        self.assertIn("--integrity-remediate-max-engine-rows", cmd)
+        self.assertIn("12345", cmd)
 
     def test_advisory_review_failure_uses_stdout_when_stderr_empty(self):
         with patch.object(sched, "load_scheduler_config", return_value={"advisory_review_window_hours": 4}), \

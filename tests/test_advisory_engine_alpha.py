@@ -21,6 +21,7 @@ def _patch_state_and_store(monkeypatch, tmp_path):
 
     alpha_log = tmp_path / "advisory_engine_alpha.jsonl"
     monkeypatch.setattr(alpha_engine, "ALPHA_LOG", alpha_log)
+    monkeypatch.setattr(alpha_engine, "ADVISORY_DECISION_LEDGER_FILE", tmp_path / "advisory_decision_ledger.jsonl")
     return state_dir, packet_dir, alpha_log
 
 
@@ -85,7 +86,9 @@ def test_on_post_tool_records_outcome_and_invokes_implicit_feedback(monkeypatch,
 
 def test_log_alpha_writes_alpha_log_only(monkeypatch, tmp_path):
     alpha_log = tmp_path / "advisory_engine_alpha.jsonl"
+    ledger_log = tmp_path / "advisory_decision_ledger.jsonl"
     monkeypatch.setattr(alpha_engine, "ALPHA_LOG", alpha_log)
+    monkeypatch.setattr(alpha_engine, "ADVISORY_DECISION_LEDGER_FILE", ledger_log)
 
     alpha_engine._log_alpha(
         "emitted",
@@ -97,7 +100,31 @@ def test_log_alpha_writes_alpha_log_only(monkeypatch, tmp_path):
     )
 
     assert alpha_log.exists()
+    assert ledger_log.exists()
+    rows = [json.loads(line) for line in ledger_log.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert rows[-1]["outcome"] == "emitted"
     assert not (tmp_path / "advisory_engine.jsonl").exists()
+
+
+def test_log_alpha_skips_non_decision_events_in_ledger(monkeypatch, tmp_path):
+    alpha_log = tmp_path / "advisory_engine_alpha.jsonl"
+    ledger_log = tmp_path / "advisory_decision_ledger.jsonl"
+    monkeypatch.setattr(alpha_engine, "ALPHA_LOG", alpha_log)
+    monkeypatch.setattr(alpha_engine, "ADVISORY_DECISION_LEDGER_FILE", ledger_log)
+
+    alpha_engine._log_alpha(
+        "post_tool_recorded",
+        session_id="s2",
+        tool_name="Edit",
+        trace_id="t2",
+        emitted=False,
+        elapsed_ms=5.0,
+    )
+
+    assert alpha_log.exists()
+    if ledger_log.exists():
+        rows = [json.loads(line) for line in ledger_log.read_text(encoding="utf-8").splitlines() if line.strip()]
+        assert rows == []
 
 
 def _patch_pre_tool_runtime(monkeypatch):

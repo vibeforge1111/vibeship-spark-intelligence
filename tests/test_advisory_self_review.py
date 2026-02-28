@@ -6,6 +6,7 @@ import sys
 import time
 import types
 from pathlib import Path
+from typing import Any, Dict
 
 
 def _load_module():
@@ -293,3 +294,120 @@ def test_apply_gate_persistence_alerts_on_second_consecutive_window(tmp_path):
     assert second["persistent_failed_gate_ids"] == ["decision_ledger_present"]
     assert second["alert_written"] is True
     assert alert_file.exists()
+
+
+def test_auto_remediate_integrity_streams_rebuilds_missing_surfaces(tmp_path, monkeypatch):
+    mod = _load_module()
+    spark_dir = tmp_path / "spark"
+    (spark_dir / "advisor").mkdir(parents=True, exist_ok=True)
+    now = time.time()
+
+    (spark_dir / "advisory_engine_alpha.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": now - 30,
+                        "event": "emitted",
+                        "session_id": "s1",
+                        "tool_name": "Edit",
+                        "trace_id": "trace-1",
+                        "route": "alpha",
+                        "emitted": True,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": now - 20,
+                        "event": "gate_no_emit",
+                        "session_id": "s1",
+                        "tool_name": "Edit",
+                        "trace_id": "trace-2",
+                        "route": "alpha",
+                        "emitted": False,
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (spark_dir / "advice_feedback_requests.jsonl").write_text(
+        json.dumps(
+            {
+                "created_at": now - 40,
+                "trace_id": "trace-1",
+                "run_id": "run-1",
+                "tool": "Edit",
+                "advice_ids": ["aid-1"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (spark_dir / "advisor" / "advisory_quality_ratings.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": now - 10,
+                "event_id": "ev-1",
+                "trace_id": "trace-1",
+                "run_id": "run-1",
+                "tool": "Edit",
+                "advice_id": "aid-1",
+                "label": "helpful",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def _fake_quality(_spark_dir: Path) -> Dict[str, Any]:
+        (spark_dir / "advisor" / "advisory_quality_events.jsonl").write_text(
+            json.dumps(
+                {
+                    "emitted_ts": now - 15,
+                    "trace_id": "trace-1",
+                    "advice_id": "aid-1",
+                    "helpfulness_label": "unknown",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return {"summary": {"total_events": 1}}
+
+    def _fake_helpfulness(spark_dir: Path, *, min_created_at: float) -> Dict[str, Any]:
+        assert spark_dir
+        assert min_created_at > 0
+        (spark_dir / "advisor" / "helpfulness_events.jsonl").write_text(
+            json.dumps(
+                {
+                    "event_id": "h-1",
+                    "trace_id": "trace-1",
+                    "advice_id": "aid-1",
+                    "helpfulness_label": "unknown",
+                    "request_ts": now - 40,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return {"ok": True, "inputs": {"requests_rows": 1}, "summary": {"total_events": 1}}
+
+    monkeypatch.setattr(mod, "_run_quality_spine", _fake_quality)
+    monkeypatch.setattr(mod, "_run_helpfulness_watcher", _fake_helpfulness)
+
+    out = mod.auto_remediate_integrity_streams(
+        summary={"window_hours": 4.0},
+        spark_dir=spark_dir,
+        max_engine_rows=2000,
+    )
+
+    assert out["after"]["decision_ledger_rows"] >= 2
+    assert out["after"]["helpfulness_event_rows"] >= 1
+    assert out["after"]["explicit_feedback_rows"] >= 1
+    assert out["errors"] == []
+    decision_rows = list(mod._load_jsonl(spark_dir / "advisory_decision_ledger.jsonl"))
+    outcomes = {str(r.get("outcome")) for r in decision_rows}
+    assert "emitted" in outcomes
+    assert "blocked" in outcomes
