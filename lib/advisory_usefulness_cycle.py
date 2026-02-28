@@ -419,6 +419,9 @@ def run_usefulness_cycle(
                     llm_ratings.append(item)
                 break
 
+    llm_adjudication_missing = bool(run_llm and candidates and (not llm_ratings))
+    heuristic_helpful_downgraded = 0
+
     by_event: Dict[str, Dict[str, Any]] = {}
     for c in candidates:
         event_id = _norm_text(c.get("event_id"))
@@ -426,11 +429,17 @@ def run_usefulness_cycle(
             continue
         h_label = _norm_text(c.get("heuristic_label")).lower()
         h_conf = max(0.0, min(1.0, _safe_float(c.get("heuristic_confidence"), 0.0)))
+        h_notes = _norm_text(c.get("heuristic_reason"))[:200]
+        # Avoid mass-positive auto-labeling when provider adjudication fails.
+        if llm_adjudication_missing and h_label == "helpful":
+            h_conf = min(h_conf, 0.69)
+            h_notes = (h_notes + "; downgraded_without_llm_review").strip("; ")
+            heuristic_helpful_downgraded += 1
         by_event[event_id] = {
             "event_id": event_id,
             "label": h_label if h_label in VALID_RATING_LABELS else "unknown",
             "confidence": h_conf,
-            "notes": _norm_text(c.get("heuristic_reason"))[:200],
+            "notes": h_notes,
             "source_provider": "heuristic",
         }
     for row in llm_ratings:
@@ -516,6 +525,8 @@ def run_usefulness_cycle(
         "candidate_count": len(candidates),
         "applied_count": len(applied),
         "skipped_count": len(skipped),
+        "llm_adjudication_missing": bool(llm_adjudication_missing),
+        "heuristic_helpful_downgraded": int(heuristic_helpful_downgraded),
         "paths": {
             "queue_file": str(queue_file),
             "prompt_file": str(prompt_file),
@@ -533,4 +544,3 @@ def run_usefulness_cycle(
     with history_file.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(summary, ensure_ascii=False) + "\n")
     return summary
-

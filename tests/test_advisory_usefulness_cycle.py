@@ -153,3 +153,73 @@ def test_run_usefulness_cycle_applies_heuristic_ratings(tmp_path, monkeypatch):
     assert Path(paths["prompt_file"]).exists()
     assert Path(paths["summary_file"]).exists()
     assert Path(paths["history_file"]).exists()
+
+
+def test_run_usefulness_cycle_downgrades_helpful_when_llm_adjudication_missing(tmp_path, monkeypatch):
+    spark_dir = tmp_path / "spark"
+    now = time.time()
+
+    _write_jsonl(
+        spark_dir / "advisor" / "advisory_quality_events.jsonl",
+        [
+            {
+                "event_id": "ev-llm-missing",
+                "trace_id": "trace-1",
+                "advice_id": "aid-1",
+                "tool": "Edit",
+                "provider": "codex",
+                "helpfulness_label": "unknown",
+                "timing_bucket": "right_on_time",
+                "impact_score": 0.9,
+                "emitted_ts": now - 120,
+            }
+        ],
+    )
+    _write_jsonl(
+        spark_dir / "advisory_engine_alpha.jsonl",
+        [
+            {"ts": now - 119, "trace_id": "trace-1", "event": "emitted"},
+            {"ts": now - 110, "trace_id": "trace-1", "event": "post_tool_recorded", "extra": {"success": True}},
+        ],
+    )
+    _write_jsonl(
+        spark_dir / "advisor" / "implicit_feedback.jsonl",
+        [{"timestamp": now - 115, "trace_id": "trace-1", "tool": "Edit", "signal": "followed"}],
+    )
+
+    calls: list[dict] = []
+
+    def _fake_rate_event(**kwargs):
+        calls.append(dict(kwargs))
+        return {"ok": True}
+
+    monkeypatch.setattr(cycle, "_resolve_providers", lambda _raw: ["claude"])
+    monkeypatch.setattr(cycle, "_run_provider", lambda *_args, **_kwargs: ("not json", ""))
+    monkeypatch.setattr(quality_rating, "rate_event", _fake_rate_event)
+    monkeypatch.setattr(
+        quality_spine,
+        "run_advisory_quality_spine_default",
+        lambda **_kwargs: {"summary": {"total_events": 1}},
+    )
+    monkeypatch.setattr(
+        helpfulness_watcher,
+        "run_helpfulness_watcher_default",
+        lambda **_kwargs: {"summary": {"total_events": 1}},
+    )
+
+    out = cycle.run_usefulness_cycle(
+        spark_dir=spark_dir,
+        window_hours=4.0,
+        max_candidates=10,
+        run_llm=True,
+        min_confidence=0.7,
+        apply_limit=5,
+        source="test_cycle",
+    )
+
+    assert out["ok"] is True
+    assert out["candidate_count"] == 1
+    assert out["llm_adjudication_missing"] is True
+    assert out["heuristic_helpful_downgraded"] == 1
+    assert out["applied_count"] == 0
+    assert len(calls) == 0
