@@ -1920,6 +1920,7 @@ def _integrate_meta_ralph(result: TrainingResult, kb: KnowledgeBase) -> Tuple[in
             learning=insight,
             source="depth_trainer",
             context={
+                "trace_id": insight_key,
                 "domain": result.topic,
                 "has_outcome": True,
                 "importance_score": score / 10,

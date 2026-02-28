@@ -746,6 +746,62 @@ class MetaRalph:
             "last_updated": datetime.now().isoformat()
         })
 
+    def _extract_trace_id_from_context(self, context: Optional[Dict[str, Any]]) -> Optional[str]:
+        """Best-effort trace_id extraction from roast context payloads."""
+        if not isinstance(context, dict):
+            return None
+
+        direct_keys = ("trace_id", "trace", "outcome_trace_id", "reported_outcome_trace_id")
+        for key in direct_keys:
+            value = str(context.get(key) or "").strip()
+            if value:
+                return value[:128]
+
+        nested_keys = ("payload", "data", "event", "metadata", "context", "extras", "lineage")
+        for key in nested_keys:
+            nested = context.get(key)
+            if isinstance(nested, dict):
+                for nested_key in direct_keys:
+                    value = str(nested.get(nested_key) or "").strip()
+                    if value:
+                        return value[:128]
+        return None
+
+    def _compact_roast_context(self, context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Store a compact context snapshot for observability/debugging."""
+        if not isinstance(context, dict):
+            return {}
+        out: Dict[str, Any] = {}
+        keep_keys = (
+            "trace_id",
+            "session_id",
+            "hook_event",
+            "event_type",
+            "tool_name",
+            "tool",
+            "source",
+            "domain",
+            "category",
+            "importance_score",
+            "has_outcome",
+            "insight_key",
+        )
+        for key in keep_keys:
+            if key in context:
+                value = context.get(key)
+                if isinstance(value, (str, int, float, bool)) or value is None:
+                    out[key] = value
+
+        # Carry bounded context hints so roast rows can be audited without huge payloads.
+        for key in ("context_excerpt", "error", "reason"):
+            value = str(context.get(key) or "").strip()
+            if value:
+                out[key] = value[:240]
+
+        if not out:
+            out["_keys"] = sorted(str(k) for k in context.keys())[:20]
+        return out
+
     # =========================================================================
     # CORE: ROAST A LEARNING
     # =========================================================================
@@ -763,7 +819,11 @@ class MetaRalph:
             RoastResult with verdict and suggestions
         """
         self.total_roasted += 1
-        context = context or {}
+        context = dict(context or {})
+        if not context.get("trace_id"):
+            inferred_trace = self._extract_trace_id_from_context(context)
+            if inferred_trace:
+                context["trace_id"] = inferred_trace
 
         roast_questions = []
         issues_found = []
@@ -1664,13 +1724,13 @@ class MetaRalph:
 
     def _record_roast(self, result: RoastResult, source: str, context: Optional[Dict] = None):
         """Record roast for history and learning."""
-        trace_id = None
-        if context and isinstance(context, dict):
-            trace_id = context.get("trace_id")
+        trace_id = self._extract_trace_id_from_context(context)
+        context_snapshot = self._compact_roast_context(context)
         record = {
             "timestamp": datetime.now().isoformat(),
             "source": source,
             "trace_id": trace_id,
+            "context": context_snapshot,
             "result": result.to_dict()
         }
         self.roast_history.append(record)

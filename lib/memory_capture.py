@@ -724,7 +724,14 @@ def commit_learning(
         from lib.validate_and_store import validate_and_store_insight
         validate_and_store_insight(
             text=clean, category=category, context=ctx,
-            confidence=0.7, source="memory_capture",
+            confidence=0.7,
+            source="memory_capture",
+            trace_id=trace_id,
+            roast_context={
+                "trace_id": trace_id,
+                "session_id": session_id,
+                "source": "memory_capture",
+            },
         )
 
         # Also store into layered memory banks for fast retrieval + future project scoping.

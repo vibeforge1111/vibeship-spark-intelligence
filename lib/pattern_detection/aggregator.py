@@ -460,12 +460,25 @@ class PatternAggregator:
 
             # Create insight through unified validation
             from lib.validate_and_store import validate_and_store_insight
+            pattern_trace_id = ""
+            try:
+                pattern_trace_id = str((pattern.context or {}).get("trace_id") or "").strip()
+            except Exception:
+                pattern_trace_id = ""
             insight = validate_and_store_insight(
                 text=pattern.suggested_insight,
                 category=category,
                 context=f"Detected from {pattern.pattern_type.value} pattern (importance: {importance.tier.value})",
                 confidence=effective_confidence,
                 source="pattern_aggregator",
+                trace_id=pattern_trace_id or None,
+                roast_context={
+                    "trace_id": pattern_trace_id or None,
+                    "session_id": pattern.session_id,
+                    "pattern_type": pattern.pattern_type.value,
+                    "importance_score": importance.score,
+                    "source": "pattern_aggregator",
+                },
             )
 
             # Track importance distribution

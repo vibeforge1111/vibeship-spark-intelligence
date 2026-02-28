@@ -142,6 +142,40 @@ def test_context_boost():
     print("Context boost: PASSED")
 
 
+def test_roast_history_records_trace_and_context_snapshot():
+    ralph = MetaRalph()
+    ralph.roast(
+        "Use schema validation because malformed payloads break deploys",
+        source="test_trace",
+        context={
+            "trace_id": "trace-explicit-1",
+            "session_id": "s-1",
+            "tool_name": "Edit",
+            "importance_score": 0.9,
+            "context_excerpt": "example context",
+        },
+    )
+    recent = ralph.get_recent_roasts(1)
+    assert recent, "expected at least one roast record"
+    row = recent[-1]
+    assert row.get("trace_id") == "trace-explicit-1"
+    ctx = row.get("context") or {}
+    assert ctx.get("trace_id") == "trace-explicit-1"
+    assert ctx.get("session_id") == "s-1"
+    assert ctx.get("tool_name") == "Edit"
+
+
+def test_roast_history_infers_trace_from_nested_context():
+    ralph = MetaRalph()
+    ralph.roast(
+        "Always verify token audience because auth mismatches are costly",
+        source="test_nested_trace",
+        context={"payload": {"trace_id": "trace-nested-1"}},
+    )
+    row = ralph.get_recent_roasts(1)[-1]
+    assert row.get("trace_id") == "trace-nested-1"
+
+
 def test_alpha_scorer_is_primary(monkeypatch):
     """Alpha scorer is the primary Meta-Ralph scorer."""
     import lib.meta_ralph as mr

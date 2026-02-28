@@ -247,6 +247,14 @@ def extract_cognitive_signals(text: str, session_id: str, trace_id: Optional[str
                 context=f"signals: {signals_found}, session: {session_id}{domain_ctx}",
                 confidence=confidence,
                 source=source,
+                trace_id=trace_id,
+                roast_context={
+                    "trace_id": trace_id,
+                    "session_id": session_id,
+                    "domain": detected_domain,
+                    "importance_score": importance_score,
+                    "source": source,
+                },
             )
 
             if stored:

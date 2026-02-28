@@ -340,7 +340,7 @@ def extract_tool_effectiveness(events: List[SparkEvent]) -> Dict[str, Any]:
     Returns a dict with tool-level statistics and generated insights.
     """
     tool_stats: Dict[str, Dict[str, Any]] = defaultdict(
-        lambda: {"success": 0, "failure": 0, "total": 0, "errors": []}
+        lambda: {"success": 0, "failure": 0, "total": 0, "errors": [], "trace_id": ""}
     )
 
     # Track tool sequences per session for recovery detection
@@ -355,6 +355,9 @@ def extract_tool_effectiveness(events: List[SparkEvent]) -> Dict[str, Any]:
             tool_stats[tool]["success"] += 1
             tool_stats[tool]["total"] += 1
             session_sequences[event.session_id].append((tool, True))
+            event_trace = str((event.data or {}).get("trace_id") or "").strip()
+            if event_trace:
+                tool_stats[tool]["trace_id"] = event_trace
         elif event.event_type == EventType.POST_TOOL_FAILURE:
             tool_stats[tool]["failure"] += 1
             tool_stats[tool]["total"] += 1
@@ -362,6 +365,9 @@ def extract_tool_effectiveness(events: List[SparkEvent]) -> Dict[str, Any]:
             if err:
                 tool_stats[tool]["errors"].append(err)
             session_sequences[event.session_id].append((tool, False))
+            event_trace = str((event.data or {}).get("trace_id") or "").strip()
+            if event_trace:
+                tool_stats[tool]["trace_id"] = event_trace
 
     # Generate learnings from the stats
     insights: List[Dict[str, Any]] = []
@@ -384,6 +390,7 @@ def extract_tool_effectiveness(events: List[SparkEvent]) -> Dict[str, Any]:
                 "tool": tool,
                 "success_rate": round(success_rate, 2),
                 "total": stats["total"],
+                "trace_id": str(stats.get("trace_id") or "").strip(),
                 "insight": (
                     f"{tool} has {success_rate:.0%} success rate "
                     f"({stats['failure']}/{stats['total']} failures). "
@@ -399,6 +406,7 @@ def extract_tool_effectiveness(events: List[SparkEvent]) -> Dict[str, Any]:
                 "tool": tool,
                 "failures": stats["failure"],
                 "success_rate": round(success_rate, 2),
+                "trace_id": str(stats.get("trace_id") or "").strip(),
                 "insight": (
                     f"{tool} failed {stats['failure']}/{stats['total']} times "
                     f"({success_rate:.0%} success rate).{error_hint}"
@@ -451,6 +459,7 @@ def extract_micro_insights(events: List[SparkEvent]) -> List[Dict[str, Any]]:
     for event in events:
         tool = (event.tool_name or "").strip()
         error = (event.error or "").strip()
+        trace_id = str((event.data or {}).get("trace_id") or "").strip()
 
         # Individual failure with error detail → targeted learning
         if event.event_type == EventType.POST_TOOL_FAILURE and tool and error:
@@ -460,6 +469,7 @@ def extract_micro_insights(events: List[SparkEvent]) -> List[Dict[str, Any]]:
                 insights.append({
                     "type": "single_failure",
                     "tool": tool,
+                    "trace_id": trace_id,
                     "insight": f"{tool} failed: {error_core}",
                     "confidence": 0.55,
                     "category": "SELF_AWARENESS",
@@ -477,6 +487,7 @@ def extract_micro_insights(events: List[SparkEvent]) -> List[Dict[str, Any]]:
                 insights.append({
                     "type": "large_edit",
                     "tool": tool,
+                    "trace_id": trace_id,
                     "insight": (
                         f"Large edit on {fname} ({len(old_text)}→{len(new_text)} chars). "
                         f"Consider smaller incremental changes for safer refactoring."
@@ -494,7 +505,7 @@ def extract_error_patterns(events: List[SparkEvent]) -> Dict[str, Any]:
 
     Groups errors by tool + error signature to find systematic issues.
     """
-    error_groups: Dict[str, List[str]] = defaultdict(list)
+    error_groups: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"errors": [], "trace_id": ""})
 
     for event in events:
         if event.event_type != EventType.POST_TOOL_FAILURE:
@@ -505,16 +516,21 @@ def extract_error_patterns(events: List[SparkEvent]) -> Dict[str, Any]:
             continue
         # Normalize error to first 100 chars for grouping
         error_key = f"{tool}:{error[:100]}"
-        error_groups[error_key].append(error[:300])
+        error_groups[error_key]["errors"].append(error[:300])
+        trace_id = str((event.data or {}).get("trace_id") or "").strip()
+        if trace_id:
+            error_groups[error_key]["trace_id"] = trace_id
 
     patterns: List[Dict[str, Any]] = []
-    for key, errors in error_groups.items():
+    for key, payload in error_groups.items():
+        errors = payload.get("errors") or []
         if len(errors) >= 2:  # Recurring pattern
             tool, error_prefix = key.split(":", 1)
             patterns.append({
                 "tool": tool,
                 "error_pattern": error_prefix,
                 "occurrences": len(errors),
+                "trace_id": str(payload.get("trace_id") or "").strip(),
                 "insight": f"{tool} fails repeatedly with: {error_prefix[:80]}",
             })
 
@@ -693,11 +709,24 @@ def store_deep_learnings(
         learner = get_cognitive_learner()
         ralph = get_meta_ralph()
 
-        def _gate_and_store(insight_text: str, category, context: str, confidence: float,
-                            source: str = "pipeline", roast_context: dict = None) -> bool:
+        def _gate_and_store(
+            insight_text: str,
+            category,
+            context: str,
+            confidence: float,
+            source: str = "pipeline",
+            roast_context: dict = None,
+            trace_id: Optional[str] = None,
+        ) -> bool:
             """Run insight through MetaRalph quality gate, then store if it passes."""
             debug["attempted"] = int(debug.get("attempted", 0)) + 1
-            roast_result = ralph.roast(insight_text, source=source, context=roast_context)
+            roast_payload = dict(roast_context or {})
+            trace_hint = str(trace_id or roast_payload.get("trace_id") or "").strip()
+            if trace_hint:
+                roast_payload["trace_id"] = trace_hint
+            roast_payload.setdefault("source", source)
+            roast_payload.setdefault("context_excerpt", str(context or "")[:240])
+            roast_result = ralph.roast(insight_text, source=source, context=roast_payload)
             verdict_value = str(getattr(roast_result.verdict, "value", roast_result.verdict) or "gate_rejected").lower()
 
             # Keep strict default, but allow low-volume pipeline cycles to pass non-primitive verdicts.
@@ -737,7 +766,11 @@ def store_deep_learnings(
                 f"tool_effectiveness:{insight_data['tool']}",
                 0.7,
                 source="pipeline_tool_effectiveness",
-                roast_context={"tool_name": insight_data.get("tool", "")},
+                roast_context={
+                    "tool_name": insight_data.get("tool", ""),
+                    "trace_id": insight_data.get("trace_id", ""),
+                },
+                trace_id=insight_data.get("trace_id"),
             ):
                 stored += 1
 
@@ -752,7 +785,9 @@ def store_deep_learnings(
                 roast_context={
                     "tool_name": pattern.get("tool", ""),
                     "error": pattern.get("error", ""),
+                    "trace_id": pattern.get("trace_id", ""),
                 },
+                trace_id=pattern.get("trace_id"),
             ):
                 stored += 1
 
@@ -816,6 +851,12 @@ def store_deep_learnings(
                 f"micro:{mi.get('type', 'unknown')}:{mi_tool}",
                 mi_conf,
                 source="pipeline_micro",
+                roast_context={
+                    "tool_name": mi_tool,
+                    "trace_id": mi.get("trace_id", ""),
+                    "micro_type": mi.get("type", "unknown"),
+                },
+                trace_id=mi.get("trace_id"),
             ):
                 stored += 1
 
@@ -882,6 +923,16 @@ def store_deep_learnings(
                 f"tool_updates={tool_effectiveness.get('tools_tracked', 0)} "
                 f"errors={len(error_patterns.get('error_patterns', []))}"
             )
+            floor_trace = ""
+            for row in (tool_effectiveness.get("insights") or []):
+                floor_trace = str((row or {}).get("trace_id") or "").strip()
+                if floor_trace:
+                    break
+            if not floor_trace:
+                for row in (error_patterns.get("error_patterns") or []):
+                    floor_trace = str((row or {}).get("trace_id") or "").strip()
+                    if floor_trace:
+                        break
             # Floor enforcement now goes through unified validation (Meta-Ralph + noise filter).
             from lib.validate_and_store import validate_and_store_insight
             if validate_and_store_insight(
@@ -890,6 +941,8 @@ def store_deep_learnings(
                 context=context,
                 confidence=0.55,
                 source="pipeline_macro",
+                trace_id=floor_trace or None,
+                roast_context={"trace_id": floor_trace or None, "source": "pipeline_macro"},
             ):
                 stored += 1
                 debug["stored"] = int(debug.get("stored", 0)) + 1
