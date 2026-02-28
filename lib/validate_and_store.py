@@ -254,6 +254,43 @@ def validate_and_store_insight(
 
     _record("total_attempted")
 
+    # Step 0: deterministic structural keepability gate (cheap)
+    try:
+        from .keepability_gate import evaluate_structural_keepability
+
+        gate = evaluate_structural_keepability(text)
+        if log_intelligence_flow_event:
+            log_intelligence_flow_event(
+                stage="l0_structural_gate",
+                action="passed" if bool(gate.get("passed")) else "dropped",
+                text=text,
+                source=source,
+                category=str(getattr(category, "value", category) or ""),
+                context=context,
+                trace_id=trace_hint or None,
+                item_id=item_id,
+                reason="ok" if bool(gate.get("passed")) else "|".join(gate.get("reasons") or []),
+                stored=bool(gate.get("passed")),
+                extra={"reason_count": len(gate.get("reasons") or [])},
+            )
+        if not bool(gate.get("passed")):
+            _record("l0_rejected")
+            return _result(False, stored_text=text)
+    except Exception as e:
+        # Fail-open on gate errors; observability still records exception.
+        if log_intelligence_flow_event:
+            log_intelligence_flow_event(
+                stage="l0_structural_gate",
+                action="error",
+                text=text,
+                source=source,
+                category=str(getattr(category, "value", category) or ""),
+                context=context,
+                trace_id=trace_hint or None,
+                item_id=item_id,
+                reason=f"gate_exception:{type(e).__name__}",
+            )
+
     # Step 1: Meta-Ralph quality gate
     try:
         from .meta_ralph import get_meta_ralph, RoastVerdict

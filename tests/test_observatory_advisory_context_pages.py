@@ -141,6 +141,9 @@ def test_generate_advisory_context_pages_with_engine_fallback_and_integrity_flag
 
     assert set(pages.keys()) == {
         "advisory_trace_lineage.md",
+        "advisory_emission_lineage_deep.md",
+        "meta_ralph_trace_binding_health.md",
+        "intelligence_intake_lifecycle.md",
         "advisory_unknown_helpfulness_burndown.md",
         "advisory_suppression_replay.md",
         "advisory_context_drift.md",

@@ -707,6 +707,7 @@ def store_deep_learnings(
         from lib.cognitive_learner import get_cognitive_learner, CognitiveCategory
         from lib.meta_ralph import get_meta_ralph, RoastVerdict
         from lib.intelligence_observability import log_intelligence_flow_event
+        from lib.keepability_gate import evaluate_structural_keepability
         learner = get_cognitive_learner()
         ralph = get_meta_ralph()
 
@@ -734,6 +735,27 @@ def store_deep_learnings(
                 trace_id=trace_hint or None,
                 extra={"events_processed": events_processed},
             )
+
+            l0_gate = evaluate_structural_keepability(insight_text)
+            l0_passed = bool(l0_gate.get("passed"))
+            log_intelligence_flow_event(
+                stage="pipeline_l0_structural_gate",
+                action="passed" if l0_passed else "dropped",
+                text=insight_text,
+                source=source,
+                category=category_text,
+                context=context,
+                trace_id=trace_hint or None,
+                item_id=item_id,
+                reason="ok" if l0_passed else "|".join(l0_gate.get("reasons") or []),
+                stored=l0_passed,
+                extra={"reason_count": len(l0_gate.get("reasons") or [])},
+            )
+            if not l0_passed:
+                skipped = debug.setdefault("skipped", {})
+                skipped["l0_rejected"] = int(skipped.get("l0_rejected", 0)) + 1
+                return False
+
             if trace_hint:
                 roast_payload["trace_id"] = trace_hint
             roast_payload.setdefault("source", source)
