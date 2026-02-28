@@ -82,6 +82,10 @@ jobs:
         run: |
           python scripts/alpha_gate_burn_in.py --run-label ci_smoke --strict-margin 1 --distillation-margin 1
 
+      - name: Alpha Import/Wiring Smoke
+        run: |
+          python scripts/import_wiring_smoke.py --json-only
+
       - name: Alpha Smoke Gates
         run: |
           python scripts/production_loop_report.py

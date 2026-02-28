@@ -91,6 +91,10 @@ def test_memory_capture_skips_user_question_prompts(monkeypatch, spark_home):
     monkeypatch.setattr(memory_capture, "commit_learning", _fake_commit)
     monkeypatch.setattr(memory_capture, "AUTO_SAVE_THRESHOLD", 0.70)
     monkeypatch.setattr(memory_capture, "SUGGEST_THRESHOLD", 0.55)
+    monkeypatch.setattr(memory_capture, "_state", lambda: {"last_ts": 0.0})
+    monkeypatch.setattr(memory_capture, "_save_state", lambda _state: None)
+    monkeypatch.setattr(memory_capture, "_load_pending", lambda: {"items": []})
+    monkeypatch.setattr(memory_capture, "_save_pending", lambda _pending: None)
     monkeypatch.setattr(
         memory_capture,
         "importance_score",
