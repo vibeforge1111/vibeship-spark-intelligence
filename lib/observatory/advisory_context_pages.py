@@ -670,8 +670,8 @@ def _find_roast_for_text(
     return match
 
 
-def _advisory_emission_lineage_deep_page(sample_size: int = 160) -> str:
-    limit = max(120, int(sample_size))
+def _advisory_emission_lineage_deep_page(sample_size: int = 100) -> str:
+    limit = max(1, int(sample_size))
     quality_all_rows, _ = _read_jsonl(_SD / "advisor" / "advisory_quality_events.jsonl", max_rows=50000)
     quality_all_rows = [row for row in quality_all_rows if _norm_text(row.get("advice_id"))]
     quality_all_rows.sort(
@@ -748,6 +748,11 @@ def _advisory_emission_lineage_deep_page(sample_size: int = 160) -> str:
 
     roast_payload = _read_json(_SD / "meta_ralph" / "roast_history.json")
     roast_rows = roast_payload.get("history") if isinstance(roast_payload.get("history"), list) else []
+    roast_by_trace: dict[str, dict[str, Any]] = {}
+    for row in sorted(roast_rows, key=lambda item: _extract_ts(item, keys=("timestamp", "ts", "created_at")), reverse=True):
+        trace = _norm_text(row.get("trace_id"))
+        if trace and trace not in roast_by_trace:
+            roast_by_trace[trace] = row
     roast_exact: dict[str, dict[str, Any]] = {}
     for row in roast_rows:
         result = row.get("result") if isinstance(row.get("result"), dict) else {}
@@ -803,7 +808,11 @@ def _advisory_emission_lineage_deep_page(sample_size: int = 160) -> str:
                 memory_source = f"{source_hint}:ephemeral"
                 memory_context = memory_context or "No durable cognitive row found for this insight key."
 
-        roast_row = _find_roast_for_text(memory_text or advice_text, roast_exact, roast_rows, roast_cache)
+        roast_row = roast_by_trace.get(trace_id) if trace_id else None
+        meta_match_mode = "trace" if roast_row else ""
+        if roast_row is None:
+            roast_row = _find_roast_for_text(memory_text or advice_text, roast_exact, roast_rows, roast_cache)
+            meta_match_mode = "text" if roast_row else "none"
         roast_result = roast_row.get("result") if isinstance((roast_row or {}).get("result"), dict) else {}
         roast_score = roast_result.get("score") if isinstance(roast_result.get("score"), dict) else {}
         roast_verdict = _norm_text(roast_result.get("verdict"))
@@ -922,6 +931,7 @@ def _advisory_emission_lineage_deep_page(sample_size: int = 160) -> str:
                 "meta_specificity": roast_score.get("specificity"),
                 "meta_outcome_linked": roast_score.get("outcome_linked"),
                 "meta_ts": _norm_text((roast_row or {}).get("timestamp")),
+                "meta_match_mode": meta_match_mode,
                 "dist_id": dist_id,
                 "dist_type": dist_type,
                 "dist_conf": dist_conf,
@@ -1017,7 +1027,7 @@ def _advisory_emission_lineage_deep_page(sample_size: int = 160) -> str:
             f"contra={_norm_text(row.get('memory_contradicted')) or '-'}"
         )
         meta_scores = (
-            f"{_norm_text(row.get('meta_verdict')) or '-'}; "
+            f"{_norm_text(row.get('meta_verdict')) or '-'}({(_norm_text(row.get('meta_match_mode')) or '-')}); "
             f"total={_norm_text(row.get('meta_total')) or '-'}; "
             f"a={_norm_text(row.get('meta_actionability')) or '-'}; "
             f"r={_norm_text(row.get('meta_reasoning')) or '-'}; "
@@ -1055,13 +1065,13 @@ def _advisory_emission_lineage_deep_page(sample_size: int = 160) -> str:
 
     lines.extend(
         [
-            "## Per-Item Dossiers (Latest 25)",
+            f"## Per-Item Dossiers (Latest {min(len(lineage_rows), 100)})",
             "",
             "Use these when you need exact stage-by-stage context before tuning rules or thresholds.",
             "",
         ]
     )
-    for idx, row in enumerate(lineage_rows[:25], start=1):
+    for idx, row in enumerate(lineage_rows[:100], start=1):
         lines.extend(
             [
                 f"### {idx}. `{_norm_text(row.get('trace_id')) or '-'} :: {_norm_text(row.get('advice_id')) or '-'}",
@@ -1072,7 +1082,7 @@ def _advisory_emission_lineage_deep_page(sample_size: int = 160) -> str:
                 f"- Stage 4 stored text: {_norm_text(row.get('memory_text')) or '-'}",
                 f"- Stage 4 memory context: {_norm_text(row.get('memory_context')) or '-'}",
                 f"- Stage 4 memory scores: readiness=`{_norm_text(row.get('memory_readiness')) or '-'}` unified=`{_norm_text(row.get('memory_unified')) or '-'}` reliability=`{_norm_text(row.get('memory_reliability')) or '-'}` validated=`{_norm_text(row.get('memory_validated')) or '-'}` contradicted=`{_norm_text(row.get('memory_contradicted')) or '-'}`",
-                f"- Stage 5 Meta-Ralph: verdict=`{_norm_text(row.get('meta_verdict')) or '-'}` total=`{_norm_text(row.get('meta_total')) or '-'}` actionability=`{_norm_text(row.get('meta_actionability')) or '-'}` reasoning=`{_norm_text(row.get('meta_reasoning')) or '-'}` specificity=`{_norm_text(row.get('meta_specificity')) or '-'}` outcome_linked=`{_norm_text(row.get('meta_outcome_linked')) or '-'}` timestamp=`{_norm_text(row.get('meta_ts')) or '-'}`",
+                f"- Stage 5 Meta-Ralph: verdict=`{_norm_text(row.get('meta_verdict')) or '-'}` match_mode=`{_norm_text(row.get('meta_match_mode')) or '-'}` total=`{_norm_text(row.get('meta_total')) or '-'}` actionability=`{_norm_text(row.get('meta_actionability')) or '-'}` reasoning=`{_norm_text(row.get('meta_reasoning')) or '-'}` specificity=`{_norm_text(row.get('meta_specificity')) or '-'}` outcome_linked=`{_norm_text(row.get('meta_outcome_linked')) or '-'}` timestamp=`{_norm_text(row.get('meta_ts')) or '-'}`",
                 f"- Stage 7 distillation: id=`{_norm_text(row.get('dist_id')) or '-'}` type=`{_norm_text(row.get('dist_type')) or '-'}` confidence=`{_norm_text(row.get('dist_conf')) or '-'}` unified=`{_norm_text(row.get('dist_unified')) or '-'}` created=`{_fmt_ts(_to_float(row.get('dist_created_ts'), 0.0))}`",
                 f"- Stage 7 distillation statement: {_norm_text(row.get('dist_statement')) or '-'}",
                 f"- Stage 8 retrieval: {_norm_text(row.get('retrieval_context')) or '-'}",
@@ -1089,13 +1099,13 @@ def _advisory_emission_lineage_deep_page(sample_size: int = 160) -> str:
 
     lines.extend(
         [
-            "## Raw Evidence Bundles (Latest 12)",
+            f"## Raw Evidence Bundles (Latest {min(len(lineage_rows), 100)})",
             "",
             "Raw snippets for direct inspection of what each stage actually saw/stored/scored.",
             "",
         ]
     )
-    for idx, row in enumerate(lineage_rows[:12], start=1):
+    for idx, row in enumerate(lineage_rows[:100], start=1):
         bundle = {
             "trace_id": _norm_text(row.get("trace_id")),
             "advice_id": _norm_text(row.get("advice_id")),
@@ -1119,7 +1129,7 @@ def _advisory_emission_lineage_deep_page(sample_size: int = 160) -> str:
                 f"- Refs: {_norm_text(row.get('evidence_refs')) or '-'}",
                 "",
                 "```json",
-                _json_preview(bundle, max_chars=7000),
+                _json_preview(bundle, max_chars=2400),
                 "```",
                 "",
             ]
@@ -1138,6 +1148,148 @@ def _advisory_emission_lineage_deep_page(sample_size: int = 160) -> str:
         ]
     )
 
+    return "\n".join(lines)
+
+
+def _meta_ralph_trace_binding_health_page() -> str:
+    now_ts = time.time()
+    roast_payload = _read_json(_SD / "meta_ralph" / "roast_history.json")
+    roast_rows = roast_payload.get("history") if isinstance(roast_payload.get("history"), list) else []
+    roast_rows = sorted(
+        [row for row in roast_rows if isinstance(row, dict)],
+        key=lambda row: _extract_ts(row, keys=("timestamp", "ts", "created_at")),
+        reverse=True,
+    )
+
+    def _window(hours: int) -> list[dict[str, Any]]:
+        cutoff = now_ts - float(hours * 3600)
+        return [
+            row
+            for row in roast_rows
+            if _extract_ts(row, keys=("timestamp", "ts", "created_at")) >= cutoff
+        ]
+
+    def _stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        total = len(rows)
+        with_trace = 0
+        with_context = 0
+        with_context_trace = 0
+        missing_source = Counter()
+        for row in rows:
+            trace_id = _norm_text(row.get("trace_id"))
+            if trace_id:
+                with_trace += 1
+            ctx = row.get("context")
+            if isinstance(ctx, dict):
+                with_context += 1
+                if _norm_text(ctx.get("trace_id")):
+                    with_context_trace += 1
+            if not trace_id:
+                missing_source[_norm_text(row.get("source")) or "unknown"] += 1
+        return {
+            "total": total,
+            "with_trace": with_trace,
+            "with_context": with_context,
+            "with_context_trace": with_context_trace,
+            "missing_by_source": missing_source,
+        }
+
+    stats_4h = _stats(_window(4))
+    stats_24h = _stats(_window(24))
+    stats_all = _stats(roast_rows)
+
+    quality_rows, _ = _read_jsonl(_SD / "advisor" / "advisory_quality_events.jsonl", max_rows=50000)
+    quality_rows = [row for row in quality_rows if _norm_text(row.get("advice_id"))]
+    quality_rows.sort(
+        key=lambda row: _extract_ts(row, keys=("emitted_ts", "recorded_at", "ts", "timestamp", "created_at")),
+        reverse=True,
+    )
+
+    def _is_synthetic_quality(row: dict[str, Any]) -> bool:
+        trace = _trace_from_row(row).lower()
+        session_id = _norm_text(row.get("session_id")).lower()
+        run_id = _norm_text(row.get("run_id")).lower()
+        return trace.startswith("arena:") or session_id.startswith("arena:") or run_id.startswith("arena:")
+
+    quality_100 = [row for row in quality_rows if not _is_synthetic_quality(row)][:100]
+    roast_by_trace = {
+        _norm_text(row.get("trace_id")): row
+        for row in roast_rows
+        if _norm_text(row.get("trace_id"))
+    }
+    adv_trace_present = sum(1 for row in quality_100 if _trace_from_row(row))
+    adv_trace_bound = sum(1 for row in quality_100 if _trace_from_row(row) in roast_by_trace)
+
+    lines = [
+        "---",
+        "title: Meta-Ralph Trace Binding Health",
+        "tags:",
+        "  - observatory",
+        "  - meta_ralph",
+        "  - traces",
+        "  - integrity",
+        "---",
+        "",
+        "# Meta-Ralph Trace Binding Health",
+        "",
+        f"> {flow_link()} | [[advisory_emission_lineage_deep|Advisory Emission Lineage Deep Dive]]",
+        "",
+        "Trace binding status for Meta-Ralph roast history and advisory linkage windows.",
+        "",
+        "## Window Coverage",
+        "",
+        "| window | roasts | with trace_id | with context | context.trace_id |",
+        "|--------|--------|---------------|--------------|------------------|",
+        f"| last 4h | {stats_4h['total']} | {stats_4h['with_trace']} ({_fmt_pct(stats_4h['with_trace'], max(stats_4h['total'], 1))}) | {stats_4h['with_context']} ({_fmt_pct(stats_4h['with_context'], max(stats_4h['total'], 1))}) | {stats_4h['with_context_trace']} ({_fmt_pct(stats_4h['with_context_trace'], max(stats_4h['total'], 1))}) |",
+        f"| last 24h | {stats_24h['total']} | {stats_24h['with_trace']} ({_fmt_pct(stats_24h['with_trace'], max(stats_24h['total'], 1))}) | {stats_24h['with_context']} ({_fmt_pct(stats_24h['with_context'], max(stats_24h['total'], 1))}) | {stats_24h['with_context_trace']} ({_fmt_pct(stats_24h['with_context_trace'], max(stats_24h['total'], 1))}) |",
+        f"| all retained | {stats_all['total']} | {stats_all['with_trace']} ({_fmt_pct(stats_all['with_trace'], max(stats_all['total'], 1))}) | {stats_all['with_context']} ({_fmt_pct(stats_all['with_context'], max(stats_all['total'], 1))}) | {stats_all['with_context_trace']} ({_fmt_pct(stats_all['with_context_trace'], max(stats_all['total'], 1))}) |",
+        "",
+        "## Advisory Linkage (Latest 100 Emissions)",
+        "",
+        f"- Advisory rows analyzed: `{len(quality_100)}`",
+        f"- Rows with trace_id present: `{adv_trace_present}` ({_fmt_pct(adv_trace_present, max(len(quality_100), 1))})",
+        f"- Rows with trace-bound Meta-Ralph roast: `{adv_trace_bound}` ({_fmt_pct(adv_trace_bound, max(len(quality_100), 1))})",
+        "",
+        "## Missing Trace Sources (Last 24h)",
+        "",
+    ]
+
+    top_missing = stats_24h["missing_by_source"].most_common(20)
+    if top_missing:
+        lines.extend(
+            [
+                "| source | missing trace rows |",
+                "|--------|--------------------|",
+            ]
+        )
+        for source, count in top_missing:
+            lines.append(f"| {_md_escape(source)} | {count} |")
+    else:
+        lines.append("- No missing trace rows in last 24h.")
+    lines.append("")
+
+    lines.extend(
+        [
+            "## Recent Roast Rows (Latest 120)",
+            "",
+            "| ts | source | trace_id | verdict | total | context keys |",
+            "|----|--------|----------|---------|-------|--------------|",
+        ]
+    )
+    for row in roast_rows[:120]:
+        result = row.get("result") if isinstance(row.get("result"), dict) else {}
+        score = result.get("score") if isinstance(result.get("score"), dict) else {}
+        context = row.get("context") if isinstance(row.get("context"), dict) else {}
+        context_keys = ", ".join(sorted(str(k) for k in context.keys())[:8])
+        lines.append(
+            f"| {_fmt_ts(_extract_ts(row, keys=('timestamp', 'ts', 'created_at')))} | "
+            f"{_md_escape(_norm_text(row.get('source')) or '-')} | "
+            f"`{_short(_norm_text(row.get('trace_id')) or '-', 24)}` | "
+            f"{_md_escape(_norm_text(result.get('verdict')) or '-')} | "
+            f"{_md_escape(_norm_text(score.get('total')) or '-')} | "
+            f"{_md_escape(context_keys or '-')} |"
+        )
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -2610,7 +2762,8 @@ def generate_advisory_context_pages(data: dict[int, dict[str, Any]]) -> dict[str
     """Generate additional observatory pages for context-rich advisory diagnostics."""
     return {
         "advisory_trace_lineage.md": _trace_lineage_page(data),
-        "advisory_emission_lineage_deep.md": _advisory_emission_lineage_deep_page(),
+        "advisory_emission_lineage_deep.md": _advisory_emission_lineage_deep_page(sample_size=100),
+        "meta_ralph_trace_binding_health.md": _meta_ralph_trace_binding_health_page(),
         "advisory_unknown_helpfulness_burndown.md": _unknown_helpfulness_page(data),
         "advisory_suppression_replay.md": _suppression_replay_page(),
         "advisory_context_drift.md": _context_drift_page(),
