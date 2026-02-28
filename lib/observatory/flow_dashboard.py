@@ -301,6 +301,8 @@ def generate_flow_dashboard(data: dict[int, dict[str, Any]]) -> str:
     sections.append("- [[keepability_gate_review|Keepability Gate Review]] - 100+ memory/advisory items reviewed with keep/rewrite/drop rationale")
     sections.append("- [[context_trace_cohorts|Context Trace Cohorts]] - 100+ end-to-end traces from capture to outcome")
     sections.append("- [[intelligence_signal_tables|Intelligence Signal Tables]] - false wisdom and compounding insight tables")
+    sections.append("- [[intelligence_adjudication_lab|Intelligence Adjudication Lab]] - collaborative human-in-the-loop review workflow")
+    sections.append("- [[wave_01_keepability_review|Wave 01 Keepability Review]] - first 50-case meaning-first adjudication batch")
     sections.append("- [[codex_hooks|Codex Hooks]] - Codex hook bridge rollout gates and stability status")
     sections.append("- [[tuneables_deep_dive|Tuneables Deep Dive]] - config drift, hot-reload coverage, cooldown analysis, auto-tuner activity, recommendations")
     sections.append("- [[system_flow_comprehensive|System Flow Comprehensive]] - full human-readable reverse engineering with live examples, strengths, and gaps")
