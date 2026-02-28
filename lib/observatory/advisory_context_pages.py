@@ -947,6 +947,185 @@ def _data_integrity_page(data: dict[int, dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _retrieval_route_forensics_page(detail_rows: int = 450) -> str:
+    route_path = _SD / "advisor" / "retrieval_router.jsonl"
+    semantic_path = _SD / "logs" / "semantic_retrieval.jsonl"
+    route_rows, route_stats = _read_jsonl(route_path, max_rows=50000)
+    semantic_rows, semantic_stats = _read_jsonl(semantic_path, max_rows=50000)
+
+    def _safe_int(value: Any, default: int = 0) -> int:
+        try:
+            return int(value)
+        except Exception:
+            return int(default)
+
+    def _semantic_empty_bucket(row: dict[str, Any]) -> str:
+        candidates = _safe_int(row.get("semantic_candidates_count"), 0)
+        final_results = row.get("final_results")
+        final_count = len(final_results) if isinstance(final_results, list) else 0
+        if final_count > 0:
+            return "non_empty"
+        if bool(row.get("embedding_available")) and candidates <= 0:
+            return "embed_enabled_no_candidates"
+        if (not bool(row.get("embedding_available"))) and candidates <= 0:
+            return "no_embeddings_no_keyword_overlap"
+        if candidates > 0 and final_count <= 0:
+            return "gated_or_filtered_after_candidates"
+        return "other_empty"
+
+    route_reason_counter: Counter[tuple[str, str]] = Counter()
+    tool_route_counter: Counter[tuple[str, str]] = Counter()
+    empty_tool_counter: Counter[str] = Counter()
+    total_tool_counter: Counter[str] = Counter()
+
+    for row in route_rows:
+        route = _norm_text(row.get("route") or "unknown").lower() or "unknown"
+        reason = _norm_text(row.get("reason"))
+        if not reason:
+            reasons = row.get("reasons")
+            if isinstance(reasons, list) and reasons:
+                reason = _norm_text(reasons[0])
+        if not reason:
+            reason = "unknown"
+        tool = _norm_text(row.get("tool") or row.get("tool_name") or "?")
+        route_reason_counter[(route, reason)] += 1
+        tool_route_counter[(tool, route)] += 1
+        total_tool_counter[tool] += 1
+        if route == "empty":
+            empty_tool_counter[tool] += 1
+
+    lines = [
+        "---",
+        "title: Retrieval Route Forensics",
+        "tags:",
+        "  - observatory",
+        "  - advisory",
+        "  - retrieval",
+        "  - forensics",
+        "  - context-first",
+        "---",
+        "",
+        "# Retrieval Route Forensics (Context First)",
+        "",
+        f"> {flow_link()} | [[stages/08-advisory|Stage 8: Advisory]]",
+        "",
+        "## Data Scope",
+        "",
+        f"- Retrieval route source: `{route_path}`",
+        f"- Retrieval route rows parsed: `{len(route_rows)}`",
+        f"- Retrieval route invalid lines: `{route_stats.get('invalid_lines', 0)}`",
+        f"- Semantic retrieval source: `{semantic_path}`",
+        f"- Semantic retrieval rows parsed: `{len(semantic_rows)}`",
+        f"- Semantic retrieval invalid lines: `{semantic_stats.get('invalid_lines', 0)}`",
+        "",
+        "## Route x Reason Distribution (Top 40)",
+        "",
+        "| Route | Reason | Count | Share |",
+        "|-------|--------|-------|-------|",
+    ]
+    route_total = max(1, len(route_rows))
+    for (route, reason), count in route_reason_counter.most_common(40):
+        lines.append(f"| {route} | {reason} | {fmt_num(count)} | {_fmt_pct(count, route_total)} |")
+    lines.append("")
+
+    lines.extend(
+        [
+            "## Tool x Route Matrix (Top 30 Tools)",
+            "",
+            "| Tool | Total | Empty | Empty Rate | Top Routes |",
+            "|------|-------|-------|------------|------------|",
+        ]
+    )
+    for tool, total in total_tool_counter.most_common(30):
+        empty_count = empty_tool_counter.get(tool, 0)
+        top_routes = sorted(
+            [(route, cnt) for (tool_name, route), cnt in tool_route_counter.items() if tool_name == tool],
+            key=lambda item: item[1],
+            reverse=True,
+        )[:3]
+        top_routes_text = "; ".join(f"{route}:{cnt}" for route, cnt in top_routes) if top_routes else "-"
+        lines.append(
+            f"| {tool} | {fmt_num(total)} | {fmt_num(empty_count)} | {_fmt_pct(empty_count, max(1, total))} | {top_routes_text} |"
+        )
+    lines.append("")
+
+    ordered_route_rows = sorted(route_rows, key=_extract_ts, reverse=True)
+    detailed = ordered_route_rows[: max(100, int(detail_rows))]
+    lines.extend(
+        [
+            f"## Detailed Retrieval Rows (Latest {len(detailed)})",
+            "",
+            "| ts | tool | route | reason | complexity | active_insights | primary | returned | over_budget | route_ms | reasons | trace |",
+            "|----|------|-------|--------|------------|-----------------|---------|----------|-------------|----------|---------|-------|",
+        ]
+    )
+    for row in detailed:
+        ts = _fmt_ts(_extract_ts(row))
+        tool = _norm_text(row.get("tool") or row.get("tool_name") or "?")
+        route = _norm_text(row.get("route") or "unknown").lower() or "unknown"
+        reason = _norm_text(row.get("reason"))
+        reasons = row.get("reasons")
+        reasons_txt = ""
+        if isinstance(reasons, list):
+            reasons_txt = ", ".join(_norm_text(x) for x in reasons if _norm_text(x))[:140]
+        if not reason:
+            reason = _norm_text(reasons_txt.split(",")[0]) if reasons_txt else "unknown"
+        complexity = _safe_int(row.get("complexity_score"), 0)
+        active_insights = _safe_int(row.get("active_insights"), 0)
+        primary = _safe_int(row.get("primary_count"), 0)
+        returned = _safe_int(row.get("returned_count"), 0)
+        over_budget = "yes" if bool(row.get("fast_path_over_budget")) else "no"
+        route_ms = _safe_int(row.get("route_elapsed_ms"), 0)
+        trace = _norm_text(row.get("trace_id"))[:24] or "-"
+        lines.append(
+            f"| {ts} | {tool} | {route} | {reason} | {complexity} | {active_insights} | "
+            f"{primary} | {returned} | {over_budget} | {route_ms} | {reasons_txt or '-'} | {trace} |"
+        )
+    lines.append("")
+
+    ordered_semantic = sorted(semantic_rows, key=_extract_ts, reverse=True)
+    sem_detail = ordered_semantic[:350]
+    lines.extend(
+        [
+            f"## Semantic Retrieval Diagnostics (Latest {len(sem_detail)})",
+            "",
+            "| ts | empty_bucket | embedding | candidates | raw | post_noise | post_similarity | post_fusion | rescue_used | elapsed_ms | intent_preview |",
+            "|----|--------------|-----------|------------|-----|------------|-----------------|-------------|-------------|------------|----------------|",
+        ]
+    )
+    for row in sem_detail:
+        ts = _fmt_ts(_extract_ts(row))
+        bucket = _semantic_empty_bucket(row)
+        embedding = "yes" if bool(row.get("embedding_available")) else "no"
+        candidates = _safe_int(row.get("semantic_candidates_count"), 0)
+        raw_count = _safe_int(row.get("raw_result_count"), 0)
+        post_noise = _safe_int(row.get("post_noise_count"), 0)
+        post_similarity = _safe_int(row.get("post_similarity_count"), 0)
+        post_fusion = _safe_int(row.get("post_fusion_count"), 0)
+        rescue_used = "yes" if bool(row.get("rescue_used")) else "no"
+        elapsed_ms = _safe_int(row.get("elapsed_ms"), 0)
+        intent = _norm_text(row.get("intent"))[:120].replace("|", "\\|")
+        lines.append(
+            f"| {ts} | {bucket} | {embedding} | {candidates} | {raw_count} | {post_noise} | "
+            f"{post_similarity} | {post_fusion} | {rescue_used} | {elapsed_ms} | {intent or '-'} |"
+        )
+    lines.append("")
+
+    lines.extend(
+        [
+            "## Hard Questions For Next Cycle",
+            "",
+            "- Which `empty_primary` rows had `active_insights > 10` but still returned zero candidates, and why?",
+            "- Are generic rewrite intents (for example: `failure pattern and fix`) replacing high-signal context in retrieval queries?",
+            "- For each high-empty tool, what % of rows are `embedding_available=false` vs `embed_enabled_no_candidates`?",
+            "- Which suppression/threshold settings are discarding candidates after semantic retrieval (`gated_or_filtered_after_candidates` bucket)?",
+            "- Which repeated traces are stuck in empty retrieval loops across multiple tools?",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def generate_advisory_context_pages(data: dict[int, dict[str, Any]]) -> dict[str, str]:
     """Generate additional observatory pages for context-rich advisory diagnostics."""
     return {
@@ -955,4 +1134,5 @@ def generate_advisory_context_pages(data: dict[int, dict[str, Any]]) -> dict[str
         "advisory_suppression_replay.md": _suppression_replay_page(),
         "advisory_context_drift.md": _context_drift_page(),
         "advisory_data_integrity.md": _data_integrity_page(data),
+        "retrieval_route_forensics.md": _retrieval_route_forensics_page(),
     }

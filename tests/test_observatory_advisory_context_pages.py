@@ -145,6 +145,7 @@ def test_generate_advisory_context_pages_with_engine_fallback_and_integrity_flag
         "advisory_suppression_replay.md",
         "advisory_context_drift.md",
         "advisory_data_integrity.md",
+        "retrieval_route_forensics.md",
     }
     assert "Decision source used for lineage: `advisory_engine_alpha_fallback`" in pages["advisory_trace_lineage.md"]
     assert "Decision source: `advisory_engine_alpha_fallback`" in pages["advisory_suppression_replay.md"]
@@ -182,4 +183,3 @@ def test_context_drift_page_contains_dimension_rows(monkeypatch, tmp_path: Path)
     assert "| quality_provider |" in page
     assert "| quality_phase |" in page
     assert "| suppression_bucket |" in page
-

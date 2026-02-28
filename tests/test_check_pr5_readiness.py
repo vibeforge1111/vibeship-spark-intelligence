@@ -41,3 +41,21 @@ def test_route_mix_summary_tracks_empty_and_unknown_rates():
     assert out.get("missing_reason_fields") == 2
     assert abs(float(out.get("empty_route_rate") or 0.0) - (1 / 3)) < 1e-9
     assert abs(float(out.get("unknown_reason_rate") or 0.0) - (2 / 3)) < 1e-9
+
+
+def test_semantic_context_summary_buckets_rows():
+    mod = _load_module()
+    out = mod._semantic_context_summary(
+        [
+            {"embedding_available": False, "semantic_candidates_count": 0, "final_results": []},
+            {"embedding_available": True, "semantic_candidates_count": 0, "final_results": []},
+            {"embedding_available": False, "semantic_candidates_count": 4, "final_results": []},
+            {"embedding_available": False, "semantic_candidates_count": 2, "final_results": [{"id": 1}], "rescue_used": True},
+        ]
+    )
+    buckets = out.get("empty_context_buckets") or {}
+    assert buckets.get("no_embeddings_no_keyword_overlap") == 1
+    assert buckets.get("embed_enabled_no_candidates") == 1
+    assert buckets.get("gated_or_filtered_after_candidates") == 1
+    assert buckets.get("non_empty") == 1
+    assert out.get("rescue_used_count") == 1

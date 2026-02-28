@@ -25,6 +25,7 @@ if str(ROOT) not in sys.path:
 
 OUT_DIR = ROOT / "benchmarks" / "out" / "pr5_gate"
 RETRIEVAL_ROUTE_LOG = Path.home() / ".spark" / "advisor" / "retrieval_router.jsonl"
+SEMANTIC_LOG = Path.home() / ".spark" / "logs" / "semantic_retrieval.jsonl"
 REPLAY_SCRIPT = ROOT / "scripts" / "spark_alpha_replay_arena.py"
 
 
@@ -139,6 +140,37 @@ def _route_mix_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _semantic_context_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    bucket_counter: Counter[str] = Counter()
+    rescue_used = 0
+    for row in rows:
+        final_results = row.get("final_results")
+        final_count = len(final_results) if isinstance(final_results, list) else 0
+        candidates = int(row.get("semantic_candidates_count") or 0)
+        embedding = bool(row.get("embedding_available"))
+        if bool(row.get("rescue_used")):
+            rescue_used += 1
+        if final_count > 0:
+            bucket = "non_empty"
+        elif embedding and candidates <= 0:
+            bucket = "embed_enabled_no_candidates"
+        elif (not embedding) and candidates <= 0:
+            bucket = "no_embeddings_no_keyword_overlap"
+        elif candidates > 0 and final_count <= 0:
+            bucket = "gated_or_filtered_after_candidates"
+        else:
+            bucket = "other_empty"
+        bucket_counter[bucket] += 1
+    total = max(1, len(rows))
+    return {
+        "rows": len(rows),
+        "empty_context_buckets": dict(bucket_counter),
+        "empty_share": 1.0 - (float(bucket_counter.get("non_empty", 0)) / float(total)),
+        "rescue_used_count": rescue_used,
+        "rescue_used_rate": float(rescue_used) / float(total),
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Run PR-05 readiness gate checks.")
     ap.add_argument("--precision-floor", type=float, default=0.30, help="Minimum acceptable overall P@5.")
@@ -162,7 +194,9 @@ def main() -> int:
     latency_p95 = float(quality.get("p95_latency_ms") or 0.0)
 
     route_rows = _tail_jsonl(RETRIEVAL_ROUTE_LOG, max_lines=max(100, int(args.route_log_lines)))
+    semantic_rows = _tail_jsonl(SEMANTIC_LOG, max_lines=max(100, int(args.route_log_lines)))
     routes = _route_mix_summary(route_rows)
+    semantic_context = _semantic_context_summary(semantic_rows)
     route_row_count = int(routes.get("rows") or 0)
     empty_route_rate = float(routes.get("empty_route_rate") or 0.0)
     unknown_reason_rate = float(routes.get("unknown_reason_rate") or 0.0)
@@ -214,6 +248,7 @@ def main() -> int:
             "by_category": quality.get("by_category") or {},
         },
         "route_telemetry": routes,
+        "semantic_context": semantic_context,
         "replay": replay_payload,
         "gates": gates,
         "pass": all(bool(v) for v in gates.values()),

@@ -295,6 +295,7 @@ def generate_flow_dashboard(data: dict[int, dict[str, Any]]) -> str:
     sections.append("- [[advisory_suppression_replay|Suppression Decision Replay]] - blocked advisories with reason replay and trace drill")
     sections.append("- [[advisory_context_drift|Context Drift Panel]] - distribution drift across tools, routes, providers, and suppression")
     sections.append("- [[advisory_data_integrity|Advisory Data Quality Integrity]] - source freshness, trace coverage, and blind spots")
+    sections.append("- [[retrieval_route_forensics|Retrieval Route Forensics]] - 100s of detailed retrieval rows with route/reason context and hard questions")
     sections.append("- [[codex_hooks|Codex Hooks]] - Codex hook bridge rollout gates and stability status")
     sections.append("- [[tuneables_deep_dive|Tuneables Deep Dive]] - config drift, hot-reload coverage, cooldown analysis, auto-tuner activity, recommendations")
     sections.append("- [[system_flow_comprehensive|System Flow Comprehensive]] - full human-readable reverse engineering with live examples, strengths, and gaps")
