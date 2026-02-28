@@ -468,6 +468,48 @@ class Promoter:
         if isinstance(cfg, dict):
             self.confidence_floor = float(cfg.get("confidence_floor", self.confidence_floor))
             self.min_age_hours = float(cfg.get("min_age_hours", self.min_age_hours))
+        self.repromotion_demotion_limit = max(
+            1,
+            int(
+                (cfg.get("repromotion_demotion_limit", 2) if isinstance(cfg, dict) else 2) or 2
+            ),
+        )
+        self._reliability_demotion_counts: Dict[str, int] = self._load_reliability_demotion_counts()
+
+    @staticmethod
+    def _load_reliability_demotion_counts() -> Dict[str, int]:
+        """Count reliability-degraded demotions per insight key from the promotion log."""
+        out: Dict[str, int] = {}
+        try:
+            if not PROMOTION_LOG_FILE.exists():
+                return out
+            for raw in PROMOTION_LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
+                if not str(raw or "").strip():
+                    continue
+                try:
+                    row = json.loads(raw)
+                except Exception:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                if str(row.get("result") or "").strip() != "demoted":
+                    continue
+                if str(row.get("reason") or "").strip() != "reliability_degraded":
+                    continue
+                key = str(row.get("key") or "").strip()
+                if not key:
+                    continue
+                out[key] = int(out.get(key, 0) or 0) + 1
+        except Exception:
+            return out
+        return out
+
+    def _is_repromotion_blocked(self, insight_key: str) -> bool:
+        key = str(insight_key or "").strip()
+        if not key:
+            return False
+        count = int(self._reliability_demotion_counts.get(key, 0) or 0)
+        return count >= int(self.repromotion_demotion_limit)
 
     @staticmethod
     def _insight_age_hours(insight: CognitiveInsight) -> float:
@@ -804,6 +846,7 @@ class Promoter:
             if removed:
                 stats["doc_removed"] += 1
             self._log_promotion(key, target_file or "unknown", "demoted", "reliability_degraded")
+            self._reliability_demotion_counts[key] = int(self._reliability_demotion_counts.get(key, 0) or 0) + 1
 
         return stats
 
@@ -924,6 +967,8 @@ class Promoter:
         for key, insight in cognitive.insights.items():
             # Skip already promoted
             if insight.promoted:
+                continue
+            if self._is_repromotion_blocked(key):
                 continue
 
             # Find target first (skip if no target for this category)
