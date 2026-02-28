@@ -191,3 +191,61 @@ def test_promote_all_blocks_question_like_for_claude_and_agents(tmp_path, monkey
     ]
     filtered_question_rows = [r for r in rows if r.get("result") == "filtered" and r.get("reason") == "question_or_conversational"]
     assert len(filtered_question_rows) >= 2
+
+
+def test_promote_all_blocks_low_signal_conversational_but_keeps_technical_instruction(
+    tmp_path, monkeypatch
+):
+    project_dir = tmp_path
+    claude = project_dir / "CLAUDE.md"
+    claude.write_text(
+        "# CLAUDE\n\n## Spark Learnings\n\n*Auto-promoted insights from Spark*\n\n",
+        encoding="utf-8",
+    )
+
+    created_at = (datetime.now() - timedelta(hours=12)).isoformat()
+    fake = _FakeCognitive(
+        {
+            "low_signal": _FakeInsight(
+                insight="When using apply_patch, remember: do that too.",
+                category=CognitiveCategory.WISDOM,
+                reliability=1.0,
+                times_validated=15,
+                times_contradicted=0,
+                created_at=created_at,
+            ),
+            "technical": _FakeInsight(
+                insight="When using apply_patch, include context lines so that review diffs stay precise.",
+                category=CognitiveCategory.WISDOM,
+                reliability=0.96,
+                times_validated=10,
+                times_contradicted=0,
+                created_at=created_at,
+            ),
+        }
+    )
+
+    log_file = tmp_path / "promotion_log.jsonl"
+    monkeypatch.setattr("lib.promoter.get_cognitive_learner", lambda: fake)
+    monkeypatch.setattr("lib.promoter.PROMOTION_LOG_FILE", log_file)
+    monkeypatch.setattr(Promoter, "_llm_area_soft_promotion_triage", lambda self, insight, target: True)
+
+    promoter = Promoter(project_dir=project_dir, reliability_threshold=0.7, min_validations=3)
+    stats = promoter.promote_all(dry_run=False, include_project=False, include_chip_merge=False)
+
+    claude_text = claude.read_text(encoding="utf-8")
+    assert "When using apply_patch, remember: do that too." not in claude_text
+    assert "When using apply_patch, include context lines so that review diffs stay precise." in claude_text
+    assert stats["promoted"] == 1
+
+    rows = [
+        json.loads(line)
+        for line in log_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert any(
+        r.get("result") == "filtered"
+        and r.get("reason") == "question_or_conversational"
+        and r.get("key") == "low_signal"
+        for r in rows
+    )

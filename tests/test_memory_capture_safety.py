@@ -173,6 +173,19 @@ def test_question_prompt_scores_zero():
     assert "question_like" in breakdown
 
 
+def test_low_signal_conversational_prompt_scores_zero():
+    score, breakdown = importance_score("And if there are other things that you think will be helpful, do that too.")
+    assert score == 0.0
+    assert "conversational_like" in breakdown
+
+
+def test_technical_instruction_prompt_still_scores():
+    score, _ = importance_score(
+        "When using apply_patch, include context lines so that review diffs stay precise."
+    )
+    assert score >= 0.25
+
+
 # ── Emphasis signals ──────────────────────────────────────────────────
 
 def test_emphasis_must():

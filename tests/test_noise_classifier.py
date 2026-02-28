@@ -28,6 +28,18 @@ def test_classify_flags_short_question_fragment():
     assert decision.rule in {"question_fragment", "conversational_fragment"}
 
 
+def test_classify_flags_low_signal_conversational_directive():
+    decision = classify("And if there are other things that you think will be helpful, do that too.")
+    assert decision.is_noise is True
+    assert decision.rule == "conversational_fragment"
+
+
+def test_classify_allows_conversational_technical_instruction():
+    decision = classify("Can you enforce schema validation at the API boundary to prevent payload drift?")
+    assert decision.is_noise is False
+    assert decision.rule == "none"
+
+
 def test_shadow_summary_counts_by_module():
     rows = [
         {"module": "meta_ralph._is_primitive"},

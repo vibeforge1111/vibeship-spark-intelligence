@@ -125,8 +125,32 @@ _SEMANTIC_SUMMARY_RE = re.compile(
     re.I,
 )
 _QUESTION_START_RE = re.compile(
-    r"^\s*(what|why|how|when|where|who)\b|"
+    r"^\s*(what|why|how|where|who)\b|"
+    r"^\s*when\s+(do|does|did|should|would|could|can|is|are|will)\b|"
     r"^\s*(do|does|did|should|would|could|can|is|are|am)\s+(we|you|i|they|it|this|that)\b",
+    re.I,
+)
+_CONVERSATIONAL_PROMPT_RE = re.compile(
+    r"\b(can you|could you|would you|let'?s|please|let me know|i('?| a)?m not sure|not sure about)\b",
+    re.I,
+)
+_LOW_SIGNAL_DIRECTIVE_RE = re.compile(
+    r"\b(do that|this too|that too|as well|whatever works|if you want|if needed)\b|"
+    r"^\s*(ok|okay|sure|sounds good|lets do it|let's do it|go ahead)\b",
+    re.I,
+)
+_REUSABLE_INSTRUCTION_RE = re.compile(
+    r"\b(api|schema|trace|latency|token|retry|deploy|auth|memory|advisory|sqlite|jsonl|"
+    r"queue|bridge|contract|payload|regression|benchmark|coverage|rollback|migration|"
+    r"validator|threshold|gate|pytest|test|typescript|python)\b|"
+    r"\b(because|so that|therefore|hence|prevents|ensures|reduces|improves)\b",
+    re.I,
+)
+_ACTIONABLE_REQUEST_RE = re.compile(
+    r"^\s*(can|could|would)\s+(you\s+)?"
+    r"(enforce|add|set|run|validate|check|update|fix|remove|use|switch|enable|disable|include)\b|"
+    r"^\s*please\s+"
+    r"(enforce|add|set|run|validate|check|update|fix|remove|use|switch|enable|disable|include)\b",
     re.I,
 )
 
@@ -205,6 +229,8 @@ def _looks_like_user_question(text: str) -> bool:
     sample = str(text or "").strip()
     if not sample:
         return False
+    if _ACTIONABLE_REQUEST_RE.match(sample) and _has_reusable_instruction_signal(sample):
+        return False
     if sample.endswith("?"):
         return True
     if _QUESTION_START_RE.match(sample):
@@ -212,6 +238,32 @@ def _looks_like_user_question(text: str) -> bool:
     # conversational uncertainty prompts are generally not reusable insights
     if re.search(r"\b(i('| a)?m not sure|not sure about|can you|could you|would you)\b", sample, re.I):
         return True
+    return False
+
+
+def _has_reusable_instruction_signal(text: str) -> bool:
+    sample = str(text or "").strip()
+    if not sample:
+        return False
+    lower = sample.lower()
+    if _REUSABLE_INSTRUCTION_RE.search(lower):
+        return True
+    if re.search(r"\b\d+(\.\d+)?%?\b", lower):
+        return True
+    return False
+
+
+def _looks_like_non_reusable_prompt(text: str) -> bool:
+    sample = str(text or "").strip()
+    if not sample:
+        return False
+    if _looks_like_user_question(sample):
+        return True
+    lower = sample.lower()
+    if _LOW_SIGNAL_DIRECTIVE_RE.search(lower):
+        return not _has_reusable_instruction_signal(lower)
+    if _CONVERSATIONAL_PROMPT_RE.search(lower):
+        return not _has_reusable_instruction_signal(lower)
     return False
 
 
@@ -339,8 +391,9 @@ def _llm_area_novelty_score(text: str) -> float:
 def importance_score(text: str) -> Tuple[float, Dict[str, float]]:
     """Return (score 0..1, breakdown)."""
     t = _norm(text)
-    if _looks_like_user_question(text):
-        return 0.0, {"question_like": 1.0}
+    if _looks_like_non_reusable_prompt(text):
+        reason = "question_like" if _looks_like_user_question(text) else "conversational_like"
+        return 0.0, {reason: 1.0}
     breakdown: Dict[str, float] = {}
 
     def apply(phrases: Dict[str, float], bucket: str):
@@ -659,6 +712,8 @@ def commit_learning(
             return False
         if len(clean) > MAX_CAPTURE_CHARS:
             clean = clean[:MAX_CAPTURE_CHARS].rstrip()
+        if _looks_like_non_reusable_prompt(clean):
+            return False
         if _is_capture_noise(clean):
             return False
         # Use a compact context snippet so retrieval has useful grounding.
@@ -773,7 +828,7 @@ def process_recent_memory_events(limit: int = 50) -> Dict[str, Any]:
         txt = str(payload.get("text") or "").strip()
         if not txt:
             continue
-        if _looks_like_user_question(txt):
+        if _looks_like_non_reusable_prompt(txt):
             continue
         if _is_capture_noise(txt):
             continue

@@ -25,7 +25,20 @@ from .noise_patterns import is_common_noise, is_session_boilerplate
 from .primitive_filter import is_primitive_text
 
 SHADOW_LOG = Path.home() / ".spark" / "noise_classifier_shadow.jsonl"
-SHADOW_LOG_MAX_LINES = 20000
+
+
+def _env_int(name: str, default: int, lo: int, hi: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == "":
+        return int(default)
+    try:
+        value = int(raw)
+    except Exception:
+        return int(default)
+    return max(int(lo), min(int(hi), value))
+
+
+SHADOW_LOG_MAX_LINES = _env_int("SPARK_NOISE_SHADOW_MAX_LINES", 10000, 500, 200000)
 
 
 @dataclass(frozen=True)
@@ -57,8 +70,29 @@ _WORKFLOW_EXEC_RE = re.compile(r"^workflow execution\s+\d{1,2}/\d{1,2}/\d{4}", r
 _TOOL_CHAIN_RE = re.compile(r"\b\w+\s*(?:->|→)\s*\w+\b", re.I)
 _SHORT_METRIC_RE = re.compile(r"^\d+%?\s+(success|failure|error)\b", re.I)
 _QUESTION_START_RE = re.compile(
-    r"^\s*(what|why|how|when|where|who)\b|"
+    r"^\s*(what|why|how|where|who)\b|"
+    r"^\s*when\s+(do|does|did|should|would|could|can|is|are|will)\b|"
     r"^\s*(do|does|did|should|would|could|can|is|are|am)\s+(we|you|i|they|it|this|that)\b",
+    re.I,
+)
+_LOW_SIGNAL_DIRECTIVE_RE = re.compile(
+    r"\b(do that|this too|that too|as well|whatever works|if you want|if needed)\b|"
+    r"^\s*(ok|okay|sure|sounds good|lets do it|let's do it|go ahead)\b|"
+    r"\b(let me know|can you|could you|would you|please)\b",
+    re.I,
+)
+_REUSABLE_SIGNAL_RE = re.compile(
+    r"\b(api|schema|trace|latency|token|retry|deploy|auth|memory|advisory|sqlite|jsonl|"
+    r"queue|bridge|contract|payload|regression|benchmark|coverage|rollback|migration|"
+    r"validator|threshold|gate|pytest|test|typescript|python)\b|"
+    r"\b(because|so that|therefore|hence|prevents|ensures|reduces|improves)\b",
+    re.I,
+)
+_ACTIONABLE_REQUEST_RE = re.compile(
+    r"^\s*(can|could|would)\s+(you\s+)?"
+    r"(enforce|add|set|run|validate|check|update|fix|remove|use|switch|enable|disable|include)\b|"
+    r"^\s*please\s+"
+    r"(enforce|add|set|run|validate|check|update|fix|remove|use|switch|enable|disable|include)\b",
     re.I,
 )
 
@@ -122,6 +156,17 @@ def classify(text: str | None, *, context: str = "generic") -> NoiseDecision:
         return NoiseDecision(True, "code_artifact")
     if _MARKDOWN_HEADER_RE.search(sample):
         return NoiseDecision(True, "markdown_header")
+    if _LOW_SIGNAL_DIRECTIVE_RE.search(lower):
+        has_reusable_signal = bool(_REUSABLE_SIGNAL_RE.search(lower)) or bool(
+            re.search(r"\b\d+(\.\d+)?%?\b", lower)
+        )
+        if not has_reusable_signal:
+            return NoiseDecision(True, "conversational_fragment")
+    actionable_request = bool(_ACTIONABLE_REQUEST_RE.match(sample)) and (
+        bool(_REUSABLE_SIGNAL_RE.search(lower)) or bool(re.search(r"\b\d+(\.\d+)?%?\b", lower))
+    )
+    if actionable_request:
+        return NoiseDecision(False, "none")
     if "?" in sample and len(sample.split()) <= 25:
         return NoiseDecision(True, "question_fragment")
     if _QUESTION_START_RE.match(sample) and len(sample.split()) <= 18:

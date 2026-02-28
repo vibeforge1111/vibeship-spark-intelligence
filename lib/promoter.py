@@ -124,12 +124,32 @@ OPERATIONAL_PATTERNS = [
 # Compile patterns for efficiency
 _OPERATIONAL_REGEXES = [re.compile(p, re.IGNORECASE) for p in OPERATIONAL_PATTERNS]
 _QUESTION_START_RE = re.compile(
-    r"^\s*(what|why|how|when|where|who)\b|"
+    r"^\s*(what|why|how|where|who)\b|"
+    r"^\s*when\s+(do|does|did|should|would|could|can|is|are|will)\b|"
     r"^\s*(do|does|did|should|would|could|can|is|are|am)\s+(we|you|i|they|it|this|that)\b",
     re.I,
 )
 _CONVERSATIONAL_RE = re.compile(
     r"\b(can you|could you|would you|should we|do we|let'?s|please|i('?| a)?m not sure|not sure about)\b",
+    re.I,
+)
+_LOW_SIGNAL_DIRECTIVE_RE = re.compile(
+    r"\b(do that|this too|that too|as well|whatever works|if you want|if needed)\b|"
+    r"^\s*(ok|okay|sure|sounds good|lets do it|let's do it|go ahead)\b",
+    re.I,
+)
+_REUSABLE_SIGNAL_RE = re.compile(
+    r"\b(api|schema|trace|latency|token|retry|deploy|auth|memory|advisory|sqlite|jsonl|"
+    r"queue|bridge|contract|payload|regression|benchmark|coverage|rollback|migration|"
+    r"validator|threshold|gate|pytest|test|typescript|python)\b|"
+    r"\b(because|so that|therefore|hence|prevents|ensures|reduces|improves)\b",
+    re.I,
+)
+_ACTIONABLE_REQUEST_RE = re.compile(
+    r"^\s*(can|could|would)\s+(you\s+)?"
+    r"(enforce|add|set|run|validate|check|update|fix|remove|use|switch|enable|disable|include)\b|"
+    r"^\s*please\s+"
+    r"(enforce|add|set|run|validate|check|update|fix|remove|use|switch|enable|disable|include)\b",
     re.I,
 )
 
@@ -254,9 +274,26 @@ def _is_question_or_conversational(insight_text: str) -> bool:
     text = (insight_text or "").strip().lower()
     if not text:
         return True
+    actionable_request = bool(_ACTIONABLE_REQUEST_RE.match(text)) and (
+        bool(_REUSABLE_SIGNAL_RE.search(text)) or bool(re.search(r"\b\d+(\.\d+)?%?\b", text))
+    )
+    if actionable_request:
+        return False
     if text.endswith("?") or _QUESTION_START_RE.match(text):
         return True
     if _CONVERSATIONAL_RE.search(text):
+        has_reusable_signal = bool(_REUSABLE_SIGNAL_RE.search(text)) or bool(
+            re.search(r"\b\d+(\.\d+)?%?\b", text)
+        )
+        if not has_reusable_signal:
+            return True
+    if _LOW_SIGNAL_DIRECTIVE_RE.search(text):
+        has_reusable_signal = bool(_REUSABLE_SIGNAL_RE.search(text)) or bool(
+            re.search(r"\b\d+(\.\d+)?%?\b", text)
+        )
+        if not has_reusable_signal:
+            return True
+    if "when using " in text and not _REUSABLE_SIGNAL_RE.search(text):
         return True
     return False
 
