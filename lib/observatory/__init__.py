@@ -132,6 +132,7 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
         load_previous_snapshot,
         save_snapshot,
     )
+    from .report_center import generate_report_center
     from .readers import read_all_stages
     from .stage_pages import generate_all_stage_pages
     from .system_flow_comprehensive import generate_system_flow_comprehensive
@@ -235,8 +236,12 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
     recovery_content = generate_recovery_metrics(data)
     recovery_path.write_text(recovery_content, encoding="utf-8")
 
+    # Generate report center + source stubs
+    report_center_summary = generate_report_center(obs_dir=obs_dir)
+
     # Generate stage pages
     files_written = 17  # flow + reverse + 5 advisory context pages + tuneables_dive + llm_areas + comprehensive + playbook + recovery + 5 readability pages
+    files_written += int(report_center_summary.get("files_written") or 0)
     if curriculum_summary.get("written"):
         files_written += 1  # eidos_curriculum.md
     for filename, content in generate_all_stage_pages(data):
@@ -265,6 +270,11 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
     elapsed_ms = (time.time() - t0) * 1000
     if verbose:
         print(f"  [observatory] total: {files_written} files in {elapsed_ms:.0f}ms to {obs_dir}")
+        print(
+            "  [observatory] report center: "
+            f"{int(report_center_summary.get('reports_indexed') or 0)} reports, "
+            f"{int(report_center_summary.get('analysis_index_entries') or 0)} analyses"
+        )
 
     return {
         "files_written": files_written,
@@ -272,6 +282,7 @@ def generate_observatory(*, force: bool = False, verbose: bool = False) -> dict:
         "vault_dir": str(vault),
         "explorer": explorer_counts,
         "eidos_curriculum": curriculum_summary,
+        "report_center": report_center_summary,
     }
 
 

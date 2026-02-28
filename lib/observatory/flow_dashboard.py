@@ -285,6 +285,7 @@ def generate_flow_dashboard(data: dict[int, dict[str, Any]]) -> str:
     sections.append("## Quick Links\n")
     sections.append("- [[start_here|Start Here]] - guided 90-second orientation and reading path")
     sections.append("- [[topic_finder|Topic Finder]] - question-to-page index for fast navigation")
+    sections.append("- [[report_center|Report Center]] - open every report and jump to Claude analysis pages")
     sections.append("- [[glossary|Glossary]] - key terms across advisory, memory, EIDOS, and retrieval")
     sections.append("- [[troubleshooting_by_symptom|Troubleshooting by Symptom]] - diagnose issues by observed behavior")
     sections.append("- [[changes_since_last_regen|Changes Since Last Regen]] - track metric deltas after each regeneration")
