@@ -179,3 +179,48 @@ def test_export_advisory_collapses_duplicates_and_repairs_text(monkeypatch, tmp_
     assert "repeated 2x" in content
     assert "\u00e2\u20ac\u201d" not in content
     assert " - reduces p95 latency by 60%" in content
+
+
+def test_export_decisions_falls_back_to_alpha_engine(monkeypatch, tmp_path: Path) -> None:
+    spark_dir = tmp_path / ".spark"
+    monkeypatch.setattr(explorer, "_SD", spark_dir)
+
+    _write_jsonl(
+        spark_dir / "advisory_engine_alpha.jsonl",
+        [
+            {"ts": 1, "event": "emitted", "tool_name": "Edit", "route": "alpha", "source": "cognitive"},
+            {"ts": 2, "event": "gate_no_emit", "tool_name": "Bash", "gate_reason": "tool_cooldown"},
+        ],
+    )
+
+    explore_dir = tmp_path / "vault" / "_observatory" / "explore"
+    count = explorer._export_decisions(explore_dir, limit=50)
+    assert count == 1
+
+    content = (explore_dir / "decisions" / "_index.md").read_text(encoding="utf-8")
+    assert 'decision_source: "advisory_engine_alpha_fallback"' in content
+    assert "**Decision source:** `advisory_engine_alpha_fallback`" in content
+    assert "**Emit rate (recent):** 50.0% (1/2)" in content
+    assert "tool_cooldown" in content
+
+
+def test_export_decisions_falls_back_to_emit_log(monkeypatch, tmp_path: Path) -> None:
+    spark_dir = tmp_path / ".spark"
+    monkeypatch.setattr(explorer, "_SD", spark_dir)
+
+    _write_jsonl(
+        spark_dir / "advisory_emit.jsonl",
+        [
+            {"ts": 1, "tool_name": "Edit", "source": "cognitive"},
+            {"ts": 2, "tool_name": "Bash", "source": "eidos"},
+        ],
+    )
+
+    explore_dir = tmp_path / "vault" / "_observatory" / "explore"
+    count = explorer._export_decisions(explore_dir, limit=50)
+    assert count == 1
+
+    content = (explore_dir / "decisions" / "_index.md").read_text(encoding="utf-8")
+    assert 'decision_source: "advisory_emit_fallback"' in content
+    assert "**Decision source:** `advisory_emit_fallback`" in content
+    assert "**Emit rate (recent):** 100.0% (2/2)" in content

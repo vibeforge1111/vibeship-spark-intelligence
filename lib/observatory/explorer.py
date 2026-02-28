@@ -25,7 +25,7 @@ from typing import Any
 from ..spark_memory_spine import load_cognitive_insights_runtime_snapshot
 from .config import ObservatoryConfig, spark_dir
 from .linker import flow_link, fmt_num, fmt_ts
-from .readers import _count_jsonl, _load_json, _tail_jsonl
+from .readers import _coerce_decision_outcome, _count_jsonl, _load_json, _tail_jsonl
 
 _SD = spark_dir()
 
@@ -1063,9 +1063,74 @@ def _export_decisions(explore_dir: Path, limit: int) -> int:
     """Export advisory decision ledger showing emit/suppress/block decisions."""
     out = explore_dir / "decisions"
     out.mkdir(parents=True, exist_ok=True)
-    path = _SD / "advisory_decision_ledger.jsonl"
+    limit = max(1, int(limit or 1))
+    ledger_path = _SD / "advisory_decision_ledger.jsonl"
+    engine_path = _SD / "advisory_engine_alpha.jsonl"
+    emit_path = _SD / "advisory_emit.jsonl"
+
+    decision_source = "advisory_decision_ledger"
+    path = ledger_path
     total = _count_jsonl(path)
     recent = _tail_jsonl(path, limit)
+    if not recent:
+        engine_recent_raw = _tail_jsonl(engine_path, max(limit * 4, 400))
+        if engine_recent_raw:
+            decision_source = "advisory_engine_alpha_fallback"
+            path = engine_path
+            total = _count_jsonl(path)
+            recent = []
+            for row in engine_recent_raw:
+                if not isinstance(row, dict):
+                    continue
+                outcome = _coerce_decision_outcome(row)
+                if outcome == "unknown":
+                    continue
+                normalized = dict(row)
+                normalized["outcome"] = outcome
+                normalized["tool"] = str(
+                    normalized.get("tool")
+                    or normalized.get("tool_name")
+                    or "?"
+                )
+                normalized["route"] = str(
+                    normalized.get("route")
+                    or normalized.get("delivery_route")
+                    or "alpha"
+                )
+                reason = str(normalized.get("gate_reason") or normalized.get("reason") or "").strip()
+                if reason and outcome == "blocked" and not normalized.get("suppressed_reasons"):
+                    normalized["suppressed_reasons"] = [{"reason": reason, "count": 1}]
+                source_counts = normalized.get("source_counts")
+                if not isinstance(source_counts, dict):
+                    source_name = str(normalized.get("source") or "").strip()
+                    if source_name:
+                        normalized["source_counts"] = {source_name: 1}
+                recent.append(normalized)
+            recent = recent[-limit:]
+        else:
+            emit_recent_raw = _tail_jsonl(emit_path, limit)
+            if emit_recent_raw:
+                decision_source = "advisory_emit_fallback"
+                path = emit_path
+                total = _count_jsonl(path)
+                recent = []
+                for row in emit_recent_raw:
+                    if not isinstance(row, dict):
+                        continue
+                    normalized = dict(row)
+                    normalized["outcome"] = "emitted"
+                    normalized["tool"] = str(
+                        normalized.get("tool")
+                        or normalized.get("tool_name")
+                        or "?"
+                    )
+                    normalized["route"] = str(normalized.get("route") or "emit_fallback")
+                    source_counts = normalized.get("source_counts")
+                    if not isinstance(source_counts, dict):
+                        source_name = str(normalized.get("source") or "").strip()
+                        if source_name:
+                            normalized["source_counts"] = {source_name: 1}
+                    recent.append(normalized)
 
     # Aggregate distributions
     outcomes: dict[str, int] = {}
@@ -1116,6 +1181,12 @@ def _export_decisions(explore_dir: Path, limit: int) -> int:
             source_totals[src] = source_totals.get(src, 0) + int(cnt)
 
     emit_rate = round(emitted / max(len(recent), 1) * 100, 1)
+    newest_ts = 0.0
+    for row in recent:
+        ts = _parse_ts(row.get("ts"))
+        newest_ts = max(newest_ts, ts)
+    freshness_s = int(max(0.0, time.time() - newest_ts)) if newest_ts > 0 else None
+    freshness_label = f"{freshness_s}s" if freshness_s is not None else "unknown"
 
     index = [_frontmatter({
         "type": "spark-decisions-index",
@@ -1123,9 +1194,15 @@ def _export_decisions(explore_dir: Path, limit: int) -> int:
         "exported": len(recent),
         "limit": limit,
         "emit_rate": emit_rate,
+        "decision_source": decision_source,
+        "source_path": str(path),
+        "freshness_s": freshness_s,
     })]
     index.append(f"# Advisory Decision Ledger ({len(recent)}/{total})\n")
     index.append(f"> {flow_link()} | [[../stages/08-advisory|Stage 8: Advisory]]\n")
+    index.append(
+        f"**Decision source:** `{decision_source}` | **Source path:** `{path}` | **Freshness:** `{freshness_label}`\n"
+    )
     index.append(f"**Emit rate (recent):** {emit_rate}% ({emitted}/{len(recent)}) | **Blocked:** {blocked}\n")
     if len(recent) < total:
         index.append(f"*Showing most recent {len(recent)}. Increase `explore_decisions_max` in tuneables to see more.*\n")

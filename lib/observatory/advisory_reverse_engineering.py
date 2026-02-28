@@ -174,6 +174,11 @@ def _collect_runtime(window_s: int = 86400) -> Dict[str, Any]:
             if emit_rows:
                 ledger_source = "advisory_emit_fallback"
                 ledger_rows = [{**row, "outcome": "emitted"} for row in emit_rows]
+    decision_source_path = str(ledger_file)
+    if ledger_source == "advisory_engine_alpha_fallback":
+        decision_source_path = str(engine_file)
+    elif ledger_source == "advisory_emit_fallback":
+        decision_source_path = str(emit_file)
     implicit_rows = _window_rows(_read_jsonl(implicit_file, max_rows=12000), window_s=window_s)
 
     outcomes: Counter = Counter()
@@ -256,6 +261,7 @@ def _collect_runtime(window_s: int = 86400) -> Dict[str, Any]:
     return {
         "window_s": int(window_s),
         "ledger_source": ledger_source,
+        "decision_source_path": decision_source_path,
         "ledger_file": str(ledger_file),
         "emit_file": str(emit_file),
         "engine_file": str(engine_file),
@@ -308,6 +314,17 @@ def _load_good_suppressed(limit: int = 10) -> List[Dict[str, Any]]:
     path = _REPO_ROOT / "reports" / "runtime" / "good_but_suppressed_24h.json"
     rows = _read_json_array(path)
     return rows[: max(0, int(limit))]
+
+
+def _collect_quality_spine() -> Dict[str, Any]:
+    summary = _read_json(_SPARK_DIR / "advisor" / "advisory_quality_summary.json")
+    events = _read_jsonl(_SPARK_DIR / "advisor" / "advisory_quality_events.jsonl", max_rows=500)
+    if not isinstance(summary, dict):
+        summary = {}
+    return {
+        "summary": summary,
+        "events_count": len(events),
+    }
 
 
 def _improvement_rows(runtime: Dict[str, Any], tune: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -393,6 +410,7 @@ def _improvement_rows(runtime: Dict[str, Any], tune: Dict[str, Any]) -> List[Dic
 def generate_advisory_reverse_engineering(data: Dict[int, Dict[str, Any]]) -> str:
     """Build a reverse-engineered advisory path page with runtime evidence."""
     runtime = _collect_runtime(window_s=86400)
+    quality = _collect_quality_spine()
     tune = _collect_tuneables()
     good_suppressed = _load_good_suppressed(limit=10)
     improvements = _improvement_rows(runtime, tune)
@@ -421,7 +439,9 @@ def generate_advisory_reverse_engineering(data: Dict[int, Dict[str, Any]]) -> st
     lines.append("")
     lines.append("| Metric | Value |")
     lines.append("|---|---|")
-    lines.append(f"| Ledger rows (24h) | {runtime.get('ledger_rows', 0)} |")
+    lines.append(f"| Decision rows (24h) | {runtime.get('ledger_rows', 0)} |")
+    lines.append(f"| Decision source | `{runtime.get('ledger_source', 'unknown')}` |")
+    lines.append(f"| Decision source file | `{runtime.get('decision_source_path', '')}` |")
     lines.append(
         f"| Outcomes | emitted={runtime.get('emitted', 0)}, blocked={runtime.get('blocked', 0)}, raw={runtime.get('outcomes', {})} |"
     )
@@ -431,6 +451,11 @@ def generate_advisory_reverse_engineering(data: Dict[int, Dict[str, Any]]) -> st
     lines.append(
         f"| Follow rate | {runtime.get('follow_rate', '0.0%')} (followed={runtime.get('followed', 0)}, not_followed={runtime.get('not_followed', 0)}) |"
     )
+    q_summary = quality.get("summary") or {}
+    lines.append(f"| Quality spine events | {q_summary.get('total_events', quality.get('events_count', 0))} |")
+    lines.append(f"| Quality avg impact | {q_summary.get('avg_impact_score', 0.0)} |")
+    lines.append(f"| Quality helpful rate | {q_summary.get('helpful_rate_pct', 0.0)}% |")
+    lines.append(f"| Quality right-on-time rate | {q_summary.get('right_on_time_rate_pct', 0.0)}% |")
     lines.append(f"| Queue pending (current) | {queue_pending} |")
     lines.append(f"| Cognitive insights (current) | {insights_total} |")
     lines.append(f"| EIDOS distillations (current) | {eidos_distillations} |")
@@ -503,6 +528,21 @@ def generate_advisory_reverse_engineering(data: Dict[int, Dict[str, Any]]) -> st
         + " |"
     )
     lines.append("")
+
+    provider_summary = q_summary.get("provider_summary") if isinstance(q_summary.get("provider_summary"), dict) else {}
+    if provider_summary:
+        lines.append("## Provider Emission Quality (Spine)")
+        lines.append("")
+        lines.append("| Provider | Events | Avg impact | Helpful rate | Right-on-time |")
+        lines.append("|---|---:|---:|---:|---:|")
+        for provider, row in sorted(provider_summary.items(), key=lambda kv: -(int((kv[1] or {}).get("events", 0)))):
+            if not isinstance(row, dict):
+                continue
+            lines.append(
+                f"| `{provider}` | {int(row.get('events', 0) or 0)} | {float(row.get('avg_impact_score', 0.0) or 0.0):.3f} | "
+                f"{float(row.get('helpful_rate_pct', 0.0) or 0.0):.1f}% | {float(row.get('right_on_time_rate_pct', 0.0) or 0.0):.1f}% |"
+            )
+        lines.append("")
 
     if good_suppressed:
         lines.append("## Suppressed But Potentially Useful Advisories (Sample)")
@@ -582,6 +622,10 @@ def generate_advisory_reverse_engineering(data: Dict[int, Dict[str, Any]]) -> st
 
     lines.append("## Files To Inspect While Tuning")
     lines.append("")
+    lines.append(
+        f"- Decision source file: `{runtime.get('decision_source_path', '')}` "
+        f"(source=`{runtime.get('ledger_source', 'unknown')}`)"
+    )
     lines.append(f"- Ledger: `{runtime.get('ledger_file', '')}`")
     lines.append(f"- Implicit feedback: `{runtime.get('implicit_file', '')}`")
     lines.append("- Advisory state: `~/.spark/advisory_state/*.json`")

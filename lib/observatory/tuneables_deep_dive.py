@@ -180,11 +180,22 @@ SECTION_CONSUMERS = (
 )
 
 
-def _load_configs() -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Load live (~/.spark/) and version-controlled (config/) tuneables."""
-    live = _read_json(_SPARK_DIR / "tuneables.json")
-    versioned = _read_json(_REPO_ROOT / "config" / "tuneables.json")
-    return live, versioned
+def _load_configs() -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    """Load live/resolved and versioned tuneables plus source metadata."""
+    runtime_path = _SPARK_DIR / "tuneables.json"
+    versioned_path = _REPO_ROOT / "config" / "tuneables.json"
+    runtime = _read_json(runtime_path)
+    versioned = _read_json(versioned_path)
+    runtime_present = bool(runtime_path.exists()) and bool(runtime)
+    # Observatory must stay useful even when runtime overrides are absent.
+    resolved = runtime if runtime_present else dict(versioned)
+    source_meta = {
+        "runtime_path": str(runtime_path),
+        "versioned_path": str(versioned_path),
+        "runtime_present": runtime_present,
+        "resolved_source": "runtime" if runtime_present else "versioned_fallback",
+    }
+    return resolved, versioned, source_meta
 
 
 def _compute_drift(live: Dict[str, Any], versioned: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -334,7 +345,7 @@ def _llm_area_config_advise(drifts: list, anomalies: list) -> str:
 
 def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     """Build the comprehensive tuneables deep-dive page for Obsidian."""
-    live, versioned = _load_configs()
+    live, versioned, source_meta = _load_configs()
     drifts = _compute_drift(live, versioned)
     anomalies = _detect_anomalies(live)
     tuner = _auto_tuner_analysis(live)
@@ -383,6 +394,8 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     lines.append(f"| Health | **{health}** |")
     lines.append(f"| Total sections | {len(all_sections)} (live: {len(live_sections)}, versioned: {len(ver_sections)}) |")
     lines.append(f"| Total keys | live: {total_keys_live}, versioned: {total_keys_ver} |")
+    lines.append(f"| Runtime source mode | {source_meta.get('resolved_source')} |")
+    lines.append(f"| Runtime tuneables present | {source_meta.get('runtime_present')} |")
     lines.append(f"| Schema sections | {schema_count} |")
     lines.append(f"| Hot-reload coverage | {reload_count}/{schema_count} ({reload_pct}) |")
     lines.append(f"| Config drifts detected | {drift_count} |")
@@ -423,8 +436,12 @@ def generate_tuneables_deep_dive(data: Dict[int, Dict[str, Any]]) -> str:
     # ── 3. Config Drift Analysis ──
     lines.append("## Config Drift Analysis")
     lines.append("")
-    lines.append("Comparison of `~/.spark/tuneables.json` (live) vs `config/tuneables.json` (version-controlled).")
+    lines.append("Comparison of resolved runtime config vs `config/tuneables.json` (version-controlled).")
     lines.append("Auto-tuner state (`source_boosts`, `tuning_log`, `last_run`) is expected to drift and excluded.")
+    if not bool(source_meta.get("runtime_present")):
+        lines.append("")
+        lines.append("> Runtime tuneables file is absent; using versioned config as observability authority.")
+        lines.append("> Drift checks now compare `versioned_fallback` against versioned baseline (expected minimal drift).")
     lines.append("")
 
     if drifts:
