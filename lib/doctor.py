@@ -551,7 +551,7 @@ def _check_config(result: DoctorResult):
 
     if runtime_config.exists():
         try:
-            data = json.loads(runtime_config.read_text(encoding="utf-8"))
+            data = json.loads(runtime_config.read_text(encoding="utf-8-sig"))
             if isinstance(data, dict):
                 sections = len(data)
                 result.add(Check(
