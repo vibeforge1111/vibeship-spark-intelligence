@@ -43,6 +43,8 @@ _reconcile_done = False
 SPARK_OPENCLAW_NOTIFY: bool = True
 _NOTIFY_COOLDOWN_S = 300  # 5 minutes
 _last_notify_time: float = 0.0
+_QUALITY_SCORE_COOLDOWN_S = 300  # 5 minutes
+_last_quality_score_time: float = 0.0
 BRIDGE_STEP_TIMEOUT_S: float = 45.0
 BRIDGE_DISABLE_TIMEOUTS: bool = False
 _BRIDGE_GC_EVERY: int = 3
@@ -815,6 +817,12 @@ def run_bridge_cycle(
     except Exception:
         pass
 
+    # --- Intelligence quality scoring (cooldown: 5 min) ---
+    try:
+        _maybe_score_intelligence_quality()
+    except Exception:
+        pass
+
     return stats
 
 
@@ -1260,3 +1268,19 @@ def bridge_heartbeat_age_s() -> Optional[float]:
     if ts <= 0:
         return None
     return max(0.0, time.time() - ts)
+
+
+def _maybe_score_intelligence_quality() -> None:
+    """Re-score intelligence quality on a 5-minute cooldown."""
+    global _last_quality_score_time
+
+    now = time.time()
+    if now - _last_quality_score_time < _QUALITY_SCORE_COOLDOWN_S:
+        return
+    _last_quality_score_time = now
+
+    try:
+        from scripts.score_intelligence_quality import write_quality_file
+        write_quality_file()
+    except Exception:
+        pass

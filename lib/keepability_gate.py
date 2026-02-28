@@ -29,34 +29,46 @@ _CONVERSATIONAL_RE = re.compile(
 _QUOTE_ECHO_RE = re.compile(r"^\s*['\"`].+['\"`]\s*$")
 _BLOB_RE = re.compile(r"[{};:]{3,}")
 _WORD_RE = re.compile(r"[A-Za-z0-9_'-]+")
+# Short real words that legitimately end a sentence (don't flag as truncation)
+_SHORT_END_WORDS = {
+    "be", "do", "is", "or", "if", "at", "in", "on", "to", "it", "of",
+    "so", "no", "go", "up", "us", "we", "me", "my", "by", "am", "an",
+    "as", "ok", "vs",
+}
+_PREFER_OVER_RE = re.compile(
+    r"prefer\s+['\"](.+?)['\"]\s+over\s+['\"](.+?)['\"]", re.IGNORECASE
+)
 
 _ACTION_VERBS = {
-    "use",
-    "run",
-    "check",
-    "verify",
-    "validate",
-    "avoid",
-    "prefer",
-    "split",
-    "refactor",
-    "retry",
-    "inspect",
-    "log",
-    "gate",
-    "store",
-    "remove",
-    "add",
-    "align",
-    "trace",
-    "promote",
-    "demote",
-    "rewrite",
-    "because",
-    "should",
-    "must",
-    "always",
-    "never",
+    # Original
+    "use", "run", "check", "verify", "validate", "avoid", "prefer",
+    "split", "refactor", "retry", "inspect", "log", "gate", "store",
+    "remove", "add", "align", "trace", "promote", "demote", "rewrite",
+    "because", "should", "must", "always", "never",
+    # Implementation / creation
+    "implement", "create", "build", "configure", "set", "enable", "disable",
+    "establish", "setup", "initialize", "install", "deploy", "migrate",
+    # Testing / validation
+    "test", "try", "attempt", "confirm", "demonstrate", "assert",
+    # Investigation / analysis
+    "search", "find", "look", "explore", "analyze", "investigate",
+    "examine", "review", "debug", "diagnose", "profile",
+    # Modification / fixing
+    "modify", "fix", "update", "change", "adjust", "correct", "revise",
+    "improve", "enhance", "patch", "optimize", "tune", "tweak",
+    # Organization / structure
+    "ensure", "organize", "structure", "group", "categorize", "separate",
+    # Awareness / monitoring
+    "watch", "monitor", "observe", "track", "consider", "measure",
+    "detect", "prevent", "alert",
+    # Decision / planning
+    "decide", "plan", "choose", "select", "design", "architect",
+    # Communication / documentation
+    "document", "explain", "clarify",
+    # Security / data
+    "sanitize", "escape", "encrypt", "authenticate", "authorize", "audit",
+    # Flow control
+    "cache", "batch", "throttle", "queue", "schedule", "fallback",
 }
 
 
@@ -103,6 +115,25 @@ def evaluate_structural_keepability(text: str) -> Dict[str, Any]:
     has_action_signal = any(token.lower() in _ACTION_VERBS for token in words)
     if not has_action_signal:
         reasons.append("no_action_signal")
+
+    # Truncation detection: text cut mid-word or mid-sentence.
+    if word_count >= 4:
+        last_word = words[-1] if words else ""
+        last_char = raw.rstrip()[-1] if raw.rstrip() else ""
+        # Ends with 1-2 char fragment that isn't a real short word
+        if (
+            last_char.isalnum()
+            and len(last_word) <= 2
+            and last_word.lower() not in _SHORT_END_WORDS
+        ):
+            reasons.append("mid_sentence_truncation")
+
+    # Malformed "prefer X over Y" — both sides must be meaningful.
+    m = _PREFER_OVER_RE.search(raw)
+    if m:
+        x_part, y_part = m.group(1).strip(), m.group(2).strip()
+        if len(x_part) < 3 or len(y_part) < 3:
+            reasons.append("malformed_preference")
 
     # De-duplicate while preserving order.
     uniq: List[str] = []

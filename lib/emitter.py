@@ -182,11 +182,35 @@ def emit(text: str, *, metadata: Optional[Dict[str, Any]] = None) -> bool:
     return True
 
 
+def _extract_advice_metadata(advice_items: Optional[list]) -> Dict[str, Any]:
+    """Extract metadata from advice items for emission logging."""
+    if not advice_items:
+        return {}
+    meta: Dict[str, Any] = {"advice_count": len(advice_items)}
+    primary = advice_items[0] if advice_items else None
+    if primary:
+        meta["advice_id"] = str(getattr(primary, "advice_id", "") or "") or None
+        meta["insight_key"] = str(getattr(primary, "insight_key", "") or "") or None
+        meta["source"] = str(getattr(primary, "source", "") or "") or None
+        conf = getattr(primary, "confidence", None)
+        if conf is not None:
+            meta["confidence"] = round(float(conf), 3)
+        ctx = getattr(primary, "context_match", None)
+        if ctx is not None:
+            meta["context_match"] = round(float(ctx), 3)
+        meta["category"] = str(getattr(primary, "category", "") or "") or None
+        readiness = getattr(primary, "advisory_readiness", None)
+        if readiness is not None:
+            meta["advisory_readiness"] = round(float(readiness), 4)
+    return meta
+
+
 def emit_advisory(
     gate_result,
     synthesized_text: str,
     advice_items: Optional[list] = None,
     *,
+    session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
     tool_name: str = "",
     route: str = "",
@@ -198,7 +222,8 @@ def emit_advisory(
     Args:
         gate_result: GateResult from advisory_gate
         synthesized_text: Output from advisory_synthesizer
-        advice_items: Original advice items (for text lookup)
+        advice_items: Original advice items (for text lookup and metadata)
+        session_id: Session identifier for traceability
 
     Returns:
         True if anything was emitted
@@ -208,18 +233,21 @@ def emit_advisory(
 
     # Determine authority
     highest = _highest_authority(gate_result.emitted)
+    advice_meta = _extract_advice_metadata(advice_items)
 
     if synthesized_text and synthesized_text.strip():
         formatted = format_advisory(synthesized_text, highest, gate_result.phase)
         return emit(
             formatted,
             metadata={
+                "session_id": str(session_id or "").strip() or None,
                 "trace_id": str(trace_id or "").strip() or None,
                 "tool_name": (tool_name or "").strip() or None,
                 "route": (route or "").strip() or None,
                 "task_plane": (task_plane or "").strip() or None,
                 "authority": highest,
                 "phase": getattr(gate_result, "phase", "") or None,
+                **advice_meta,
             },
         )
 
@@ -248,12 +276,14 @@ def emit_advisory(
             return emit(
                 combined,
                 metadata={
+                    "session_id": str(session_id or "").strip() or None,
                     "trace_id": str(trace_id or "").strip() or None,
                     "tool_name": (tool_name or "").strip() or None,
                     "route": (route or "").strip() or None,
                     "task_plane": (task_plane or "").strip() or None,
                     "authority": highest,
                     "phase": getattr(gate_result, "phase", "") or None,
+                    **advice_meta,
                 },
             )
 
@@ -280,6 +310,7 @@ def _log_emission(text: str, *, metadata: Optional[Dict[str, Any]] = None) -> No
         entry = {
             "ts": time.time(),
             "text": text[:300],
+            "full_text": text,
             "chars": len(text),
         }
         if metadata:
