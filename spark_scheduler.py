@@ -124,13 +124,18 @@ DEFAULT_CONFIG = {
     "engagement_snapshot_interval": 1800,
     "daily_research_interval": 86400,
     "niche_scan_interval": 21600,
-    "advisory_review_interval": 43200,
+    "advisory_review_interval": 14400,
     "mention_poll_enabled": True,
     "engagement_snapshot_enabled": True,
     "daily_research_enabled": True,
     "niche_scan_enabled": True,
     "advisory_review_enabled": True,
-    "advisory_review_window_hours": 12,
+    "advisory_review_window_hours": 4,
+    "advisory_review_min_gap_hours": 4,
+    "advisory_review_context_bundle_enabled": True,
+    "advisory_review_context_llm_enabled": True,
+    "advisory_review_context_llm_providers": "auto",
+    "advisory_review_context_llm_timeout_s": 180,
     "memory_quality_observatory_enabled": True,
 }
 
@@ -816,10 +821,12 @@ def task_niche_scan(state: Dict[str, Any]) -> Dict[str, Any]:
 def task_advisory_review(state: Dict[str, Any]) -> Dict[str, Any]:
     """Generate a trace-backed advisory self-review report."""
     del state  # State not required for this task.
+    cfg = load_scheduler_config()
+    window_h = int(cfg.get("advisory_review_window_hours", 4) or 4)
+    min_gap_hours = float(cfg.get("advisory_review_min_gap_hours", 4) or 4)
 
     # File-based gap guard: skip if a recent report exists (survives scheduler restarts)
     reports_dir = Path(__file__).resolve().parent / "docs" / "reports"
-    min_gap_hours = 6
     if reports_dir.exists():
         import glob as _glob
         recent = sorted(_glob.glob(str(reports_dir / "*_advisory_self_review.md")))
@@ -827,21 +834,35 @@ def task_advisory_review(state: Dict[str, Any]) -> Dict[str, Any]:
             newest = Path(recent[-1])
             age_hours = (time.time() - newest.stat().st_mtime) / 3600
             if age_hours < min_gap_hours:
-                logger.info("advisory_review: skipped (recent report %.1fh old, min gap %dh)", age_hours, min_gap_hours)
+                logger.info("advisory_review: skipped (recent report %.1fh old, min gap %.1fh)", age_hours, min_gap_hours)
                 return {"status": "skipped", "reason": f"recent report exists ({age_hours:.1f}h old)"}
 
     script = Path(__file__).resolve().parent / "scripts" / "advisory_self_review.py"
     if not script.exists():
         return {"error": f"missing script: {script}"}
 
-    cfg = load_scheduler_config()
-    window_h = int(cfg.get("advisory_review_window_hours", 12) or 12)
     cmd = [
         sys.executable,
         str(script),
         "--window-hours",
         str(max(1, window_h)),
+        "--min-gap-hours",
+        str(max(0.0, min_gap_hours)),
+        "--context-mode",
+        "full",
     ]
+    if _safe_bool(cfg.get("advisory_review_context_bundle_enabled", True), True):
+        cmd.append("--emit-context-bundle")
+    if _safe_bool(cfg.get("advisory_review_context_llm_enabled", True), True):
+        cmd.extend(
+            [
+                "--run-llm-review",
+                "--llm-providers",
+                str(cfg.get("advisory_review_context_llm_providers", "auto") or "auto"),
+                "--llm-timeout-s",
+                str(float(cfg.get("advisory_review_context_llm_timeout_s", 180) or 180)),
+            ]
+        )
     proc = subprocess.run(
         cmd,
         cwd=str(Path(__file__).resolve().parent),

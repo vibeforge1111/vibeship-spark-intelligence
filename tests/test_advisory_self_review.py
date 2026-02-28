@@ -150,3 +150,63 @@ def test_generate_summary_nonbench_excludes_replay_and_delta(tmp_path, monkeypat
     assert summary["recent_advice"]["rows"] == 3
     assert summary["recent_advice_nonbench"]["rows"] == 1
     assert summary["recent_advice_nonbench"]["excluded"] == 2
+
+
+def test_generate_summary_includes_context_and_prompt(tmp_path, monkeypatch):
+    mod = _load_module()
+    now = time.time()
+    spark_dir = tmp_path / "spark"
+    (spark_dir / "advisor").mkdir(parents=True, exist_ok=True)
+    (spark_dir / "logs").mkdir(parents=True, exist_ok=True)
+    (spark_dir / "queue").mkdir(parents=True, exist_ok=True)
+    (spark_dir / "meta_ralph").mkdir(parents=True, exist_ok=True)
+
+    (spark_dir / "advisor" / "recent_advice.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": now - 20,
+                "trace_id": "live-trace-x",
+                "sources": ["cognitive"],
+                "advice_texts": ["Prefer strict trace joins."],
+                "tool": "Edit",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (spark_dir / "advisor" / "advisory_quality_events.jsonl").write_text(
+        json.dumps(
+            {
+                "emitted_ts": now - 18,
+                "trace_id": "live-trace-x",
+                "advice_id": "aid-1",
+                "provider": "codex",
+                "tool": "Edit",
+                "helpfulness_label": "helpful",
+                "impact_score": 0.83,
+                "timing_bucket": "right_on_time",
+                "advice_text": "Prefer strict trace joins.",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (spark_dir / "advisory_engine_alpha.jsonl").write_text(
+        json.dumps({"ts": now - 19, "trace_id": "live-trace-x", "event": "emitted"}) + "\n",
+        encoding="utf-8",
+    )
+    (spark_dir / "meta_ralph" / "outcome_tracking.json").write_text(
+        json.dumps({"records": []}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(mod, "SPARK_DIR", spark_dir)
+    monkeypatch.setattr(mod, "ADVISORY_ENGINE_LOG", spark_dir / "advisory_engine_alpha.jsonl")
+
+    summary = mod.generate_summary(window_hours=1.0)
+    assert "stage_context" in summary
+    assert "trace_storybook" in summary
+    assert "passed_surpassed" in summary
+    prompt = str(summary.get("hard_question_prompt") or "")
+    assert "Hard questions you must answer" in prompt
+    assert "Stages 1..9" in prompt

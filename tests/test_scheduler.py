@@ -29,9 +29,14 @@ class TestLoadConfig(unittest.TestCase):
         self.assertEqual(cfg["engagement_snapshot_interval"], 1800)
         self.assertEqual(cfg["daily_research_interval"], 86400)
         self.assertEqual(cfg["niche_scan_interval"], 21600)
-        self.assertEqual(cfg["advisory_review_interval"], 43200)
+        self.assertEqual(cfg["advisory_review_interval"], 14400)
         self.assertTrue(cfg["advisory_review_enabled"])
-        self.assertEqual(cfg["advisory_review_window_hours"], 12)
+        self.assertEqual(cfg["advisory_review_window_hours"], 4)
+        self.assertEqual(cfg["advisory_review_min_gap_hours"], 4)
+        self.assertTrue(cfg["advisory_review_context_bundle_enabled"])
+        self.assertTrue(cfg["advisory_review_context_llm_enabled"])
+        self.assertEqual(cfg["advisory_review_context_llm_providers"], "auto")
+        self.assertEqual(cfg["advisory_review_context_llm_timeout_s"], 180)
         self.assertTrue(cfg["memory_quality_observatory_enabled"])
 
     def test_overrides_from_file(self, tmp_path=None):
@@ -202,13 +207,18 @@ class TestRunDueTasks(unittest.TestCase):
             "engagement_snapshot_interval": 1800,
             "daily_research_interval": 86400,
             "niche_scan_interval": 21600,
-            "advisory_review_interval": 43200,
+            "advisory_review_interval": 14400,
             "mention_poll_enabled": True,
             "engagement_snapshot_enabled": True,
             "daily_research_enabled": True,
             "niche_scan_enabled": True,
             "advisory_review_enabled": True,
-            "advisory_review_window_hours": 12,
+            "advisory_review_window_hours": 4,
+            "advisory_review_min_gap_hours": 4,
+            "advisory_review_context_bundle_enabled": True,
+            "advisory_review_context_llm_enabled": True,
+            "advisory_review_context_llm_providers": "auto",
+            "advisory_review_context_llm_timeout_s": 180,
             "memory_quality_observatory_enabled": True,
         }
 
