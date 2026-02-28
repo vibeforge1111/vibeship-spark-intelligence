@@ -466,6 +466,87 @@ def _proof_hash(advice_text: str, advice_id: str, insight_key: str, source: str,
     return hashlib.sha1(raw.encode("utf-8", errors="ignore")).hexdigest()[:20]
 
 
+def _feedback_prompt_settings() -> Dict[str, Any]:
+    enabled = str(os.environ.get("SPARK_ADVICE_FEEDBACK", "1")).strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+    try:
+        min_interval_s = max(60, int(float(os.environ.get("SPARK_ADVICE_FEEDBACK_MIN_S", "600") or 600.0)))
+    except Exception:
+        min_interval_s = 600
+    try:
+        from .config_authority import resolve_section
+
+        cfg = resolve_section("observe_hook").data
+        if isinstance(cfg, dict):
+            enabled = _parse_bool(cfg.get("advice_feedback_enabled"), enabled)
+            try:
+                min_interval_s = max(60, int(float(cfg.get("advice_feedback_min_s", min_interval_s) or min_interval_s)))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return {"enabled": bool(enabled), "min_interval_s": int(min_interval_s)}
+
+
+def _derive_delivery_run_id(
+    *,
+    tool_name: str,
+    trace_id: str,
+    advice_ids: List[str],
+) -> str:
+    ordered_ids = sorted(str(x or "").strip() for x in (advice_ids or []) if str(x or "").strip())
+    run_seed = f"{str(tool_name or '').strip()}|{str(trace_id or '').strip()}|{','.join(ordered_ids)}"
+    return hashlib.sha1(run_seed.encode("utf-8", errors="ignore")).hexdigest()[:20]
+
+
+def _record_feedback_request(
+    *,
+    session_id: str,
+    tool_name: str,
+    trace_id: str,
+    advice_ids: List[str],
+    advice_texts: List[str],
+    sources: List[str],
+    route: str,
+    packet_id: str = "",
+) -> Dict[str, Any]:
+    settings = _feedback_prompt_settings()
+    run_id = _derive_delivery_run_id(
+        tool_name=tool_name,
+        trace_id=trace_id,
+        advice_ids=advice_ids,
+    )
+    result = {
+        "enabled": bool(settings.get("enabled", True)),
+        "requested": False,
+        "min_interval_s": int(settings.get("min_interval_s", 600) or 600),
+        "run_id": run_id,
+    }
+    if (not result["enabled"]) or (not trace_id) or (not advice_ids):
+        return result
+
+    from .advice_feedback import record_advice_request
+
+    requested = record_advice_request(
+        session_id=str(session_id or "").strip(),
+        tool=str(tool_name or "").strip(),
+        advice_ids=[str(x) for x in advice_ids[:20] if str(x).strip()],
+        advice_texts=[str(x or "")[:240] for x in advice_texts[:20]],
+        sources=[str(x or "")[:80] for x in sources[:20]],
+        trace_id=str(trace_id or "").strip(),
+        run_id=run_id,
+        route=str(route or "alpha")[:80],
+        packet_id=(str(packet_id or "")[:120] or None),
+        min_interval_s=int(result["min_interval_s"]),
+    )
+    result["requested"] = bool(requested)
+    return result
+
+
 def on_pre_tool(
     session_id: str,
     tool_name: str,
@@ -708,6 +789,12 @@ def on_pre_tool(
         except Exception as exc:
             log_debug("advisory_engine_alpha", "meta ralph retrieval tracking failed", exc)
 
+        feedback_request_meta: Dict[str, Any] = {
+            "enabled": False,
+            "requested": False,
+            "run_id": "",
+            "min_interval_s": 0,
+        }
         try:
             record_recent_delivery(
                 tool=tool_name,
@@ -722,6 +809,20 @@ def on_pre_tool(
         except Exception as exc:
             log_debug("advisory_engine_alpha", "record_recent_delivery failed", exc)
 
+        try:
+            feedback_request_meta = _record_feedback_request(
+                session_id=session_id,
+                tool_name=tool_name,
+                trace_id=resolved_trace_id,
+                advice_ids=emitted_ids_ordered,
+                advice_texts=[str(getattr(a, "text", "") or "") for a in emitted_items],
+                sources=[str(getattr(a, "source", "") or "") for a in emitted_items],
+                route="alpha",
+                packet_id=str(state.last_advisory_packet_id or ""),
+            )
+        except Exception as exc:
+            log_debug("advisory_engine_alpha", "record feedback request failed", exc)
+
         _log_alpha(
             "emitted",
             session_id=session_id,
@@ -735,6 +836,9 @@ def on_pre_tool(
                 "task_phase": str(getattr(state, "task_phase", "") or ""),
                 "task_plane": str(getattr(state, "task_plane", "") or ""),
                 "sanitize_mode": str(sanitize_mode),
+                "feedback_request_enabled": bool(feedback_request_meta.get("enabled")),
+                "feedback_request_requested": bool(feedback_request_meta.get("requested")),
+                "feedback_request_run_id": str(feedback_request_meta.get("run_id") or ""),
             },
         )
         return effective_text if effective_text else None

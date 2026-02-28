@@ -167,7 +167,83 @@ def _patch_pre_tool_runtime(monkeypatch):
 
     monkeypatch.setattr(emitter, "emit_advisory", _emit)
     monkeypatch.setattr(meta_ralph, "get_meta_ralph", lambda: SimpleNamespace(track_retrieval=lambda *_a, **_k: None))
+    monkeypatch.setattr(
+        alpha_engine,
+        "_record_feedback_request",
+        lambda **_k: {"enabled": False, "requested": False, "run_id": "", "min_interval_s": 600},
+    )
     return emitted_calls
+
+
+def test_record_feedback_request_uses_trace_bound_context(monkeypatch):
+    import lib.advice_feedback as advice_feedback
+
+    monkeypatch.setattr(
+        alpha_engine,
+        "_feedback_prompt_settings",
+        lambda: {"enabled": True, "min_interval_s": 321},
+    )
+    calls = []
+
+    def _fake_record_advice_request(**kwargs):
+        calls.append(dict(kwargs))
+        return True
+
+    monkeypatch.setattr(advice_feedback, "record_advice_request", _fake_record_advice_request)
+
+    out = alpha_engine._record_feedback_request(
+        session_id="session-1",
+        tool_name="Edit",
+        trace_id="trace-1",
+        advice_ids=["adv-1", "adv-2"],
+        advice_texts=["first advice", "second advice"],
+        sources=["bank", "eidos"],
+        route="alpha",
+    )
+
+    assert out["enabled"] is True
+    assert out["requested"] is True
+    assert out["min_interval_s"] == 321
+    assert isinstance(out["run_id"], str) and len(out["run_id"]) == 20
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["session_id"] == "session-1"
+    assert call["tool"] == "Edit"
+    assert call["trace_id"] == "trace-1"
+    assert call["route"] == "alpha"
+    assert call["min_interval_s"] == 321
+    assert call["run_id"] == out["run_id"]
+
+
+def test_on_pre_tool_logs_feedback_request_metadata(monkeypatch, tmp_path):
+    _patch_state_and_store(monkeypatch, tmp_path)
+    _patch_pre_tool_runtime(monkeypatch)
+    monkeypatch.setattr(
+        alpha_engine,
+        "_record_feedback_request",
+        lambda **_k: {"enabled": True, "requested": True, "run_id": "run-abc", "min_interval_s": 600},
+    )
+    monkeypatch.setattr(alpha_engine, "ADVISORY_GLOBAL_DEDUPE_FILE", tmp_path / "advisory_global_dedupe.jsonl")
+
+    out = alpha_engine.on_pre_tool(
+        "s-alpha-feedback-log",
+        "Edit",
+        {"file_path": "src/app.py"},
+        trace_id="trace-feedback-log",
+    )
+
+    assert out == "Repeat caution text"
+    rows = [
+        json.loads(line)
+        for line in alpha_engine.ALPHA_LOG.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    emitted_rows = [row for row in rows if str(row.get("event") or "") == "emitted"]
+    assert emitted_rows
+    extra = emitted_rows[-1].get("extra") if isinstance(emitted_rows[-1].get("extra"), dict) else {}
+    assert extra.get("feedback_request_enabled") is True
+    assert extra.get("feedback_request_requested") is True
+    assert extra.get("feedback_request_run_id") == "run-abc"
 
 
 def test_on_pre_tool_blocks_global_text_repeat(monkeypatch, tmp_path):
@@ -283,6 +359,7 @@ def test_question_like_helpers_detect_and_sanitize():
 
 def test_on_pre_tool_rewrites_question_like_synth(monkeypatch, tmp_path):
     _patch_state_and_store(monkeypatch, tmp_path)
+    monkeypatch.setattr(alpha_engine, "ADVISORY_GLOBAL_DEDUPE_FILE", tmp_path / "advisory_global_dedupe.jsonl")
     import lib.advisor as advisor
     import lib.advisory_synthesizer as synthesizer
     import lib.emitter as emitter

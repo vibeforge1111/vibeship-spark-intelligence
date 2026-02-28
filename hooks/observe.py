@@ -628,6 +628,79 @@ def _resolve_post_trace_id(session_id: str, tool_name: str, trace_id: Optional[s
         return trace_id
 
 
+def _latest_feedback_request_for_trace_tool(
+    trace_id: Optional[str],
+    tool_name: Optional[str],
+    *,
+    max_age_s: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    tid = str(trace_id or "").strip()
+    tool = str(tool_name or "").strip().lower()
+    if not tid or not tool:
+        return None
+    try:
+        from lib.advice_feedback import list_requests
+
+        rows = list_requests(limit=60, max_age_s=max_age_s)
+    except Exception:
+        return None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("trace_id") or "").strip() != tid:
+            continue
+        if str(row.get("tool") or "").strip().lower() != tool:
+            continue
+        return row
+    return None
+
+
+def _feedback_rate_command(
+    *,
+    trace_id: str,
+    tool_name: str,
+    advice_id: str,
+) -> str:
+    cmd = (
+        "python scripts/advisory_rate_emission.py rate-latest "
+        f"--trace-id {str(trace_id or '').strip()} "
+        f"--tool {str(tool_name or '').strip()}"
+    )
+    aid = str(advice_id or "").strip()
+    if aid:
+        cmd += f" --advice-id {aid}"
+    cmd += " --label helpful"
+    return cmd
+
+
+def _emit_feedback_prompt_for_trace(
+    trace_id: Optional[str],
+    tool_name: Optional[str],
+) -> None:
+    if not ADVICE_FEEDBACK_ENABLED or not ADVICE_FEEDBACK_PROMPT:
+        return
+    req = _latest_feedback_request_for_trace_tool(
+        trace_id,
+        tool_name,
+        max_age_s=max(120, int(ADVICE_FEEDBACK_MIN_S) * 3),
+    )
+    if not isinstance(req, dict):
+        return
+    advice_ids = req.get("advice_ids") if isinstance(req.get("advice_ids"), list) else []
+    primary_id = str(req.get("primary_advisory_id") or "").strip()
+    if (not primary_id) and advice_ids:
+        primary_id = str(advice_ids[0] or "").strip()
+    cmd = _feedback_rate_command(
+        trace_id=str(trace_id or "").strip(),
+        tool_name=str(tool_name or "").strip(),
+        advice_id=primary_id,
+    )
+    sys.stderr.write(
+        "[SPARK] Rate advisory now (helpful/unhelpful/harmful/not_followed): "
+        f"{cmd}\n"
+    )
+
+
 def _normalize_source(raw_source: Any) -> str:
     """Normalize source metadata for reliable downstream schema grouping."""
     source = str(raw_source or "").strip().lower()
@@ -992,6 +1065,10 @@ def process_hook_payload(input_data: Dict[str, Any]) -> int:
                 update_skill_effectiveness(query, success=True, limit=2)
             except Exception:
                 pass
+            try:
+                _emit_feedback_prompt_for_trace(trace_id, tool_name)
+            except Exception as e:
+                log_debug("observe", "advice feedback prompt failed", e)
     
     # ===== PostToolUseFailure: Check for surprise + Track outcome + Advisory feedback + learn + EIDOS =====
     if event_type == EventType.POST_TOOL_FAILURE and tool_name:
@@ -1093,6 +1170,10 @@ def process_hook_payload(input_data: Dict[str, Any]) -> int:
                 update_skill_effectiveness(query, success=False, limit=2)
             except Exception:
                 pass
+            try:
+                _emit_feedback_prompt_for_trace(trace_id, tool_name)
+            except Exception as e:
+                log_debug("observe", "advice feedback prompt failed", e)
 
     # Keep a rolling per-session workflow summary state for later report emission.
     if hook_event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
@@ -1310,7 +1391,10 @@ def process_hook_payload(input_data: Dict[str, Any]) -> int:
         try:
             from lib.advice_feedback import has_recent_requests
             if has_recent_requests():
-                sys.stderr.write("[SPARK] Advice feedback pending: run `spark advice-feedback --pending`\\n")
+                sys.stderr.write(
+                    "[SPARK] Advice feedback pending: run "
+                    "`python scripts/advisory_rate_emission.py list --limit 5`\\n"
+                )
         except Exception:
             pass
 
