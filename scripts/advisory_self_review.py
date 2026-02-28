@@ -917,10 +917,15 @@ def run_external_context_review(
         cleaned = _norm_text(text)
         if len(cleaned) > max_chars:
             cleaned = cleaned[:max_chars] + "\n...<truncated>..."
+        lowered = cleaned.lower()
+        response_error = "execution error" in lowered or "provider_error" in lowered
+        ok = bool(cleaned) and not response_error
+        if response_error and not err:
+            err = "response_error:provider_execution_error"
         results.append(
             {
                 "provider": provider,
-                "ok": bool(cleaned),
+                "ok": ok,
                 "latency_ms": latency_ms,
                 "error": err,
                 "response": cleaned,

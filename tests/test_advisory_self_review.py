@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import time
+import types
 from pathlib import Path
 
 
@@ -210,3 +212,22 @@ def test_generate_summary_includes_context_and_prompt(tmp_path, monkeypatch):
     prompt = str(summary.get("hard_question_prompt") or "")
     assert "Hard questions you must answer" in prompt
     assert "Stages 1..9" in prompt
+
+
+def test_external_review_marks_execution_error_as_not_ok(monkeypatch):
+    mod = _load_module()
+    monkeypatch.setitem(
+        sys.modules,
+        "lib.llm",
+        types.SimpleNamespace(ask_claude=lambda *_args, **_kwargs: "Execution error"),
+    )
+    out = mod.run_external_context_review(
+        prompt="review this",
+        providers="claude",
+        timeout_s=10.0,
+    )
+    assert out["results"]
+    row = out["results"][0]
+    assert row["provider"] == "claude"
+    assert row["ok"] is False
+    assert row["error"] == "response_error:provider_execution_error"
