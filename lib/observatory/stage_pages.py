@@ -512,9 +512,21 @@ def _gen_advisory(d: dict, all_data: dict) -> str:
     emit_rate = d.get("decision_emit_rate", 0)
     fb_follow = d.get("feedback_follow_rate", 0)
     helpfulness_summary = d.get("helpfulness_summary", {}) if isinstance(d.get("helpfulness_summary"), dict) else {}
+    quality_summary = d.get("advisory_quality_summary", {}) if isinstance(d.get("advisory_quality_summary"), dict) else {}
+    coverage_summary = d.get("advisory_rating_coverage_summary", {}) if isinstance(d.get("advisory_rating_coverage_summary"), dict) else {}
+    coverage_by_group = d.get("advisory_rating_coverage_by_group", []) if isinstance(d.get("advisory_rating_coverage_by_group"), list) else []
     calibrated_helpful_rate = float(helpfulness_summary.get("helpful_rate_pct", 0.0) or 0.0)
     calibrated_unknown_rate = float(helpfulness_summary.get("unknown_rate_pct", 0.0) or 0.0)
     calibrated_conflict_rate = float(helpfulness_summary.get("conflict_rate_pct", 0.0) or 0.0)
+    quality_avg_impact = float(quality_summary.get("avg_impact_score", 0.0) or 0.0)
+    quality_helpful_rate = float(quality_summary.get("helpful_rate_pct", 0.0) or 0.0)
+    quality_right_on_time_rate = float(quality_summary.get("right_on_time_rate_pct", 0.0) or 0.0)
+    quality_total = int(quality_summary.get("total_events", 0) or 0)
+    coverage_prompted = int(coverage_summary.get("prompted_total", 0) or 0)
+    coverage_explicit = int(coverage_summary.get("explicit_rated_total", 0) or 0)
+    coverage_known = int(coverage_summary.get("known_helpful_total", 0) or 0)
+    coverage_explicit_rate = float(coverage_summary.get("explicit_rate_pct", 0.0) or 0.0)
+    coverage_known_rate = float(coverage_summary.get("known_helpful_rate_pct", 0.0) or 0.0)
     s += _health_table([
         ("Total advice given", fmt_num(d.get("total_advice_given", 0)), "healthy"),
         ("Followed (effectiveness)", f"{fmt_num(d.get('total_followed', 0))} ({d.get('followed_rate', 0)}%)", followed_status),
@@ -524,6 +536,12 @@ def _gen_advisory(d: dict, all_data: dict) -> str:
         ("Calibrated helpful rate", f"{calibrated_helpful_rate:.1f}%", "healthy" if calibrated_helpful_rate >= 60 else "warning"),
         ("Unknown outcome rate", f"{calibrated_unknown_rate:.1f}%", "warning" if calibrated_unknown_rate > 30 else "healthy"),
         ("Conflict rate", f"{calibrated_conflict_rate:.1f}%", "warning" if calibrated_conflict_rate > 5 else "healthy"),
+        ("Quality spine events", fmt_num(quality_total), "healthy" if quality_total > 0 else "warning"),
+        ("Quality avg impact", f"{quality_avg_impact:.3f}", "healthy" if quality_avg_impact >= 0.65 else "warning"),
+        ("Quality helpful rate", f"{quality_helpful_rate:.1f}%", "healthy" if quality_helpful_rate >= 60 else "warning"),
+        ("Right-on-time rate", f"{quality_right_on_time_rate:.1f}%", "healthy" if quality_right_on_time_rate >= 50 else "warning"),
+        ("Explicit rating coverage", f"{coverage_explicit_rate:.1f}% ({fmt_num(coverage_explicit)}/{fmt_num(coverage_prompted)})", "healthy" if coverage_explicit_rate >= 60 else "warning"),
+        ("Known-helpful coverage", f"{coverage_known_rate:.1f}% ({fmt_num(coverage_known)}/{fmt_num(coverage_prompted)})", "healthy" if coverage_known_rate >= 40 else "warning"),
         ("Advice log entries", f"~{fmt_num(d.get('advice_log_count', 0))}", "healthy"),
     ])
 
@@ -585,6 +603,69 @@ def _gen_advisory(d: dict, all_data: dict) -> str:
             s += "|--------------|-------|\n"
             for src, count in sorted(judge_source.items(), key=lambda x: -x[1]):
                 s += f"| {src} | {fmt_num(count)} |\n"
+            s += "\n"
+
+    if quality_summary:
+        provider_summary = quality_summary.get("provider_summary", {}) if isinstance(quality_summary.get("provider_summary"), dict) else {}
+        timing = quality_summary.get("timing", {}) if isinstance(quality_summary.get("timing"), dict) else {}
+        s += "## Emission Quality Spine\n\n"
+        s += "*Emission-native scoring from `recent_advice` + alpha timing + provider telemetry + feedback signals.*\n\n"
+        s += "| Metric | Value |\n"
+        s += "|--------|-------|\n"
+        s += f"| Total scored emissions | {fmt_num(quality_summary.get('total_events', 0))} |\n"
+        s += f"| Average impact score | {quality_summary.get('avg_impact_score', 0.0)} |\n"
+        s += f"| Helpful rate (acted) | {quality_summary.get('helpful_rate_pct', 0.0)}% |\n"
+        s += f"| Right-on-time rate | {quality_summary.get('right_on_time_rate_pct', 0.0)}% |\n"
+        s += f"| Unknown rate | {quality_summary.get('unknown_rate_pct', 0.0)}% |\n"
+        s += "\n"
+
+        if provider_summary:
+            s += "### Provider Quality\n\n"
+            s += "| Provider | Events | Avg impact | Helpful rate | Right-on-time |\n"
+            s += "|----------|--------|------------|--------------|---------------|\n"
+            for provider, row in sorted(provider_summary.items(), key=lambda kv: -int((kv[1] or {}).get("events", 0))):
+                if not isinstance(row, dict):
+                    continue
+                s += (
+                    f"| {provider} | {fmt_num(row.get('events', 0))} | {row.get('avg_impact_score', 0.0)} "
+                    f"| {row.get('helpful_rate_pct', 0.0)}% | {row.get('right_on_time_rate_pct', 0.0)}% |\n"
+                )
+            s += "\n"
+
+        if timing:
+            s += "### Timing Buckets\n\n"
+            s += "| Bucket | Count |\n"
+            s += "|--------|-------|\n"
+            for bucket, count in sorted(timing.items(), key=lambda kv: -int(kv[1])):
+                s += f"| {bucket} | {fmt_num(count)} |\n"
+            s += "\n"
+
+    if coverage_prompted > 0:
+        s += "## Prompted vs Explicit Rating Coverage\n\n"
+        s += "*Tracks how much of emitted advisory is actually rated, and how much reaches known helpfulness labels.*\n\n"
+        s += "| Metric | Value |\n"
+        s += "|--------|-------|\n"
+        s += f"| Prompted advisory items | {fmt_num(coverage_prompted)} |\n"
+        s += f"| Explicitly rated | {fmt_num(coverage_explicit)} ({coverage_explicit_rate:.1f}%) |\n"
+        s += f"| Known helpfulness | {fmt_num(coverage_known)} ({coverage_known_rate:.1f}%) |\n"
+        s += f"| Explicit coverage gap | {fmt_num(int(coverage_summary.get('explicit_gap', 0) or 0))} |\n"
+        s += f"| Known-helpful gap | {fmt_num(int(coverage_summary.get('known_helpful_gap', 0) or 0))} |\n"
+        s += "\n"
+
+        if coverage_by_group:
+            s += "### Coverage by Provider / Tool / Phase\n\n"
+            s += "| Provider | Tool | Phase | Prompted | Explicit | Known Helpful | Explicit Rate | Known-Helpful Rate | Explicit Gap | Known Gap |\n"
+            s += "|----------|------|-------|----------|----------|---------------|---------------|--------------------|--------------|-----------|\n"
+            for row in coverage_by_group:
+                if not isinstance(row, dict):
+                    continue
+                s += (
+                    f"| {row.get('provider', 'unknown')} | {row.get('tool', 'unknown')} | {row.get('phase', 'unknown')} "
+                    f"| {fmt_num(int(row.get('prompted', 0) or 0))} | {fmt_num(int(row.get('explicit_rated', 0) or 0))} "
+                    f"| {fmt_num(int(row.get('known_helpful', 0) or 0))} | {float(row.get('explicit_rate_pct', 0.0) or 0.0):.1f}% "
+                    f"| {float(row.get('known_helpful_rate_pct', 0.0) or 0.0):.1f}% | {fmt_num(int(row.get('explicit_gap', 0) or 0))} "
+                    f"| {fmt_num(int(row.get('known_helpful_gap', 0) or 0))} |\n"
+                )
             s += "\n"
 
     # By-source breakdown
@@ -652,6 +733,10 @@ def _gen_advisory(d: dict, all_data: dict) -> str:
         "advisor/helpfulness_summary.json",
         "advisor/helpfulness_llm_queue.jsonl",
         "advisor/helpfulness_llm_reviews.jsonl",
+        "advisor/advisory_quality_events.jsonl",
+        "advisor/advisory_quality_summary.json",
+        "advice_feedback_requests.jsonl",
+        "advice_feedback.jsonl",
         "advisor/retrieval_router.jsonl",
         "advisory_decision_ledger.jsonl",
     ])

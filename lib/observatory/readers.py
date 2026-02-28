@@ -138,6 +138,248 @@ def _coerce_decision_outcome(row: dict[str, Any]) -> str:
     return "unknown"
 
 
+def _norm_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _norm_provider(value: Any) -> str:
+    source = _norm_text(value).lower()
+    if source in {"openai-codex"}:
+        return "codex"
+    if source in {"claude_code"}:
+        return "claude"
+    if source in {"openclaw_plugin"}:
+        return "openclaw"
+    return source or "unknown"
+
+
+def _norm_tool(value: Any) -> str:
+    return _norm_text(value) or "unknown"
+
+
+def _norm_phase(value: Any) -> str:
+    return _norm_text(value).lower() or "unknown"
+
+
+def _build_trace_phase_index(alpha_rows: list[dict[str, Any]]) -> dict[str, str]:
+    by_trace: dict[str, str] = {}
+    for row in alpha_rows:
+        trace_id = _norm_text(row.get("trace_id"))
+        if not trace_id:
+            continue
+        phase = _norm_phase(row.get("task_phase"))
+        if phase == "unknown":
+            continue
+        by_trace[trace_id] = phase
+    return by_trace
+
+
+def _index_quality_events(
+    quality_rows: list[dict[str, Any]],
+) -> tuple[dict[tuple[str, str], dict[str, Any]], dict[str, dict[str, Any]]]:
+    by_trace_advice: dict[tuple[str, str], dict[str, Any]] = {}
+    by_advice: dict[str, dict[str, Any]] = {}
+    for row in quality_rows:
+        advice_id = _norm_text(row.get("advice_id"))
+        if not advice_id:
+            continue
+        trace_id = _norm_text(row.get("trace_id"))
+        by_advice[advice_id] = row
+        if trace_id:
+            by_trace_advice[(trace_id, advice_id)] = row
+    return by_trace_advice, by_advice
+
+
+def _index_explicit_feedback(feedback_rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    out: dict[str, list[dict[str, Any]]] = {}
+    for row in feedback_rows:
+        advice_ids = row.get("advice_ids")
+        if not isinstance(advice_ids, list):
+            continue
+        for aid_raw in advice_ids[:80]:
+            aid = _norm_text(aid_raw)
+            if not aid:
+                continue
+            out.setdefault(aid, []).append(row)
+    return out
+
+
+def _pick_explicit_feedback_row(
+    *,
+    request_row: dict[str, Any],
+    advice_id: str,
+    feedback_index: dict[str, list[dict[str, Any]]],
+    max_window_s: int = 6 * 3600,
+) -> dict[str, Any] | None:
+    candidates = feedback_index.get(advice_id, [])
+    if not candidates:
+        return None
+
+    req_trace = _norm_text(request_row.get("trace_id"))
+    req_group = _norm_text(request_row.get("advisory_group_key"))
+    req_run = _norm_text(request_row.get("run_id"))
+    req_tool = _norm_tool(request_row.get("tool")).lower()
+    req_ts = _safe_float(request_row.get("created_at"), 0.0)
+
+    best: tuple[float, dict[str, Any]] | None = None
+    for row in candidates:
+        fb_trace = _norm_text(row.get("trace_id"))
+        fb_group = _norm_text(row.get("advisory_group_key"))
+        fb_run = _norm_text(row.get("run_id"))
+        fb_tool = _norm_tool(row.get("tool")).lower()
+        fb_ts = _safe_float(row.get("created_at"), 0.0)
+
+        if req_ts > 0 and fb_ts > 0:
+            if fb_ts + 5.0 < req_ts:
+                continue
+            if (fb_ts - req_ts) > float(max_window_s):
+                continue
+
+        hard_match = False
+        score = 0.1
+        if req_trace and fb_trace:
+            if req_trace != fb_trace:
+                continue
+            score += 7.0
+            hard_match = True
+        if req_group and fb_group:
+            if req_group != fb_group:
+                continue
+            score += 5.0
+            hard_match = True
+        if req_run and fb_run:
+            if req_run != fb_run:
+                continue
+            score += 4.0
+            hard_match = True
+        if req_tool and fb_tool and req_tool == fb_tool:
+            score += 1.0
+        if req_ts > 0 and fb_ts > 0:
+            score += max(0.0, 1.0 - abs(fb_ts - req_ts) / max(float(max_window_s), 1.0))
+
+        # If we have correlation identifiers but no exact match, avoid weak joins.
+        req_has_corr = bool(req_trace or req_group or req_run)
+        fb_has_corr = bool(fb_trace or fb_group or fb_run)
+        if req_has_corr and fb_has_corr and not hard_match:
+            continue
+
+        if best is None or score > best[0]:
+            best = (score, row)
+
+    return best[1] if best else None
+
+
+def _build_advisory_rating_coverage(
+    *,
+    requests_rows: list[dict[str, Any]],
+    feedback_rows: list[dict[str, Any]],
+    quality_rows: list[dict[str, Any]],
+    alpha_rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    feedback_index = _index_explicit_feedback(feedback_rows)
+    quality_by_trace_advice, quality_by_advice = _index_quality_events(quality_rows)
+    trace_phase_index = _build_trace_phase_index(alpha_rows)
+
+    grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    prompted_total = 0
+    explicit_rated_total = 0
+    known_helpful_total = 0
+
+    for req in requests_rows:
+        advice_ids = req.get("advice_ids")
+        if not isinstance(advice_ids, list):
+            continue
+        req_trace = _norm_text(req.get("trace_id"))
+        req_tool = _norm_tool(req.get("tool"))
+        for aid_raw in advice_ids[:80]:
+            advice_id = _norm_text(aid_raw)
+            if not advice_id:
+                continue
+            prompted_total += 1
+
+            q_row = quality_by_trace_advice.get((req_trace, advice_id))
+            if q_row is None:
+                q_row = quality_by_advice.get(advice_id)
+            provider = _norm_provider((q_row or {}).get("provider"))
+            tool = _norm_tool((q_row or {}).get("tool")) if q_row else req_tool
+            phase = trace_phase_index.get(req_trace) or _norm_phase((q_row or {}).get("task_phase"))
+
+            explicit_row = _pick_explicit_feedback_row(
+                request_row=req,
+                advice_id=advice_id,
+                feedback_index=feedback_index,
+            )
+            explicit_present = explicit_row is not None
+            helpful_known = isinstance((explicit_row or {}).get("helpful"), bool)
+            if explicit_present:
+                explicit_rated_total += 1
+            if helpful_known:
+                known_helpful_total += 1
+
+            bucket = grouped.setdefault(
+                (provider, tool, phase),
+                {
+                    "provider": provider,
+                    "tool": tool,
+                    "phase": phase,
+                    "prompted": 0,
+                    "explicit_rated": 0,
+                    "known_helpful": 0,
+                },
+            )
+            bucket["prompted"] += 1
+            if explicit_present:
+                bucket["explicit_rated"] += 1
+            if helpful_known:
+                bucket["known_helpful"] += 1
+
+    def _pct(numer: int, denom: int) -> float:
+        if denom <= 0:
+            return 0.0
+        return round((100.0 * float(numer) / float(denom)), 1)
+
+    rows: list[dict[str, Any]] = []
+    for _, row in grouped.items():
+        prompted = _as_int(row.get("prompted"), 0)
+        explicit_rated = _as_int(row.get("explicit_rated"), 0)
+        known_helpful = _as_int(row.get("known_helpful"), 0)
+        rows.append(
+            {
+                **row,
+                "explicit_rate_pct": _pct(explicit_rated, prompted),
+                "known_helpful_rate_pct": _pct(known_helpful, prompted),
+                "explicit_gap": max(0, prompted - explicit_rated),
+                "known_helpful_gap": max(0, prompted - known_helpful),
+            }
+        )
+    rows.sort(
+        key=lambda r: (
+            -_as_int(r.get("prompted"), 0),
+            _norm_text(r.get("provider")).lower(),
+            _norm_text(r.get("tool")).lower(),
+            _norm_text(r.get("phase")).lower(),
+        )
+    )
+
+    summary = {
+        "prompted_total": prompted_total,
+        "explicit_rated_total": explicit_rated_total,
+        "known_helpful_total": known_helpful_total,
+        "explicit_rate_pct": _pct(explicit_rated_total, prompted_total),
+        "known_helpful_rate_pct": _pct(known_helpful_total, prompted_total),
+        "explicit_gap": max(0, prompted_total - explicit_rated_total),
+        "known_helpful_gap": max(0, prompted_total - known_helpful_total),
+    }
+    return summary, rows
+
+
 # ── Stage 1: Event Capture ──────────────────────────────────────────
 
 def read_event_capture() -> dict[str, Any]:
@@ -614,6 +856,37 @@ def read_advisory(max_recent: int = 15) -> dict[str, Any]:
     d["recent_helpfulness_events"] = _tail_jsonl(
         _SD / "advisor" / "helpfulness_events.jsonl", max_recent
     )
+
+    # Emission-native advisory quality spine (moment + usefulness scoring).
+    advisory_quality_summary = _load_json(_SD / "advisor" / "advisory_quality_summary.json") or {}
+    d["advisory_quality_summary"] = (
+        advisory_quality_summary if isinstance(advisory_quality_summary, dict) else {}
+    )
+    d["recent_advisory_quality_events"] = _tail_jsonl(
+        _SD / "advisor" / "advisory_quality_events.jsonl", max_recent
+    )
+    if isinstance(advisory_quality_summary, dict):
+        d["advisory_quality_total"] = _as_int(advisory_quality_summary.get("total_events"), 0)
+        d["advisory_quality_avg_impact"] = float(advisory_quality_summary.get("avg_impact_score", 0.0) or 0.0)
+        d["advisory_quality_helpful_rate"] = float(advisory_quality_summary.get("helpful_rate_pct", 0.0) or 0.0)
+        d["advisory_quality_right_on_time_rate"] = float(
+            advisory_quality_summary.get("right_on_time_rate_pct", 0.0) or 0.0
+        )
+    else:
+        d["advisory_quality_total"] = 0
+        d["advisory_quality_avg_impact"] = 0.0
+        d["advisory_quality_helpful_rate"] = 0.0
+        d["advisory_quality_right_on_time_rate"] = 0.0
+
+    # Coverage of prompted emissions -> explicit ratings -> known helpfulness.
+    coverage_summary, coverage_rows = _build_advisory_rating_coverage(
+        requests_rows=_tail_jsonl(_SD / "advice_feedback_requests.jsonl", 20000),
+        feedback_rows=_tail_jsonl(_SD / "advice_feedback.jsonl", 20000),
+        quality_rows=_tail_jsonl(_SD / "advisor" / "advisory_quality_events.jsonl", 20000),
+        alpha_rows=_tail_jsonl(_SD / "advisory_engine_alpha.jsonl", 24000),
+    )
+    d["advisory_rating_coverage_summary"] = coverage_summary
+    d["advisory_rating_coverage_by_group"] = coverage_rows
     return d
 
 
