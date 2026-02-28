@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import lib.eidos_intake as intake
+from lib.eidos.store import EidosStore
 
 
 class _AQ:
@@ -59,16 +60,19 @@ def test_ingest_structured_update_and_skip_duplicate(monkeypatch, tmp_path: Path
         }
     )
     eidos_file = tmp_path / "eidos_distillations.jsonl"
+    spine_db = tmp_path / "eidos.db"
     quarantine_rows, quarantine = _quarantine_recorder()
 
     first = intake.ingest_eidos_update(
         update,
         eidos_file=eidos_file,
+        store_db_path=spine_db,
         quarantine_fn=quarantine,
     )
     second = intake.ingest_eidos_update(
         update,
         eidos_file=eidos_file,
+        store_db_path=spine_db,
         quarantine_fn=quarantine,
     )
 
@@ -80,18 +84,26 @@ def test_ingest_structured_update_and_skip_duplicate(monkeypatch, tmp_path: Path
     assert second.ok is True
     assert second.duplicate is True
     assert second.reason == "duplicate_skipped"
+    assert first.spine_saved >= 1
+    assert second.spine_saved >= 1
     lines = eidos_file.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
+    store = EidosStore(str(spine_db))
+    distillations = store.get_all_distillations(limit=20)
+    assert len(distillations) == 1
+    assert "schema validation" in (distillations[0].statement or "").lower()
     assert quarantine_rows == []
 
 
 def test_ingest_rejects_short_and_records_quarantine(tmp_path: Path):
     eidos_file = tmp_path / "eidos_distillations.jsonl"
+    spine_db = tmp_path / "eidos.db"
     quarantine_rows, quarantine = _quarantine_recorder()
 
     result = intake.ingest_eidos_update(
         "too short",
         eidos_file=eidos_file,
+        store_db_path=spine_db,
         quarantine_fn=quarantine,
     )
 
@@ -118,11 +130,13 @@ def test_ingest_respects_transformer_suppression(monkeypatch, tmp_path: Path):
         "missing rollback causes prolonged incidents."
     )
     eidos_file = tmp_path / "eidos_distillations.jsonl"
+    spine_db = tmp_path / "eidos.db"
     quarantine_rows, quarantine = _quarantine_recorder()
 
     result = intake.ingest_eidos_update(
         update,
         eidos_file=eidos_file,
+        store_db_path=spine_db,
         quarantine_fn=quarantine,
     )
 
@@ -131,3 +145,31 @@ def test_ingest_respects_transformer_suppression(monkeypatch, tmp_path: Path):
     assert not eidos_file.exists()
     assert quarantine_rows
     assert quarantine_rows[-1].get("reason") == "transformer_suppressed:noise_pattern"
+
+
+def test_ingest_unstructured_update_persists_to_spine(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(
+        intake,
+        "transform_for_advisory",
+        lambda text, source="unknown": _AQ(
+            advisory_text="Validate payload schema before applying config updates.",
+            unified_score=0.79,
+            suppressed=False,
+        ),
+    )
+    update = "Validate payload schema before applying config updates because malformed writes corrupt runtime state."
+    eidos_file = tmp_path / "eidos_distillations.jsonl"
+    spine_db = tmp_path / "eidos.db"
+
+    result = intake.ingest_eidos_update(
+        update,
+        eidos_file=eidos_file,
+        store_db_path=spine_db,
+    )
+
+    assert result.ok is True
+    assert result.spine_saved >= 1
+    store = EidosStore(str(spine_db))
+    distillations = store.get_all_distillations(limit=10)
+    assert distillations
+    assert "validate payload schema" in (distillations[0].statement or "").lower()
