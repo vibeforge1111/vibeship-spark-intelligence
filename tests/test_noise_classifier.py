@@ -58,6 +58,14 @@ def test_classify_allows_actionable_always_validate_guidance():
     assert decision.rule == "none"
 
 
+def test_classify_allows_actionable_always_verify_contract_guidance():
+    decision = classify(
+        "Always verify contracts before changing payload shapes because mismatches break downstream parsing."
+    )
+    assert decision.is_noise is False
+    assert decision.rule == "none"
+
+
 def test_classify_allows_contextual_caution_on_path_handling():
     decision = classify(
         "Be cautious when navigating paths with spaces in Bash because quoting mistakes can break file operations."

@@ -102,7 +102,7 @@ _ACTIONABLE_REQUEST_RE = re.compile(
     re.I,
 )
 _ACTIONABLE_STANDALONE_RE = re.compile(
-    r"^\s*(always\s+)?(use|enforce|validate|check|add|remove|fix|decompose|refactor|gate|benchmark)\b",
+    r"^\s*(always\s+)?(use|enforce|verify|validate|check|add|remove|fix|decompose|refactor|gate|benchmark)\b",
     re.I,
 )
 _ACTIONABLE_CAUTION_RE = re.compile(
