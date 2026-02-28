@@ -34,6 +34,7 @@ Canonical navigation hub. Start here.
 - `docs/MEMORY_ACTIONABILITY_FRAMEWORK.md`
 - `docs/RETRIEVAL_LEVELS.md`
 - `docs/RETRIEVAL_IMPROVEMENT_PLAN.md`
+- `docs/CONTEXT_FIRST_CONTRADICTION_GATE.md`
 
 ## Configuration
 
