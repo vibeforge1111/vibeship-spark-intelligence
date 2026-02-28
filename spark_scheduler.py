@@ -49,6 +49,7 @@ STATE_FILE = SCHEDULER_DIR / "state.json"
 DRAFT_REPLIES_FILE = SPARK_DIR / "multiplier" / "draft_replies.json"
 MULTIPLIER_DB_PATH = SPARK_DIR / "multiplier" / "scored_mentions.db"
 TUNEABLES_FILE = SPARK_DIR / "tuneables.json"
+REPLAY_ALERTS_FILE = SCHEDULER_DIR / "replay_governance_alerts.jsonl"
 OPENCLAW_HANDOFF_DIR = SPARK_DIR / "claw_integration"
 OPENCLAW_HANDOFF_FILE = OPENCLAW_HANDOFF_DIR / "latest_trend_handoff.json"
 OPENCLAW_WEBHOOK_URL = os.getenv("OPENCLAW_WEBHOOK_URL", "").strip()
@@ -125,11 +126,13 @@ DEFAULT_CONFIG = {
     "daily_research_interval": 86400,
     "niche_scan_interval": 21600,
     "advisory_review_interval": 14400,
+    "replay_governance_interval": 21600,
     "mention_poll_enabled": True,
     "engagement_snapshot_enabled": True,
     "daily_research_enabled": True,
     "niche_scan_enabled": True,
     "advisory_review_enabled": True,
+    "replay_governance_enabled": True,
     "advisory_review_window_hours": 4,
     "advisory_review_min_gap_hours": 4,
     "advisory_review_context_bundle_enabled": True,
@@ -149,6 +152,8 @@ DEFAULT_CONFIG = {
     "advisory_usefulness_cycle_min_confidence": 0.72,
     "advisory_usefulness_cycle_providers": "auto",
     "advisory_usefulness_cycle_timeout_s": 180,
+    "replay_governance_seed": 42,
+    "replay_governance_episodes": 8,
     "memory_quality_observatory_enabled": True,
 }
 
@@ -425,6 +430,31 @@ def _save_state(state: Dict[str, Any]) -> None:
         STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
     except Exception as e:
         logger.debug("Failed to save state: %s", e)
+
+
+def _append_jsonl(path: Path, row: Dict[str, Any], max_lines: int = 1000) -> None:
+    """Append one JSON row while bounding file growth."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines: List[str] = []
+        if path.exists():
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines.append(json.dumps(row, ensure_ascii=False))
+        keep = max(10, int(max_lines))
+        if len(lines) > keep:
+            lines = lines[-keep:]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except Exception as exc:
+        logger.debug("append_jsonl failed (%s): %s", path, exc)
+
+
+def _write_replay_governance_alert(reason: str, details: Dict[str, Any]) -> None:
+    payload = {
+        "ts": time.time(),
+        "reason": str(reason or "unknown"),
+        "details": details if isinstance(details, dict) else {},
+    }
+    _append_jsonl(REPLAY_ALERTS_FILE, payload, max_lines=2000)
 
 
 def write_scheduler_heartbeat(task_stats: Dict[str, Any]) -> None:
@@ -1005,6 +1035,108 @@ def task_advisory_review(state: Dict[str, Any]) -> Dict[str, Any]:
     return {"status": "ok", "message": msg, "usefulness_cycle": usefulness_status}
 
 
+def task_replay_governance(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Run replay smoke governance on a fixed cadence and alert on failure."""
+    del state  # State not required for this task.
+    cfg = load_scheduler_config()
+    interval_s = max(600, int(cfg.get("replay_governance_interval", 21600) or 21600))
+    seed = int(cfg.get("replay_governance_seed", 42) or 42)
+    episodes = max(4, int(cfg.get("replay_governance_episodes", 8) or 8))
+    root = Path(__file__).resolve().parent
+    script = root / "scripts" / "spark_alpha_replay_arena.py"
+    out_dir = root / "benchmarks" / "out" / "replay_scheduler"
+
+    if not script.exists():
+        error = f"missing script: {script}"
+        _write_replay_governance_alert("missing_script", {"error": error})
+        return {"status": "error", "error": error, "alert_logged": True}
+
+    cmd = [
+        sys.executable,
+        str(script),
+        "--seed",
+        str(seed),
+        "--episodes",
+        str(episodes),
+        "--out-dir",
+        str(out_dir),
+    ]
+    proc = subprocess.run(
+        cmd,
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if proc.returncode != 0:
+        detail = ((proc.stderr or proc.stdout or "").strip()[:400]) or f"replay_exit_{proc.returncode}"
+        _write_replay_governance_alert("replay_runtime_error", {"detail": detail, "returncode": proc.returncode})
+        return {"status": "error", "error": detail, "alert_logged": True}
+
+    body = (proc.stdout or "").strip()
+    try:
+        payload = json.loads(body) if body else {}
+    except Exception:
+        _write_replay_governance_alert(
+            "replay_parse_error",
+            {"detail": (body[-400:] if body else "empty_stdout")},
+        )
+        return {"status": "error", "error": "replay_stdout_not_json", "alert_logged": True}
+    if not isinstance(payload, dict):
+        _write_replay_governance_alert("replay_parse_error", {"detail": "non_object_stdout"})
+        return {"status": "error", "error": "replay_stdout_not_object", "alert_logged": True}
+
+    promotion = payload.get("promotion")
+    if not isinstance(promotion, dict):
+        promotion = {}
+    gate_value = payload.get("promotion_gate_pass")
+    if gate_value is None:
+        gate_value = promotion.get("promotion_gate_pass")
+    promotion_gate_pass = bool(gate_value)
+
+    latest_json = out_dir / "spark_alpha_replay_arena_latest.json"
+    artifact_age_s: Optional[float] = None
+    if latest_json.exists():
+        try:
+            artifact_age_s = max(0.0, time.time() - float(latest_json.stat().st_mtime))
+        except Exception:
+            artifact_age_s = None
+    stale_artifact = artifact_age_s is None or artifact_age_s > float(interval_s + 900)
+
+    alert_logged = False
+    if not promotion_gate_pass:
+        _write_replay_governance_alert(
+            "promotion_gate_failed",
+            {
+                "promotion_gate_pass": False,
+                "report_json": payload.get("report_json"),
+                "winner": (payload.get("winner") or {}).get("route") if isinstance(payload.get("winner"), dict) else None,
+            },
+        )
+        alert_logged = True
+    if stale_artifact:
+        _write_replay_governance_alert(
+            "artifact_stale",
+            {
+                "artifact": str(latest_json),
+                "artifact_age_s": artifact_age_s,
+                "max_age_s": int(interval_s + 900),
+            },
+        )
+        alert_logged = True
+
+    return {
+        "status": "ok" if promotion_gate_pass and not stale_artifact else "alert",
+        "promotion_gate_pass": promotion_gate_pass,
+        "stale_artifact": stale_artifact,
+        "artifact_age_s": artifact_age_s,
+        "report_json": payload.get("report_json"),
+        "winner": payload.get("winner"),
+        "alert_logged": alert_logged,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Task registry
 # ---------------------------------------------------------------------------
@@ -1034,6 +1166,11 @@ TASKS = {
         "fn": task_advisory_review,
         "config_key_interval": "advisory_review_interval",
         "config_key_enabled": "advisory_review_enabled",
+    },
+    "replay_governance": {
+        "fn": task_replay_governance,
+        "config_key_interval": "replay_governance_interval",
+        "config_key_enabled": "replay_governance_enabled",
     },
 }
 

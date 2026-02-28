@@ -30,7 +30,9 @@ class TestLoadConfig(unittest.TestCase):
         self.assertEqual(cfg["daily_research_interval"], 86400)
         self.assertEqual(cfg["niche_scan_interval"], 21600)
         self.assertEqual(cfg["advisory_review_interval"], 14400)
+        self.assertEqual(cfg["replay_governance_interval"], 21600)
         self.assertTrue(cfg["advisory_review_enabled"])
+        self.assertTrue(cfg["replay_governance_enabled"])
         self.assertEqual(cfg["advisory_review_window_hours"], 4)
         self.assertEqual(cfg["advisory_review_min_gap_hours"], 4)
         self.assertTrue(cfg["advisory_review_context_bundle_enabled"])
@@ -50,6 +52,8 @@ class TestLoadConfig(unittest.TestCase):
         self.assertEqual(cfg["advisory_usefulness_cycle_min_confidence"], 0.72)
         self.assertEqual(cfg["advisory_usefulness_cycle_providers"], "auto")
         self.assertEqual(cfg["advisory_usefulness_cycle_timeout_s"], 180)
+        self.assertEqual(cfg["replay_governance_seed"], 42)
+        self.assertEqual(cfg["replay_governance_episodes"], 8)
         self.assertTrue(cfg["memory_quality_observatory_enabled"])
 
     def test_overrides_from_file(self, tmp_path=None):
@@ -221,11 +225,13 @@ class TestRunDueTasks(unittest.TestCase):
             "daily_research_interval": 86400,
             "niche_scan_interval": 21600,
             "advisory_review_interval": 14400,
+            "replay_governance_interval": 21600,
             "mention_poll_enabled": True,
             "engagement_snapshot_enabled": True,
             "daily_research_enabled": True,
             "niche_scan_enabled": True,
             "advisory_review_enabled": True,
+            "replay_governance_enabled": True,
             "advisory_review_window_hours": 4,
             "advisory_review_min_gap_hours": 4,
             "advisory_review_context_bundle_enabled": True,
@@ -245,6 +251,8 @@ class TestRunDueTasks(unittest.TestCase):
             "advisory_usefulness_cycle_min_confidence": 0.72,
             "advisory_usefulness_cycle_providers": "auto",
             "advisory_usefulness_cycle_timeout_s": 180,
+            "replay_governance_seed": 42,
+            "replay_governance_episodes": 8,
             "memory_quality_observatory_enabled": True,
         }
 
@@ -579,6 +587,52 @@ class TestAdvisoryReviewTask(unittest.TestCase):
         usefulness_cmd = mock_run.call_args_list[1][0][0]
         self.assertIn("--apply-limit", usefulness_cmd)
         self.assertIn("--min-confidence", usefulness_cmd)
+
+
+class TestReplayGovernanceTask(unittest.TestCase):
+    def test_replay_governance_alerts_on_failed_gate(self):
+        cfg = {
+            "replay_governance_interval": 21600,
+            "replay_governance_seed": 42,
+            "replay_governance_episodes": 8,
+        }
+        with patch.object(sched, "load_scheduler_config", return_value=cfg), \
+             patch("spark_scheduler.subprocess.run") as mock_run, \
+             patch.object(sched, "_write_replay_governance_alert") as mock_alert:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=json.dumps({"promotion_gate_pass": False, "report_json": "x.json"}),
+                stderr="",
+            )
+            out = sched.task_replay_governance({})
+        self.assertEqual(out.get("status"), "alert")
+        self.assertFalse(out.get("promotion_gate_pass"))
+        self.assertTrue(out.get("alert_logged"))
+        mock_alert.assert_called()
+
+    def test_replay_governance_ok_with_fresh_artifact(self):
+        cfg = {
+            "replay_governance_interval": 21600,
+            "replay_governance_seed": 42,
+            "replay_governance_episodes": 8,
+        }
+        with patch.object(sched, "load_scheduler_config", return_value=cfg), \
+             patch("spark_scheduler.subprocess.run") as mock_run, \
+             patch("pathlib.Path.exists", return_value=True), \
+             patch("pathlib.Path.stat") as mock_stat, \
+             patch.object(sched, "_write_replay_governance_alert") as mock_alert:
+            now = time.time()
+            mock_stat.return_value = MagicMock(st_mtime=now - 10)
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=json.dumps({"promotion_gate_pass": True, "report_json": "x.json"}),
+                stderr="",
+            )
+            out = sched.task_replay_governance({})
+        self.assertEqual(out.get("status"), "ok")
+        self.assertTrue(out.get("promotion_gate_pass"))
+        self.assertFalse(out.get("stale_artifact"))
+        mock_alert.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()
