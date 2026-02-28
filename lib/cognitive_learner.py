@@ -35,7 +35,6 @@ from .noise_classifier import enforce_enabled as noise_enforce_enabled
 from .noise_classifier import record_shadow as record_noise_shadow
 from .spark_memory_spine import canonical_enabled as memory_spine_canonical_enabled
 from .spark_memory_spine import dual_write_cognitive_insights
-from .spark_memory_spine import json_mirror_enabled as memory_spine_json_mirror_enabled
 from .spark_memory_spine import load_cognitive_insights_snapshot
 from .spark_memory_spine import load_cognitive_insights_snapshot_canonical
 from .spark_memory_spine import write_cognitive_insights_snapshot
@@ -368,6 +367,33 @@ def _flatten_evidence(items: List[Any]) -> List[str]:
     return out
 
 
+def _ensure_cognitive_json_compat_snapshot() -> None:
+    """Backfill compatibility JSON snapshots from SQLite canonical store when missing."""
+    json_path = Path.home() / ".spark" / "cognitive_insights.json"
+    legacy_path = Path.home() / ".spark" / "cognitive_snapshot_legacy.json"
+    if json_path.exists() and legacy_path.exists():
+        return
+    data: Dict[str, Dict[str, Any]] = {}
+    try:
+        if memory_spine_canonical_enabled():
+            data = load_cognitive_insights_snapshot_canonical()
+        if not data:
+            data = load_cognitive_insights_snapshot()
+    except Exception:
+        return
+    if not isinstance(data, dict) or not data:
+        return
+    payload = json.dumps(data, indent=2)
+    for target in (json_path, legacy_path):
+        if target.exists():
+            continue
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(payload, encoding="utf-8")
+        except Exception:
+            continue
+
+
 class _insights_lock:  # noqa: N801
     """Best-effort lock using an exclusive lock file."""
 
@@ -586,11 +612,12 @@ class CognitiveLearner:
     - When to apply knowledge, not just what knowledge exists
     """
 
-    INSIGHTS_FILE = Path.home() / ".spark" / "cognitive_snapshot_legacy.json"
+    INSIGHTS_FILE = Path.home() / ".spark" / "cognitive_insights.json"
     LOCK_FILE = Path.home() / ".spark" / ".cognitive.lock"
 
     def __init__(self):
         self.insights: Dict[str, CognitiveInsight] = {}
+        self._legacy_insights_file = self.INSIGHTS_FILE.with_name("cognitive_snapshot_legacy.json")
         self._dirty = False  # Track unsaved changes
         self._defer_saves = False  # When True, accumulate changes without I/O
         self._load_insights()
@@ -616,6 +643,14 @@ class CognitiveLearner:
             except Exception as e:
                 print(f"[SPARK] Error loading insights: {e}")
                 loaded = False
+        if not loaded and self._legacy_insights_file.exists():
+            try:
+                data = json.loads(self._legacy_insights_file.read_text(encoding="utf-8"))
+                for key, info in data.items():
+                    self.insights[key] = CognitiveInsight.from_dict(info)
+                loaded = bool(self.insights)
+            except Exception:
+                loaded = False
         if not loaded:
             try:
                 data = load_cognitive_insights_snapshot()
@@ -628,6 +663,21 @@ class CognitiveLearner:
             self.dedupe_struggles()
             self._backfill_action_domains()
             self._backfill_advisory_readiness()
+            self._ensure_compat_snapshot_files()
+
+    def _ensure_compat_snapshot_files(self) -> None:
+        """Backfill compatibility JSON snapshots when running SQLite-canonical mode."""
+        if not self.insights:
+            return
+        data = {key: insight.to_dict() for key, insight in self.insights.items()}
+        for target in (self.INSIGHTS_FILE, self._legacy_insights_file):
+            if target.exists():
+                continue
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            except Exception:
+                continue
 
     def _backfill_action_domains(self):
         """Backfill action_domain for insights that don't have one."""
@@ -767,7 +817,7 @@ class CognitiveLearner:
                     write_cognitive_insights_snapshot(
                         data,
                         force=True,
-                        mirror_json_path=self.INSIGHTS_FILE if memory_spine_json_mirror_enabled() else None,
+                        mirror_json_path=self.INSIGHTS_FILE,
                     )
                 except Exception:
                     pass
@@ -788,6 +838,13 @@ class CognitiveLearner:
                     pass
                 try:
                     dual_write_cognitive_insights(data)
+                except Exception:
+                    pass
+            # Maintain legacy snapshot for older tools/tests during migration.
+            if self._legacy_insights_file != self.INSIGHTS_FILE:
+                try:
+                    self._legacy_insights_file.parent.mkdir(parents=True, exist_ok=True)
+                    self._legacy_insights_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
                 except Exception:
                     pass
 
@@ -1530,7 +1587,7 @@ class CognitiveLearner:
         )
         enforce_context = "retrieval" if str(phase or "").strip().lower() == "retrieval" else "default"
         if noise_enforce_enabled(context=enforce_context):
-            return bool(unified.is_noise)
+            return bool(unified.is_noise or legacy)
         return legacy
 
     # =========================================================================
@@ -2322,6 +2379,7 @@ class CognitiveLearner:
 
 
 # ============= Singleton =============
+_ensure_cognitive_json_compat_snapshot()
 _cognitive_learner: Optional[CognitiveLearner] = None
 
 def get_cognitive_learner() -> CognitiveLearner:

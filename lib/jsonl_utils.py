@@ -55,3 +55,37 @@ def append_jsonl_capped(
         )
     except Exception:
         return
+
+
+def cap_jsonl_file(
+    path: Path,
+    max_lines: int,
+    *,
+    ensure_trailing_newline: bool = True,
+) -> int:
+    """Rewrite ``path`` to keep only the last ``max_lines`` raw lines.
+
+    Returns the number of dropped lines. Returns 0 on no-op or failure.
+    """
+    if max_lines <= 0 or not path.exists():
+        return 0
+    try:
+        rows: deque[str] = deque(maxlen=int(max_lines))
+        total = 0
+        with path.open("r", encoding="utf-8", errors="ignore") as f:
+            for raw in f:
+                line = raw.rstrip("\n")
+                if not line.strip():
+                    continue
+                rows.append(line)
+                total += 1
+        if total <= max_lines:
+            return 0
+        dropped = int(total - max_lines)
+        body = "\n".join(rows)
+        if ensure_trailing_newline and body:
+            body += "\n"
+        path.write_text(body, encoding="utf-8")
+        return dropped
+    except Exception:
+        return 0

@@ -98,19 +98,25 @@ echo '{"v":1,"source":"stdin","kind":"message","ts":1730000000,"session_id":"dem
 Notes:
 - `adapters/stdin_ingest.py` defaults to `SPARKD_URL` or `SPARKD_PORT`.
 
-### 4) Codex hook bridge (shadow-first)
+### 4) Codex hook bridge (managed observe default)
 
 File: `adapters/codex_hook_bridge.py`
 
 This adapter tails `~/.codex/sessions/**/*.jsonl` and maps Codex events into
 hook-like events (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
-`PostToolUseFailure`, `Stop`).
+`PostToolUseFailure`, `Stop`), then forwards to `hooks/observe.py` when in
+`observe` mode.
 
 Modes:
-- `shadow` (default): parse + map + telemetry only (no live hook forwarding)
+- `shadow`: parse + map + telemetry only (no live hook forwarding)
 - `observe`: forward mapped events into `hooks/observe.py`
 
-Recommended validation-first run:
+Runtime default nuance:
+- Direct script default is `shadow` (`adapters/codex_hook_bridge.py --mode`).
+- Managed Spark service default is `observe` via `spark up` / `spark ensure`
+  (`lib/service_control.py` sets `SPARK_CODEX_BRIDGE_MODE=observe` unless overridden).
+
+Validation-first run:
 ```bash
 python3 adapters/codex_hook_bridge.py --mode shadow --backfill --once
 ```
@@ -118,6 +124,12 @@ python3 adapters/codex_hook_bridge.py --mode shadow --backfill --once
 Continuous shadow canary:
 ```bash
 python3 adapters/codex_hook_bridge.py --mode shadow --poll 2 --max-per-tick 200
+```
+
+Managed startup (recommended for normal alpha runtime):
+```bash
+python -m spark.cli up
+python -m spark.cli services --json
 ```
 
 Telemetry is written to:

@@ -3,6 +3,8 @@
 Date: 2026-02-27
 Branch: `feat/spark-alpha`
 
+Live runtime contract reference: `docs/SPARK_ALPHA_RUNTIME_CONTRACT.md`
+
 ## Purpose
 Merge three things into one executable plan:
 1. Current implementation status ([SPARK_ALPHA_IMPLEMENTATION_STATUS.md](./SPARK_ALPHA_IMPLEMENTATION_STATUS.md))

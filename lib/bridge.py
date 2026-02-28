@@ -284,11 +284,20 @@ def get_contextual_insights(query: str, limit: int = 6) -> List[Dict[str, Any]]:
 
         cog = CognitiveLearner()
         for ins in cog.get_insights_for_context(query, limit=limit):
-            if _is_low_value_insight(ins.insight):
+            category = str(getattr(getattr(ins, "category", None), "value", "") or "")
+            # Preserve high-level reasoning/context insights even if heuristic filters are aggressive.
+            if _is_low_value_insight(ins.insight) and category not in {
+                "reasoning",
+                "context",
+                "wisdom",
+                "user_understanding",
+                "meta_learning",
+                "communication",
+            }:
                 continue
             out.append({
                 "source": "cognitive",
-                "category": ins.category.value,
+                "category": category or "cognitive",
                 "text": ins.insight,
                 "reliability": ins.reliability,
                 "validations": ins.times_validated,

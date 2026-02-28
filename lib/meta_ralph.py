@@ -909,7 +909,21 @@ class MetaRalph:
             extra={"legacy_pattern_count": len(self.PRIMITIVE_PATTERNS)},
         )
         if noise_enforce_enabled():
-            return bool(unified.is_noise)
+            # Enforced mode must not drop explicit legacy primitive patterns, and should
+            # avoid over-filtering short but reasoned/actionable insights.
+            if legacy:
+                return True
+            if bool(unified.is_noise):
+                lower = str(learning or "").lower()
+                has_reasoning = bool(re.search(r"\b(because|due to|since|so that|prevents|ensures)\b", lower))
+                has_action = bool(re.search(r"\b(always|never|use|avoid|prefer|validate|check|must|should)\b", lower))
+                has_specificity = bool(
+                    re.search(r"\b(database|api|auth|schema|input|output|token|queue|bridge|memory|sql|postgres|mysql|oauth|pkce)\b", lower)
+                )
+                if has_reasoning or (has_action and has_specificity):
+                    return False
+                return True
+            return False
         return legacy
 
     def _hash_learning(self, learning: str) -> str:
@@ -944,7 +958,16 @@ class MetaRalph:
         try:
             alpha_dims = score_alpha_learning(learning, context)
             alpha_score = self._quality_score_from_dims(alpha_dims)
-            return alpha_score, alpha_score, None, "alpha"
+            legacy_shadow = self._score_learning(learning, context)
+            fused = QualityScore(
+                actionability=max(alpha_score.actionability, legacy_shadow.actionability),
+                novelty=max(alpha_score.novelty, legacy_shadow.novelty),
+                reasoning=max(alpha_score.reasoning, legacy_shadow.reasoning),
+                specificity=max(alpha_score.specificity, legacy_shadow.specificity),
+                outcome_linked=max(alpha_score.outcome_linked, legacy_shadow.outcome_linked),
+                ethics=max(alpha_score.ethics, legacy_shadow.ethics),
+            )
+            return fused, alpha_score, legacy_shadow, "alpha"
         except Exception:
             legacy_score = self._score_learning(learning, context)
             return legacy_score, legacy_score, None, "legacy_fallback"

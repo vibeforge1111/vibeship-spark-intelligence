@@ -86,6 +86,14 @@ jobs:
         run: |
           python scripts/import_wiring_smoke.py --json-only
 
+      - name: Alpha Orphan Surface Audit (Report)
+        run: |
+          python scripts/orphan_surface_audit.py --json-only
+
+      - name: Alpha Telemetry Hygiene (Report)
+        run: |
+          python scripts/telemetry_hygiene.py --json-only
+
       - name: Alpha Smoke Gates
         run: |
           python scripts/production_loop_report.py

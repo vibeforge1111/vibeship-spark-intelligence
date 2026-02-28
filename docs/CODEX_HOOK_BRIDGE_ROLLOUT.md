@@ -2,6 +2,13 @@
 
 Goal: validate Codex->Spark hook parity before enabling live advisory forwarding.
 
+Current status (2026-02-27 runtime evidence):
+- Managed service mode is `observe` in normal `spark up` flows.
+- Core integration and production gates are healthy.
+- Codex-specific required gate not yet passing: `observe.latency_p95_ms`.
+- `shadow.post_unmatched_delta` can appear as non-required while pending calls drain.
+- Codex-specific passes now include `observe.success_ratio` and `shadow.unknown_exit_ratio`.
+
 ## Why staged rollout
 
 Codex has no native lifecycle hook API, so we synthesize hook events by tailing
@@ -27,6 +34,17 @@ Live hook forwarding (after gates pass):
 ```bash
 python3 adapters/codex_hook_bridge.py --mode observe --poll 2 --max-per-tick 200
 ```
+
+Managed runtime defaults (recommended):
+
+```bash
+python -m spark.cli up
+python -m spark.cli services --json
+```
+
+Notes:
+- `adapters/codex_hook_bridge.py` CLI default is still `--mode shadow`.
+- Managed service startup in `lib/service_control.py` defaults `SPARK_CODEX_BRIDGE_MODE` to `observe`.
 
 Production-safe shadow check:
 
@@ -80,6 +98,7 @@ Gate A (shadow stability), run across multiple sessions:
 - `coverage_ratio >= 0.90`
 - `pairing_ratio >= 0.90`
 - `post_unknown_exit / max(post_events,1) <= 0.15`
+- `post_unmatched_call_id` delta `<= 0` (or temporary bypass while pending calls drain)
 - `json_decode_errors == 0` or clearly explained
 
 Gate B (observe canary, one active coding session):
@@ -92,6 +111,9 @@ Gate C (full rollout):
 
 - Gate A and B pass for at least one workday
 - then run `--mode observe` as default
+
+Current measured gap:
+- Gate C is not complete yet because observe latency p95 is still above threshold.
 
 ## Observatory report
 
