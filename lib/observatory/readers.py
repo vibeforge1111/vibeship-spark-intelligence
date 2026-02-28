@@ -113,6 +113,31 @@ def _as_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
+def _coerce_decision_outcome(row: dict[str, Any]) -> str:
+    outcome = str(row.get("outcome") or "").strip().lower()
+    if outcome:
+        return outcome
+    if bool(row.get("emitted")):
+        return "emitted"
+    event = str(row.get("event") or "").strip().lower()
+    if event == "emitted":
+        return "emitted"
+    if event in {
+        "gate_no_emit",
+        "context_repeat_blocked",
+        "text_repeat_blocked",
+        "question_like_blocked",
+        "global_dedupe_suppressed",
+        "emit_failed",
+        "synth_empty",
+        "no_gate_emissions",
+        "no_ranked_advice",
+        "exception",
+    }:
+        return "blocked"
+    return "unknown"
+
+
 # ── Stage 1: Event Capture ──────────────────────────────────────────
 
 def read_event_capture() -> dict[str, Any]:
@@ -501,13 +526,39 @@ def read_advisory(max_recent: int = 15) -> dict[str, Any]:
     d["last_updated"] = metrics.get("last_updated", "?")
     # Recent advice log entries
     d["recent_advice"] = _tail_jsonl(_SD / "advisor" / "advice_log.jsonl", max_recent)
-    # Recent decision ledger
-    d["recent_decisions"] = _tail_jsonl(_SD / "advisory_decision_ledger.jsonl", max_recent)
-    # Decision ledger aggregates
-    all_decisions = _tail_jsonl(_SD / "advisory_decision_ledger.jsonl", 200)
+    decision_source = "advisory_decision_ledger"
+    decision_rows = _tail_jsonl(_SD / "advisory_decision_ledger.jsonl", 200)
+    if not decision_rows:
+        # Prefer alpha engine events over emit-only logs so suppression outcomes
+        # are counted in the denominator when ledger data is absent.
+        engine_rows = _tail_jsonl(_SD / "advisory_engine_alpha.jsonl", 400)
+        if engine_rows:
+            decision_source = "advisory_engine_alpha_fallback"
+            decision_rows = []
+            for row in engine_rows:
+                outcome = _coerce_decision_outcome(row)
+                if outcome == "unknown":
+                    continue
+                normalized = dict(row)
+                normalized["outcome"] = outcome
+                decision_rows.append(normalized)
+        else:
+            emit_rows = _tail_jsonl(_SD / "advisory_emit.jsonl", 200)
+            if emit_rows:
+                decision_source = "advisory_emit_fallback"
+                decision_rows = []
+                for row in emit_rows:
+                    normalized = dict(row)
+                    normalized["outcome"] = "emitted"
+                    decision_rows.append(normalized)
+
+    d["decision_source"] = decision_source
+    d["recent_decisions"] = decision_rows[-max(0, int(max_recent)) :] if decision_rows else []
+    # Decision aggregates
+    all_decisions = decision_rows
     d_outcomes: dict[str, int] = {}
     for entry in all_decisions:
-        outcome = entry.get("outcome", "?")
+        outcome = str(entry.get("outcome", "?") or "?")
         d_outcomes[outcome] = d_outcomes.get(outcome, 0) + 1
     d["decision_outcomes"] = d_outcomes
     d["decision_emit_rate"] = round(

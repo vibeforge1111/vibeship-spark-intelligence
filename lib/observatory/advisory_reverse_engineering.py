@@ -140,9 +140,40 @@ def _window_rows(rows: List[Dict[str, Any]], window_s: int) -> List[Dict[str, An
 
 def _collect_runtime(window_s: int = 86400) -> Dict[str, Any]:
     ledger_file = _SPARK_DIR / "advisory_decision_ledger.jsonl"
+    emit_file = _SPARK_DIR / "advisory_emit.jsonl"
+    engine_file = _SPARK_DIR / "advisory_engine_alpha.jsonl"
     implicit_file = _SPARK_DIR / "advisor" / "implicit_feedback.jsonl"
 
     ledger_rows = _window_rows(_read_jsonl(ledger_file, max_rows=12000), window_s=window_s)
+    ledger_source = "advisory_decision_ledger"
+    if not ledger_rows:
+        engine_rows = _window_rows(_read_jsonl(engine_file, max_rows=12000), window_s=window_s)
+        if engine_rows:
+            ledger_source = "advisory_engine_alpha_fallback"
+            normalized: List[Dict[str, Any]] = []
+            for row in engine_rows:
+                event = str(row.get("event") or "").strip().lower()
+                if event == "emitted":
+                    normalized.append({**row, "outcome": "emitted"})
+                elif event in {
+                    "gate_no_emit",
+                    "context_repeat_blocked",
+                    "text_repeat_blocked",
+                    "question_like_blocked",
+                    "global_dedupe_suppressed",
+                    "emit_failed",
+                    "synth_empty",
+                    "no_gate_emissions",
+                    "no_ranked_advice",
+                    "exception",
+                }:
+                    normalized.append({**row, "outcome": "blocked"})
+            ledger_rows = normalized
+        else:
+            emit_rows = _window_rows(_read_jsonl(emit_file, max_rows=12000), window_s=window_s)
+            if emit_rows:
+                ledger_source = "advisory_emit_fallback"
+                ledger_rows = [{**row, "outcome": "emitted"} for row in emit_rows]
     implicit_rows = _window_rows(_read_jsonl(implicit_file, max_rows=12000), window_s=window_s)
 
     outcomes: Counter = Counter()
@@ -224,7 +255,10 @@ def _collect_runtime(window_s: int = 86400) -> Dict[str, Any]:
 
     return {
         "window_s": int(window_s),
+        "ledger_source": ledger_source,
         "ledger_file": str(ledger_file),
+        "emit_file": str(emit_file),
+        "engine_file": str(engine_file),
         "implicit_file": str(implicit_file),
         "ledger_rows": total_rows,
         "outcomes": dict(outcomes),

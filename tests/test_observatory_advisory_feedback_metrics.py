@@ -88,3 +88,72 @@ def test_read_advisory_uses_strict_feedback_denominator_and_loads_summary(monkey
     assert data["helpfulness_summary"]["helpful_rate_pct"] == 50.0
     assert len(data["recent_helpfulness_events"]) == 2
 
+
+def test_read_advisory_falls_back_to_advisory_emit_when_ledger_missing(monkeypatch, tmp_path: Path) -> None:
+    spark_dir = tmp_path / ".spark"
+    monkeypatch.setattr(readers, "_SD", spark_dir)
+    _write_json(spark_dir / "advisor" / "effectiveness.json", {"total_advice_given": 0, "total_followed": 0, "total_helpful": 0})
+    _write_json(spark_dir / "advisor" / "metrics.json", {})
+    _write_jsonl(
+        spark_dir / "advisory_emit.jsonl",
+        [
+            {"tool_name": "Edit", "trace_id": "t1", "ts": 1},
+            {"tool_name": "Bash", "trace_id": "t2", "ts": 2},
+            {"tool_name": "Read", "trace_id": "t3", "ts": 3},
+        ],
+    )
+    data = readers.read_advisory(max_recent=10)
+    assert data["decision_source"] == "advisory_emit_fallback"
+    assert data["decision_total"] == 3
+    assert data["decision_outcomes"].get("emitted", 0) == 3
+    assert data["decision_emit_rate"] == 100.0
+
+
+def test_read_advisory_falls_back_to_alpha_engine_events(monkeypatch, tmp_path: Path) -> None:
+    spark_dir = tmp_path / ".spark"
+    monkeypatch.setattr(readers, "_SD", spark_dir)
+    _write_json(spark_dir / "advisor" / "effectiveness.json", {"total_advice_given": 0, "total_followed": 0, "total_helpful": 0})
+    _write_json(spark_dir / "advisor" / "metrics.json", {})
+    _write_jsonl(
+        spark_dir / "advisory_engine_alpha.jsonl",
+        [
+            {"event": "emitted", "tool_name": "Edit"},
+            {"event": "gate_no_emit", "tool_name": "Edit"},
+            {"event": "context_repeat_blocked", "tool_name": "Bash"},
+            {"event": "post_tool_recorded", "tool_name": "Bash"},
+        ],
+    )
+    data = readers.read_advisory(max_recent=10)
+    assert data["decision_source"] == "advisory_engine_alpha_fallback"
+    assert data["decision_total"] == 3
+    assert data["decision_outcomes"].get("emitted", 0) == 1
+    assert data["decision_outcomes"].get("blocked", 0) == 2
+    assert data["decision_emit_rate"] == 33.3
+
+
+def test_read_advisory_prefers_engine_over_emit_when_both_exist(monkeypatch, tmp_path: Path) -> None:
+    spark_dir = tmp_path / ".spark"
+    monkeypatch.setattr(readers, "_SD", spark_dir)
+    _write_json(spark_dir / "advisor" / "effectiveness.json", {"total_advice_given": 0, "total_followed": 0, "total_helpful": 0})
+    _write_json(spark_dir / "advisor" / "metrics.json", {})
+    _write_jsonl(
+        spark_dir / "advisory_engine_alpha.jsonl",
+        [
+            {"event": "emitted", "tool_name": "Edit"},
+            {"event": "gate_no_emit", "tool_name": "Edit"},
+        ],
+    )
+    _write_jsonl(
+        spark_dir / "advisory_emit.jsonl",
+        [
+            {"tool_name": "Edit", "trace_id": "t1", "ts": 1},
+            {"tool_name": "Bash", "trace_id": "t2", "ts": 2},
+            {"tool_name": "Read", "trace_id": "t3", "ts": 3},
+        ],
+    )
+    data = readers.read_advisory(max_recent=10)
+    assert data["decision_source"] == "advisory_engine_alpha_fallback"
+    assert data["decision_total"] == 2
+    assert data["decision_outcomes"].get("emitted", 0) == 1
+    assert data["decision_outcomes"].get("blocked", 0) == 1
+    assert data["decision_emit_rate"] == 50.0
