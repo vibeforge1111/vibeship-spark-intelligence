@@ -31,6 +31,8 @@ PROMOTION_LOG = SPARK_DIR / "promotion_log.jsonl"
 QUEUE_EVENTS_LOG = SPARK_DIR / "queue" / "events.jsonl"
 EIDOS_DB = SPARK_DIR / "eidos.db"
 EVIDENCE_DB = SPARK_DIR / "evidence.db"
+GATE_STATE_FILE = SPARK_DIR / "advisory_review_gates_state.json"
+GATE_ALERTS_FILE = SPARK_DIR / "alerts" / "advisory_context_alerts.jsonl"
 
 ALPHA_SUPPRESSION_EVENTS = {
     "gate_no_emit",
@@ -946,6 +948,7 @@ def build_report(summary: Dict[str, Any], window_hours: float, now_ts: float) ->
     stage_context = summary.get("stage_context") or {}
     storybook = summary.get("trace_storybook") or {}
     passed_surpassed = summary.get("passed_surpassed") or {}
+    integrity = summary.get("integrity_gates") or {}
 
     rep = ra["repeated_texts"][:6]
     repeated_share = round(sum(float(r["share_pct_of_items"]) for r in rep), 2)
@@ -985,6 +988,28 @@ def build_report(summary: Dict[str, Any], window_hours: float, now_ts: float) ->
         lines.append(f"- Passed: {item}")
     for item in (passed_surpassed.get("surpassed") or []):
         lines.append(f"- Surpassed: {item}")
+
+    if isinstance(integrity, dict) and integrity:
+        lines.extend(["", "## Integrity Gates"])
+        gates = integrity.get("gates") if isinstance(integrity.get("gates"), list) else []
+        if gates:
+            for gate in gates:
+                if not isinstance(gate, dict):
+                    continue
+                status = "PASS" if bool(gate.get("ok")) else "FAIL"
+                lines.append(
+                    f"- {status} `{gate.get('id')}` value=`{gate.get('value')}` target=`{gate.get('target')}`"
+                )
+        if integrity.get("failed_gate_ids"):
+            lines.append(f"- Failed gates: {integrity.get('failed_gate_ids')}")
+        persistence = integrity.get("persistence") if isinstance(integrity.get("persistence"), dict) else {}
+        if persistence.get("persistent_failed_gate_ids"):
+            lines.append(
+                f"- Persistent failed gates ({persistence.get('persist_windows')} windows): "
+                f"{persistence.get('persistent_failed_gate_ids')}"
+            )
+        if persistence.get("alert_written"):
+            lines.append(f"- Alert written: `{persistence.get('alert_path')}`")
 
     lines.extend(
         [
@@ -1223,6 +1248,202 @@ def write_context_bundle(summary: Dict[str, Any], out_dir: Path) -> Dict[str, st
     }
 
 
+def evaluate_integrity_gates(
+    *,
+    summary: Dict[str, Any],
+    spark_dir: Path,
+) -> Dict[str, Any]:
+    """Evaluate advisory context integrity gates for hard-fail enforcement."""
+    generated_ts = _to_ts(summary.get("generated_at"))
+    now_ts = generated_ts if generated_ts > 0 else time.time()
+    window_s = max(60, int(_safe_float(summary.get("window_hours"), 4.0) * 3600.0))
+
+    ledger_rows = _load_jsonl(spark_dir / "advisory_decision_ledger.jsonl")
+    helpful_rows = _load_jsonl(spark_dir / "advisor" / "helpfulness_events.jsonl")
+    feedback_rows = _load_jsonl(spark_dir / "advice_feedback.jsonl")
+
+    quality_rows = _rows_in_window(
+        _tail_jsonl(spark_dir / "advisor" / "advisory_quality_events.jsonl", 24000),
+        now_ts=now_ts,
+        window_s=window_s,
+        ts_keys=("emitted_ts", "recorded_at", "signal_ts"),
+    )
+    trace_field_rows = sum(1 for r in quality_rows if any(k in r for k in ("trace_id", "outcome_trace_id", "trace")))
+    trace_bound_rows = sum(1 for r in quality_rows if _norm_text(r.get("trace_id")))
+    quality_trace_coverage_pct = _pct(trace_bound_rows, trace_field_rows) if trace_field_rows > 0 else 0.0
+
+    stage_context = summary.get("stage_context") or {}
+    stage8 = stage_context.get("stage_8_advisory") if isinstance(stage_context, dict) else {}
+    if not isinstance(stage8, dict):
+        stage8 = {}
+    known_helpfulness = _safe_int(stage8.get("known_helpfulness"), 0)
+    quality_events = _safe_int(stage8.get("quality_events"), 0) or len(quality_rows)
+    known_helpfulness_rate_pct = _pct(known_helpfulness, quality_events)
+
+    gates = [
+        {
+            "id": "decision_ledger_present",
+            "description": "Decision ledger exists and has rows",
+            "ok": bool(len(ledger_rows) > 0),
+            "value": int(len(ledger_rows)),
+            "target": ">0 rows",
+            "severity": "critical",
+            "failure_note": "decision ledger missing or empty",
+        },
+        {
+            "id": "helpfulness_events_present",
+            "description": "Helpfulness events stream present",
+            "ok": bool(len(helpful_rows) > 0),
+            "value": int(len(helpful_rows)),
+            "target": ">0 rows",
+            "severity": "critical",
+            "failure_note": "helpfulness events missing",
+        },
+        {
+            "id": "explicit_feedback_present",
+            "description": "Explicit advisory feedback rows present",
+            "ok": bool(len(feedback_rows) > 0),
+            "value": int(len(feedback_rows)),
+            "target": ">0 rows",
+            "severity": "critical",
+            "failure_note": "explicit feedback missing",
+        },
+        {
+            "id": "quality_trace_coverage_floor",
+            "description": "Quality events trace coverage",
+            "ok": bool(quality_trace_coverage_pct >= 50.0),
+            "value": float(quality_trace_coverage_pct),
+            "target": ">=50.0%",
+            "severity": "critical",
+            "failure_note": "quality events trace coverage below 50%",
+        },
+        {
+            "id": "known_helpfulness_coverage_floor",
+            "description": "Known helpfulness coverage of quality events",
+            "ok": bool(known_helpfulness_rate_pct >= 40.0),
+            "value": float(known_helpfulness_rate_pct),
+            "target": ">=40.0%",
+            "severity": "critical",
+            "failure_note": "known helpfulness coverage below 40%",
+        },
+    ]
+
+    failed = [g for g in gates if not bool(g.get("ok"))]
+    return {
+        "evaluated_at": _to_iso(now_ts),
+        "window_hours": _safe_float(summary.get("window_hours"), 4.0),
+        "gates": gates,
+        "failed_gate_ids": [str(g.get("id")) for g in failed],
+        "blind_spots": [str(g.get("failure_note")) for g in failed],
+        "quality_trace_coverage_pct": quality_trace_coverage_pct,
+        "known_helpfulness_rate_pct": known_helpfulness_rate_pct,
+        "quality_events": int(quality_events),
+    }
+
+
+def _load_gate_state(path: Path) -> Dict[str, Any]:
+    data = _load_json(path)
+    return data if isinstance(data, dict) else {"history": []}
+
+
+def _save_gate_state(path: Path, state: Dict[str, Any]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _append_alert(path: Path, payload: Dict[str, Any]) -> bool:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        return True
+    except Exception:
+        return False
+
+
+def apply_gate_persistence(
+    *,
+    gate_report: Dict[str, Any],
+    state_file: Path,
+    persist_windows: int,
+    alert_file: Path,
+    alerts_enabled: bool,
+    now_ts: float,
+) -> Dict[str, Any]:
+    state = _load_gate_state(state_file)
+    history = state.get("history")
+    if not isinstance(history, list):
+        history = []
+
+    current_failed = [str(x) for x in (gate_report.get("failed_gate_ids") or [])]
+    snapshot = {
+        "ts": float(now_ts),
+        "window_hours": float(gate_report.get("window_hours") or 0.0),
+        "failed_gate_ids": current_failed,
+        "blind_spots": list(gate_report.get("blind_spots") or []),
+    }
+    history.append(snapshot)
+    history = history[-80:]
+
+    required = max(1, int(persist_windows))
+    persistent_failed: List[str] = []
+    if current_failed:
+        for gate_id in current_failed:
+            streak = 0
+            for item in reversed(history):
+                ids = item.get("failed_gate_ids")
+                if not isinstance(ids, list):
+                    break
+                if gate_id in ids:
+                    streak += 1
+                else:
+                    break
+            if streak >= required:
+                persistent_failed.append(gate_id)
+
+    alert_written = False
+    alert_payload: Dict[str, Any] = {}
+    if alerts_enabled and persistent_failed:
+        fingerprint = ",".join(sorted(set(persistent_failed)))
+        last_alert = state.get("last_alert") if isinstance(state.get("last_alert"), dict) else {}
+        last_fingerprint = _norm_text(last_alert.get("fingerprint"))
+        last_ts = _safe_float(last_alert.get("ts"), 0.0)
+        # Avoid duplicate alerts in tight manual loops while still alerting each ~4h cycle.
+        if fingerprint != last_fingerprint or (now_ts - last_ts) >= 3.0 * 3600.0:
+            alert_payload = {
+                "ts": now_ts,
+                "at": _to_iso(now_ts),
+                "kind": "advisory_context_blind_spot_persistent",
+                "persist_windows": required,
+                "persistent_failed_gate_ids": sorted(set(persistent_failed)),
+                "current_failed_gate_ids": current_failed,
+                "blind_spots": list(gate_report.get("blind_spots") or []),
+                "window_hours": gate_report.get("window_hours"),
+            }
+            alert_written = _append_alert(alert_file, alert_payload)
+            if alert_written:
+                state["last_alert"] = {
+                    "ts": now_ts,
+                    "fingerprint": fingerprint,
+                    "path": str(alert_file),
+                }
+
+    state["history"] = history
+    state["last_run"] = snapshot
+    state["persistent_failed_gate_ids"] = sorted(set(persistent_failed))
+    _save_gate_state(state_file, state)
+    return {
+        "persist_windows": required,
+        "persistent_failed_gate_ids": sorted(set(persistent_failed)),
+        "alert_written": bool(alert_written),
+        "alert_path": str(alert_file),
+        "alert_payload": alert_payload,
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Generate advisory self-review report")
     ap.add_argument("--window-hours", type=float, default=4.0, help="Lookback window in hours (float allowed)")
@@ -1241,6 +1462,16 @@ def main() -> int:
     ap.add_argument("--run-llm-review", action="store_true", help="Run external LLM review on the hard-question prompt")
     ap.add_argument("--llm-providers", default="auto", help="Comma-separated providers (auto|minimax,claude,...)")
     ap.add_argument("--llm-timeout-s", type=float, default=180.0, help="Per-provider LLM timeout seconds")
+    ap.add_argument("--no-enforce-integrity-gates", action="store_true", help="Disable advisory integrity gate evaluation")
+    ap.add_argument("--gate-persist-windows", type=int, default=2, help="Consecutive windows required before persistent gate fail")
+    ap.add_argument("--gate-state-file", default=str(GATE_STATE_FILE), help="State file for gate persistence tracking")
+    ap.add_argument("--gate-alert-file", default=str(GATE_ALERTS_FILE), help="JSONL alert sink for persistent gate failures")
+    ap.add_argument("--no-gate-alerts", action="store_true", help="Disable writing persistent gate alerts")
+    ap.add_argument(
+        "--no-fail-on-persistent-blind-spots",
+        action="store_true",
+        help="Do not return non-zero when blind spots persist across required windows",
+    )
     args = ap.parse_args()
 
     # Gap guard: skip if a recent report already exists
@@ -1264,9 +1495,40 @@ def main() -> int:
         llm_providers=str(args.llm_providers),
         llm_timeout_s=float(args.llm_timeout_s),
     )
+    gate_exit_code = 0
+    enforce_gates = not bool(args.no_enforce_integrity_gates)
+    if enforce_gates and args.context_mode != "off":
+        gate_report = evaluate_integrity_gates(summary=summary, spark_dir=SPARK_DIR)
+        persistence = apply_gate_persistence(
+            gate_report=gate_report,
+            state_file=Path(str(args.gate_state_file)),
+            persist_windows=max(1, int(args.gate_persist_windows)),
+            alert_file=Path(str(args.gate_alert_file)),
+            alerts_enabled=(not bool(args.no_gate_alerts)),
+            now_ts=time.time(),
+        )
+        gate_report["persistence"] = persistence
+        summary["integrity_gates"] = gate_report
+
+        failed_now = gate_report.get("failed_gate_ids") or []
+        if failed_now:
+            print(f"Advisory integrity gates failing now: {failed_now}")
+        if persistence.get("alert_written"):
+            print(f"Advisory integrity alert written: {persistence.get('alert_path')}")
+        if (
+            not bool(args.no_fail_on_persistent_blind_spots)
+            and (persistence.get("persistent_failed_gate_ids") or [])
+        ):
+            persistent = persistence.get("persistent_failed_gate_ids")
+            print(
+                "Advisory integrity gate FAILED: persistent blind spots across "
+                f"{persistence.get('persist_windows')} windows: {persistent}"
+            )
+            gate_exit_code = 2
+
     if args.json:
         print(json.dumps(summary, indent=2, ensure_ascii=False))
-        return 0
+        return gate_exit_code
 
     out_path = write_report(summary, out_dir)
     if args.emit_context_bundle or args.run_llm_review:
@@ -1276,7 +1538,7 @@ def main() -> int:
         if bundle_paths.get("external_review"):
             print(f"Advisory external review written: {bundle_paths.get('external_review')}")
     print(f"Advisory self-review written: {out_path}")
-    return 0
+    return gate_exit_code
 
 
 if __name__ == "__main__":

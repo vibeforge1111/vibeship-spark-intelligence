@@ -136,6 +136,10 @@ DEFAULT_CONFIG = {
     "advisory_review_context_llm_enabled": True,
     "advisory_review_context_llm_providers": "auto",
     "advisory_review_context_llm_timeout_s": 180,
+    "advisory_review_integrity_gates_enabled": True,
+    "advisory_review_gate_persist_windows": 2,
+    "advisory_review_gate_alerts_enabled": True,
+    "advisory_review_fail_on_persistent_blind_spots": True,
     "memory_quality_observatory_enabled": True,
 }
 
@@ -863,6 +867,19 @@ def task_advisory_review(state: Dict[str, Any]) -> Dict[str, Any]:
                 str(float(cfg.get("advisory_review_context_llm_timeout_s", 180) or 180)),
             ]
         )
+    if not _safe_bool(cfg.get("advisory_review_integrity_gates_enabled", True), True):
+        cmd.append("--no-enforce-integrity-gates")
+    else:
+        cmd.extend(
+            [
+                "--gate-persist-windows",
+                str(max(1, int(cfg.get("advisory_review_gate_persist_windows", 2) or 2))),
+            ]
+        )
+    if not _safe_bool(cfg.get("advisory_review_gate_alerts_enabled", True), True):
+        cmd.append("--no-gate-alerts")
+    if not _safe_bool(cfg.get("advisory_review_fail_on_persistent_blind_spots", True), True):
+        cmd.append("--no-fail-on-persistent-blind-spots")
     proc = subprocess.run(
         cmd,
         cwd=str(Path(__file__).resolve().parent),
@@ -873,7 +890,9 @@ def task_advisory_review(state: Dict[str, Any]) -> Dict[str, Any]:
     )
     if proc.returncode != 0:
         stderr = (proc.stderr or "").strip()
-        return {"error": f"self_review_failed: {stderr[:300]}"}
+        stdout_tail = "\n".join((proc.stdout or "").strip().splitlines()[-6:])
+        detail = stderr[:300] if stderr else stdout_tail[:300]
+        return {"error": f"self_review_failed: {detail}"}
 
     line = (proc.stdout or "").strip().splitlines()
     msg = line[-1] if line else ""

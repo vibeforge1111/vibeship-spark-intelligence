@@ -231,3 +231,65 @@ def test_external_review_marks_execution_error_as_not_ok(monkeypatch):
     assert row["provider"] == "claude"
     assert row["ok"] is False
     assert row["error"] == "response_error:provider_execution_error"
+
+
+def test_evaluate_integrity_gates_detects_missing_surfaces(tmp_path):
+    mod = _load_module()
+    spark_dir = tmp_path / "spark"
+    (spark_dir / "advisor").mkdir(parents=True, exist_ok=True)
+    now = time.time()
+    (spark_dir / "advisor" / "advisory_quality_events.jsonl").write_text(
+        json.dumps({"emitted_ts": now - 30, "provider": "codex", "helpfulness_label": "unknown"}) + "\n",
+        encoding="utf-8",
+    )
+    summary = {
+        "window_hours": 4.0,
+        "generated_at": mod._to_iso(now),
+        "stage_context": {
+            "stage_8_advisory": {
+                "known_helpfulness": 0,
+                "quality_events": 1,
+            }
+        },
+    }
+    report = mod.evaluate_integrity_gates(summary=summary, spark_dir=spark_dir)
+    failed = set(report.get("failed_gate_ids") or [])
+    assert "decision_ledger_present" in failed
+    assert "helpfulness_events_present" in failed
+    assert "explicit_feedback_present" in failed
+    assert "quality_trace_coverage_floor" in failed
+    assert "known_helpfulness_coverage_floor" in failed
+
+
+def test_apply_gate_persistence_alerts_on_second_consecutive_window(tmp_path):
+    mod = _load_module()
+    state_file = tmp_path / "state.json"
+    alert_file = tmp_path / "alerts" / "advisory_context_alerts.jsonl"
+    gate_report = {
+        "window_hours": 4.0,
+        "failed_gate_ids": ["decision_ledger_present"],
+        "blind_spots": ["decision ledger missing or empty"],
+    }
+
+    first = mod.apply_gate_persistence(
+        gate_report=gate_report,
+        state_file=state_file,
+        persist_windows=2,
+        alert_file=alert_file,
+        alerts_enabled=True,
+        now_ts=1000.0,
+    )
+    assert first["persistent_failed_gate_ids"] == []
+    assert first["alert_written"] is False
+
+    second = mod.apply_gate_persistence(
+        gate_report=gate_report,
+        state_file=state_file,
+        persist_windows=2,
+        alert_file=alert_file,
+        alerts_enabled=True,
+        now_ts=1000.0 + 5 * 3600.0,
+    )
+    assert second["persistent_failed_gate_ids"] == ["decision_ledger_present"]
+    assert second["alert_written"] is True
+    assert alert_file.exists()

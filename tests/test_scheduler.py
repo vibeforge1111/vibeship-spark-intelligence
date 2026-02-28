@@ -37,6 +37,10 @@ class TestLoadConfig(unittest.TestCase):
         self.assertTrue(cfg["advisory_review_context_llm_enabled"])
         self.assertEqual(cfg["advisory_review_context_llm_providers"], "auto")
         self.assertEqual(cfg["advisory_review_context_llm_timeout_s"], 180)
+        self.assertTrue(cfg["advisory_review_integrity_gates_enabled"])
+        self.assertEqual(cfg["advisory_review_gate_persist_windows"], 2)
+        self.assertTrue(cfg["advisory_review_gate_alerts_enabled"])
+        self.assertTrue(cfg["advisory_review_fail_on_persistent_blind_spots"])
         self.assertTrue(cfg["memory_quality_observatory_enabled"])
 
     def test_overrides_from_file(self, tmp_path=None):
@@ -219,6 +223,10 @@ class TestRunDueTasks(unittest.TestCase):
             "advisory_review_context_llm_enabled": True,
             "advisory_review_context_llm_providers": "auto",
             "advisory_review_context_llm_timeout_s": 180,
+            "advisory_review_integrity_gates_enabled": True,
+            "advisory_review_gate_persist_windows": 2,
+            "advisory_review_gate_alerts_enabled": True,
+            "advisory_review_fail_on_persistent_blind_spots": True,
             "memory_quality_observatory_enabled": True,
         }
 
@@ -456,6 +464,47 @@ class TestAdvisoryReviewTask(unittest.TestCase):
             out = sched.task_advisory_review({})
         self.assertEqual(out["status"], "ok")
         self.assertEqual(mock_run.call_count, 1)
+
+    def test_advisory_review_passes_integrity_gate_flags(self):
+        cfg = {
+            "advisory_review_window_hours": 4,
+            "advisory_review_min_gap_hours": 4,
+            "advisory_review_context_bundle_enabled": True,
+            "advisory_review_context_llm_enabled": False,
+            "advisory_review_integrity_gates_enabled": False,
+            "advisory_review_gate_alerts_enabled": False,
+            "advisory_review_fail_on_persistent_blind_spots": False,
+            "memory_quality_observatory_enabled": False,
+        }
+        with patch.object(sched, "load_scheduler_config", return_value=cfg), \
+             patch("spark_scheduler.subprocess.run") as mock_run, \
+             patch("glob.glob", return_value=[]):
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="Advisory self-review written: docs/reports/x.md\n",
+                stderr="",
+            )
+            out = sched.task_advisory_review({})
+
+        self.assertEqual(out["status"], "ok")
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("--no-enforce-integrity-gates", cmd)
+        self.assertIn("--no-gate-alerts", cmd)
+        self.assertIn("--no-fail-on-persistent-blind-spots", cmd)
+
+    def test_advisory_review_failure_uses_stdout_when_stderr_empty(self):
+        with patch.object(sched, "load_scheduler_config", return_value={"advisory_review_window_hours": 4}), \
+             patch("spark_scheduler.subprocess.run") as mock_run, \
+             patch("glob.glob", return_value=[]):
+            mock_run.return_value = MagicMock(
+                returncode=2,
+                stdout="Advisory integrity gate FAILED: persistent blind spots\n",
+                stderr="",
+            )
+            out = sched.task_advisory_review({})
+
+        self.assertIn("self_review_failed", out.get("error", ""))
+        self.assertIn("persistent blind spots", out.get("error", ""))
 
 if __name__ == "__main__":
     unittest.main()
