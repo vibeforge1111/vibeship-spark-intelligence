@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from .config_authority import resolve_section
 from .spark_memory_spine import load_cognitive_insights_runtime_snapshot
 
 SPARK_DIR = Path.home() / ".spark"
@@ -225,7 +226,8 @@ class AutoTuner:
     def __init__(self, tuneables_path: Path = TUNEABLES_PATH):
         self.tuneables_path = tuneables_path
         self._tuneables = _read_json(tuneables_path)
-        self._config = self._tuneables.get("auto_tuner", {})
+        self._config = {}
+        self._refresh_config()
         # Read tuneable bounds if present
         try:
             self.BOOST_MIN = max(0.0, float(self._config.get("min_boost", self.BOOST_MIN)))
@@ -234,6 +236,17 @@ class AutoTuner:
             pass
         # Clamp any legacy out-of-bounds boosts immediately on load
         self._clamp_existing_boosts()
+
+    def _refresh_config(self) -> None:
+        """Load effective auto_tuner config via config authority."""
+        self._tuneables = _read_json(self.tuneables_path)
+        try:
+            resolved = resolve_section("auto_tuner", runtime_path=self.tuneables_path)
+            data = resolved.data if hasattr(resolved, "data") else {}
+            self._config = dict(data) if isinstance(data, dict) else {}
+        except Exception:
+            cfg = self._tuneables.get("auto_tuner", {})
+            self._config = dict(cfg) if isinstance(cfg, dict) else {}
 
     def _clamp_existing_boosts(self) -> None:
         """Clamp all stored boosts to [BOOST_MIN, BOOST_MAX] and persist if changed."""
@@ -702,8 +715,7 @@ class AutoTuner:
 
         tuneables["updated_at"] = timestamp
         _write_json_atomic(self.tuneables_path, tuneables)
-        self._tuneables = tuneables
-        self._config = auto_tuner
+        self._refresh_config()
 
     def _record_noop_run(
         self,
@@ -733,8 +745,7 @@ class AutoTuner:
 
         tuneables["updated_at"] = timestamp
         _write_json_atomic(self.tuneables_path, tuneables)
-        self._tuneables = tuneables
-        self._config = auto_tuner
+        self._refresh_config()
 
     def get_status(self) -> Dict[str, Any]:
         """Get current auto-tuner status for dashboards."""
