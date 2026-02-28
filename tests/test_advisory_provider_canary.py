@@ -164,3 +164,64 @@ def test_provider_canary_ignores_inactive_provider(tmp_path: Path) -> None:
     assert out["providers"]["openclaw"]["active"] is False
     assert out["providers"]["openclaw"]["passed"] is True
 
+
+def test_provider_canary_filters_synthetic_trace_rows(tmp_path: Path) -> None:
+    spark_dir = tmp_path / ".spark"
+    now = time.time()
+    _write_jsonl(
+        spark_dir / "advisor" / "advisory_quality_events.jsonl",
+        [
+            {
+                "provider": "codex",
+                "emitted_ts": now - 12,
+                "helpfulness_label": "helpful",
+                "timing_bucket": "right_on_time",
+                "impact_score": 0.9,
+                "trace_id": "arena:case-1",
+                "route": "alpha",
+            },
+            {
+                "provider": "codex",
+                "emitted_ts": now - 10,
+                "helpfulness_label": "helpful",
+                "timing_bucket": "right_on_time",
+                "impact_score": 0.9,
+            },
+            {
+                "provider": "codex",
+                "emitted_ts": now - 8,
+                "helpfulness_label": "helpful",
+                "timing_bucket": "delayed",
+                "impact_score": 0.8,
+            },
+            {
+                "provider": "codex",
+                "emitted_ts": now - 6,
+                "helpfulness_label": "unknown",
+                "timing_bucket": "unknown",
+                "impact_score": 0.5,
+            },
+        ],
+    )
+
+    out = run_provider_canary(
+        ProviderCanaryConfig(
+            spark_dir=spark_dir,
+            providers=["codex"],
+            window_s=3600,
+            min_events_per_provider=3,
+            min_known_helpfulness=2,
+            min_helpful_rate_pct=40.0,
+            min_right_on_time_rate_pct=35.0,
+            max_unknown_rate_pct=90.0,
+            refresh_spine=False,
+        )
+    )
+
+    codex = out["providers"]["codex"]
+    assert codex["raw_events"] == 4
+    assert codex["events"] == 3
+    assert codex["filtered_synthetic"] == 1
+    assert codex["timing_known_events"] == 2
+    assert codex["right_on_time_rate_pct"] == 50.0
+    assert codex["passed"] is True

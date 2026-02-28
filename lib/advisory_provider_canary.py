@@ -20,6 +20,20 @@ class ProviderCanaryConfig:
     min_right_on_time_rate_pct: float = 35.0
     max_unknown_rate_pct: float = 90.0
     refresh_spine: bool = True
+    exclude_synthetic_traces: bool = True
+
+
+_SYNTHETIC_TRACE_PREFIXES = ("arena:", "benchmark:", "replay:")
+
+
+def _is_synthetic_row(row: Dict[str, Any]) -> bool:
+    trace_id = _norm_text(row.get("trace_id")).lower()
+    run_id = _norm_text(row.get("run_id")).lower()
+    route = _norm_text(row.get("route")).lower()
+    for prefix in _SYNTHETIC_TRACE_PREFIXES:
+        if trace_id.startswith(prefix) or run_id.startswith(prefix) or route.startswith(prefix):
+            return True
+    return False
 
 
 def _norm_text(value: Any) -> str:
@@ -86,16 +100,23 @@ def run_provider_canary(cfg: ProviderCanaryConfig) -> Dict[str, Any]:
 
     per_provider: Dict[str, Dict[str, Any]] = {}
     for provider in providers:
-        pr_rows = [
+        all_rows = [
             r for r in rows
             if _norm_text(r.get("provider")).lower() == provider
             and _safe_float(r.get("emitted_ts"), 0.0) >= cutoff
         ]
+        synthetic_filtered = 0
+        pr_rows = list(all_rows)
+        if cfg.exclude_synthetic_traces:
+            pr_rows = [r for r in all_rows if not _is_synthetic_row(r)]
+            synthetic_filtered = max(0, len(all_rows) - len(pr_rows))
         total = len(pr_rows)
         known = 0
         helpful = 0
         right_on_time = 0
+        timing_known = 0
         unknown = 0
+        stale = 0
         impact_sum = 0.0
         for row in pr_rows:
             label = _norm_text(row.get("helpfulness_label")).lower()
@@ -105,13 +126,18 @@ def run_provider_canary(cfg: ProviderCanaryConfig) -> Dict[str, Any]:
                 helpful += 1
             if label == "unknown":
                 unknown += 1
-            if _norm_text(row.get("timing_bucket")).lower() == "right_on_time":
+            timing_bucket = _norm_text(row.get("timing_bucket")).lower()
+            if timing_bucket in {"right_on_time", "near_time", "delayed"}:
+                timing_known += 1
+            if timing_bucket == "right_on_time":
                 right_on_time += 1
+            if timing_bucket == "stale":
+                stale += 1
             impact_sum += _safe_float(row.get("impact_score"), 0.0)
 
         avg_impact = round(impact_sum / max(total, 1), 4) if total else 0.0
         helpful_rate = _pct(helpful, known if known > 0 else 0)
-        right_rate = _pct(right_on_time, total if total > 0 else 0)
+        right_rate = _pct(right_on_time, timing_known if timing_known > 0 else 0)
         unknown_rate = _pct(unknown, total if total > 0 else 0)
         active = total > 0
         reasons: List[str] = []
@@ -139,11 +165,15 @@ def run_provider_canary(cfg: ProviderCanaryConfig) -> Dict[str, Any]:
             "active": active,
             "passed": bool(passed),
             "reasons": reasons,
+            "raw_events": len(all_rows),
             "events": total,
+            "filtered_synthetic": synthetic_filtered,
             "known_helpfulness": known,
             "helpful": helpful,
             "right_on_time": right_on_time,
+            "timing_known_events": timing_known,
             "unknown": unknown,
+            "stale": stale,
             "helpful_rate_pct": helpful_rate,
             "right_on_time_rate_pct": right_rate,
             "unknown_rate_pct": unknown_rate,
