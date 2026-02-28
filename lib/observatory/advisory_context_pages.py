@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -193,6 +194,18 @@ def _md_escape(value: Any, limit: int | None = None) -> str:
     if limit is not None:
         text = _short(text, limit)
     return text.replace("|", "\\|")
+
+
+def _json_preview(value: Any, *, max_chars: int = 4000) -> str:
+    try:
+        text = json.dumps(value, ensure_ascii=True, default=str, sort_keys=True, indent=2)
+    except Exception:
+        text = _norm_text(value)
+    if not text:
+        return "{}"
+    if len(text) <= max_chars:
+        return text
+    return text[: max(0, max_chars - 3)] + "..."
 
 
 def _trace_from_row(row: dict[str, Any]) -> str:
@@ -448,6 +461,684 @@ def _split_windows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], li
         ordered = rows[:]
     mid = max(1, len(ordered) // 2)
     return ordered[:mid], ordered[mid:]
+
+
+def _norm_cmp_text(value: Any) -> str:
+    return " ".join(_norm_text(value).lower().split())
+
+
+def _queue_trace_id(row: dict[str, Any]) -> str:
+    trace = _trace_from_row(row)
+    if trace:
+        return trace
+    data = row.get("data")
+    if isinstance(data, dict):
+        return _norm_text(data.get("trace_id"))
+    return ""
+
+
+def _parse_json_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _tool_input_summary(row: dict[str, Any] | None) -> str:
+    if not isinstance(row, dict):
+        return "-"
+    tool_input = row.get("tool_input")
+    if not isinstance(tool_input, dict):
+        data = row.get("data")
+        if isinstance(data, dict) and isinstance(data.get("tool_input"), dict):
+            tool_input = data.get("tool_input")
+        else:
+            tool_input = {}
+
+    parts: list[str] = []
+    key_order = (
+        "cmd",
+        "command",
+        "file_path",
+        "path",
+        "description",
+        "pattern",
+        "query",
+        "url",
+        "offset",
+        "limit",
+    )
+    for key in key_order:
+        if key in tool_input:
+            value = _norm_text(tool_input.get(key))
+            if value:
+                parts.append(f"{key}={value}")
+    if not parts:
+        for key, value in list(tool_input.items())[:4]:
+            text = _norm_text(value)
+            if text:
+                parts.append(f"{key}={text}")
+    joined = "; ".join(parts) if parts else "-"
+    err = _norm_text((row or {}).get("error"))
+    if err:
+        joined = f"{joined}; error={err}"
+    return _short(joined, 320)
+
+
+def _load_eidos_distillation_lookup() -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    db_path = _SD / "eidos.db"
+    if not db_path.exists():
+        return {}, {}
+
+    by_prefix: dict[str, dict[str, Any]] = {}
+    by_statement: dict[str, dict[str, Any]] = {}
+
+    def _upsert(record: dict[str, Any]) -> None:
+        distillation_id = _norm_text(record.get("distillation_id"))
+        if not distillation_id:
+            return
+        prefix = distillation_id[:8]
+        existing = by_prefix.get(prefix)
+        if existing is None or _to_float(record.get("created_at"), 0.0) >= _to_float(existing.get("created_at"), 0.0):
+            by_prefix[prefix] = record
+        stmt = _norm_cmp_text(record.get("refined_statement") or record.get("statement"))
+        if stmt:
+            prev = by_statement.get(stmt)
+            if prev is None or _to_float(record.get("created_at"), 0.0) >= _to_float(prev.get("created_at"), 0.0):
+                by_statement[stmt] = record
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        for table in ("distillations", "distillations_archive"):
+            try:
+                rows = cur.execute(
+                    f"""
+                    SELECT distillation_id, type, statement, refined_statement, confidence, created_at, advisory_quality
+                    FROM {table}
+                    ORDER BY created_at DESC
+                    """
+                ).fetchall()
+            except Exception:
+                continue
+            for row in rows:
+                payload = dict(row)
+                payload["table"] = table
+                payload["advisory_quality"] = _parse_json_dict(payload.get("advisory_quality"))
+                _upsert(payload)
+        conn.close()
+    except Exception:
+        return {}, {}
+
+    return by_prefix, by_statement
+
+
+def _build_recent_advice_item_index(
+    rows: list[dict[str, Any]],
+) -> tuple[dict[tuple[str, str], dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    by_trace_advice: dict[tuple[str, str], dict[str, Any]] = {}
+    by_advice: dict[str, list[dict[str, Any]]] = defaultdict(list)
+
+    for run in rows:
+        trace_id = _trace_from_row(run)
+        run_id = _norm_text(run.get("run_id"))
+        route = _norm_text(run.get("route"))
+        tool = _norm_text(run.get("tool"))
+        run_ts = _extract_ts(run, keys=("recorded_at", "ts", "timestamp", "created_at"))
+        advice_ids = run.get("advice_ids") if isinstance(run.get("advice_ids"), list) else []
+        advice_texts = run.get("advice_texts") if isinstance(run.get("advice_texts"), list) else []
+        insight_keys = run.get("insight_keys") if isinstance(run.get("insight_keys"), list) else []
+        sources = run.get("sources") if isinstance(run.get("sources"), list) else []
+        categories = run.get("categories") if isinstance(run.get("categories"), list) else []
+        readiness = run.get("advisory_readiness") if isinstance(run.get("advisory_readiness"), list) else []
+        quality = run.get("advisory_quality") if isinstance(run.get("advisory_quality"), list) else []
+
+        for idx, aid_raw in enumerate(advice_ids):
+            advice_id = _norm_text(aid_raw)
+            if not advice_id:
+                continue
+            entry = {
+                "_ts": run_ts,
+                "trace_id": trace_id,
+                "run_id": run_id,
+                "route": route,
+                "tool": tool,
+                "advice_id": advice_id,
+                "advice_text": _norm_text(advice_texts[idx]) if idx < len(advice_texts) else "",
+                "insight_key": _norm_text(insight_keys[idx]) if idx < len(insight_keys) else "",
+                "source": _norm_text(sources[idx]) if idx < len(sources) else "",
+                "category": _norm_text(categories[idx]) if idx < len(categories) else "",
+                "advisory_readiness": readiness[idx] if idx < len(readiness) else None,
+                "advisory_quality": quality[idx] if idx < len(quality) else {},
+            }
+            if trace_id:
+                key = (trace_id, advice_id)
+                prev = by_trace_advice.get(key)
+                if prev is None or _to_float(entry.get("_ts"), 0.0) >= _to_float(prev.get("_ts"), 0.0):
+                    by_trace_advice[key] = entry
+            by_advice[advice_id].append(entry)
+
+    for advice_id, items in by_advice.items():
+        by_advice[advice_id] = sorted(items, key=lambda item: _to_float(item.get("_ts"), 0.0), reverse=True)
+
+    return by_trace_advice, by_advice
+
+
+def _find_roast_for_text(
+    text: str,
+    roast_exact: dict[str, dict[str, Any]],
+    roast_rows: list[dict[str, Any]],
+    cache: dict[str, dict[str, Any] | None],
+) -> dict[str, Any] | None:
+    norm = _norm_cmp_text(text)
+    if not norm:
+        return None
+    if norm in cache:
+        return cache[norm]
+    exact = roast_exact.get(norm)
+    if exact is not None:
+        cache[norm] = exact
+        return exact
+
+    match: dict[str, Any] | None = None
+    if len(norm) >= 24:
+        for row in reversed(roast_rows):
+            result = row.get("result") if isinstance(row.get("result"), dict) else {}
+            orig = _norm_cmp_text((result or {}).get("original"))
+            if not orig:
+                continue
+            if norm in orig or orig in norm:
+                match = row
+                break
+    cache[norm] = match
+    return match
+
+
+def _advisory_emission_lineage_deep_page(sample_size: int = 160) -> str:
+    limit = max(120, int(sample_size))
+    quality_all_rows, _ = _read_jsonl(_SD / "advisor" / "advisory_quality_events.jsonl", max_rows=50000)
+    quality_all_rows = [row for row in quality_all_rows if _norm_text(row.get("advice_id"))]
+    quality_all_rows.sort(
+        key=lambda row: _extract_ts(row, keys=("emitted_ts", "recorded_at", "ts", "timestamp", "created_at")),
+        reverse=True,
+    )
+
+    def _is_synthetic_quality(row: dict[str, Any]) -> bool:
+        trace = _trace_from_row(row).lower()
+        session_id = _norm_text(row.get("session_id")).lower()
+        run_id = _norm_text(row.get("run_id")).lower()
+        return trace.startswith("arena:") or session_id.startswith("arena:") or run_id.startswith("arena:")
+
+    quality_non_synth = [row for row in quality_all_rows if not _is_synthetic_quality(row)]
+    quality_synth = [row for row in quality_all_rows if _is_synthetic_quality(row)]
+    quality_rows = (quality_non_synth[:limit] + quality_synth[: max(0, limit - len(quality_non_synth[:limit]))])[:limit]
+
+    recent_rows, _ = _read_jsonl(_SD / "advisor" / "recent_advice.jsonl", max_rows=35000)
+    recent_rows.sort(key=_extract_ts, reverse=True)
+    run_item_by_trace_advice, run_items_by_advice = _build_recent_advice_item_index(recent_rows)
+
+    queue_rows, _ = _read_jsonl(_SD / "queue" / "events.jsonl", max_rows=50000)
+    queue_rows = sorted(queue_rows, key=_extract_ts)
+    queue_by_trace: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in queue_rows:
+        trace = _queue_trace_id(row)
+        if trace:
+            queue_by_trace[trace].append(row)
+
+    retrieval_rows, _ = _read_jsonl(_SD / "advisor" / "retrieval_router.jsonl", max_rows=50000)
+    retrieval_by_trace: dict[str, dict[str, Any]] = {}
+    for row in sorted(retrieval_rows, key=_extract_ts, reverse=True):
+        trace = _trace_from_row(row)
+        if trace and trace not in retrieval_by_trace:
+            retrieval_by_trace[trace] = row
+
+    decision_rows, decision_source, _ = _load_decision_rows(limit=50000)
+    decision_by_trace: dict[str, dict[str, Any]] = {}
+    for row in sorted(decision_rows, key=_extract_ts, reverse=True):
+        trace = _trace_from_row(row)
+        if trace and trace not in decision_by_trace:
+            decision_by_trace[trace] = row
+
+    outcome_rows, _ = _read_jsonl(_SD / "outcomes.jsonl", max_rows=50000)
+    outcome_by_trace: dict[str, dict[str, Any]] = {}
+    for row in sorted(outcome_rows, key=_extract_ts, reverse=True):
+        trace = _trace_from_row(row)
+        if trace and trace not in outcome_by_trace:
+            outcome_by_trace[trace] = row
+
+    feedback_rows, _ = _read_jsonl(_SD / "advice_feedback.jsonl", max_rows=50000)
+    feedback_by_trace_advice: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in sorted(feedback_rows, key=_extract_ts, reverse=True):
+        trace = _trace_from_row(row)
+        advice_ids = row.get("advice_ids") if isinstance(row.get("advice_ids"), list) else []
+        for aid_raw in advice_ids:
+            aid = _norm_text(aid_raw)
+            if not trace or not aid:
+                continue
+            key = (trace, aid)
+            if key not in feedback_by_trace_advice:
+                feedback_by_trace_advice[key] = row
+
+    implicit_rows, _ = _read_jsonl(_SD / "advisor" / "implicit_feedback.jsonl", max_rows=50000)
+    implicit_by_trace: dict[str, dict[str, Any]] = {}
+    for row in sorted(implicit_rows, key=_extract_ts, reverse=True):
+        trace = _trace_from_row(row)
+        if trace and trace not in implicit_by_trace:
+            implicit_by_trace[trace] = row
+
+    cognitive_payload = _read_json(_SD / "cognitive_insights.json")
+    if not isinstance(cognitive_payload, dict):
+        cognitive_payload = {}
+
+    roast_payload = _read_json(_SD / "meta_ralph" / "roast_history.json")
+    roast_rows = roast_payload.get("history") if isinstance(roast_payload.get("history"), list) else []
+    roast_exact: dict[str, dict[str, Any]] = {}
+    for row in roast_rows:
+        result = row.get("result") if isinstance(row.get("result"), dict) else {}
+        original_norm = _norm_cmp_text((result or {}).get("original"))
+        if original_norm:
+            roast_exact[original_norm] = row
+    roast_cache: dict[str, dict[str, Any] | None] = {}
+
+    eidos_by_prefix, eidos_by_statement = _load_eidos_distillation_lookup()
+
+    lineage_rows: list[dict[str, Any]] = []
+    for row in quality_rows:
+        advice_id = _norm_text(row.get("advice_id"))
+        trace_id = _trace_from_row(row)
+        tool = _norm_text(row.get("tool") or row.get("tool_name")) or "?"
+        emitted_ts = _extract_ts(row, keys=("emitted_ts", "recorded_at", "ts", "timestamp", "created_at"))
+
+        run_item = run_item_by_trace_advice.get((trace_id, advice_id))
+        if run_item is None:
+            fallback = run_items_by_advice.get(advice_id, [])
+            run_item = fallback[0] if fallback else None
+
+        insight_key = _norm_text((run_item or {}).get("insight_key"))
+        source_hint = _norm_text(row.get("source_hint") or (run_item or {}).get("source")) or "?"
+        run_id = _norm_text(row.get("run_id") or (run_item or {}).get("run_id"))
+        advice_text = _norm_text(row.get("advice_text") or (run_item or {}).get("advice_text"))
+
+        trace_queue = queue_by_trace.get(trace_id, [])
+        pre_row = next((r for r in trace_queue if _norm_text(r.get("event_type")).startswith("pre_")), trace_queue[0] if trace_queue else None)
+        post_row = next((r for r in trace_queue if _norm_text(r.get("event_type")).startswith("post_")), None)
+        capture_event = _norm_text((pre_row or {}).get("event_type") or ((pre_row or {}).get("data") or {}).get("hook_event")) or "-"
+        capture_text = _tool_input_summary(pre_row)
+        if capture_text == "-" and isinstance(post_row, dict):
+            capture_text = _tool_input_summary(post_row)
+        if capture_text == "-":
+            capture_text = _norm_text(((pre_row or {}).get("data") or {}).get("hook_event")) or "-"
+
+        memory_row = cognitive_payload.get(insight_key) if insight_key in cognitive_payload else None
+        memory_text = _norm_text((memory_row or {}).get("insight") or (memory_row or {}).get("content"))
+        memory_source = _norm_text((memory_row or {}).get("source")) or ("eidos" if insight_key.startswith("eidos:") else "-")
+        memory_created = _norm_text((memory_row or {}).get("created_at"))
+        memory_reliability = _norm_text((memory_row or {}).get("reliability"))
+        memory_validated = _norm_text((memory_row or {}).get("times_validated"))
+        memory_contradicted = _norm_text((memory_row or {}).get("times_contradicted"))
+        memory_readiness = (memory_row or {}).get("advisory_readiness")
+        memory_quality = _parse_json_dict((memory_row or {}).get("advisory_quality"))
+        memory_unified = memory_quality.get("unified_score")
+        memory_context = _norm_text((memory_row or {}).get("context"))
+        if not memory_text:
+            run_text = _norm_text((run_item or {}).get("advice_text"))
+            if run_text:
+                memory_text = run_text
+                memory_source = f"{source_hint}:ephemeral"
+                memory_context = memory_context or "No durable cognitive row found for this insight key."
+
+        roast_row = _find_roast_for_text(memory_text or advice_text, roast_exact, roast_rows, roast_cache)
+        roast_result = roast_row.get("result") if isinstance((roast_row or {}).get("result"), dict) else {}
+        roast_score = roast_result.get("score") if isinstance(roast_result.get("score"), dict) else {}
+        roast_verdict = _norm_text(roast_result.get("verdict"))
+        roast_total = roast_score.get("total")
+
+        dist_row: dict[str, Any] | None = None
+        dist_prefix = ""
+        if advice_id.startswith("eidos:"):
+            parts = [part for part in advice_id.split(":") if part]
+            if parts:
+                dist_prefix = parts[-1][:8]
+        if not dist_prefix and insight_key.startswith("eidos:"):
+            parts = [part for part in insight_key.split(":") if part]
+            if parts:
+                dist_prefix = parts[-1][:8]
+        if dist_prefix:
+            dist_row = eidos_by_prefix.get(dist_prefix)
+        if dist_row is None:
+            stmt_norm = _norm_cmp_text(advice_text.replace("[EIDOS POLICY]", "").replace("[EIDOS SHARP_EDGE]", ""))
+            dist_row = eidos_by_statement.get(stmt_norm) if stmt_norm else None
+
+        dist_quality = _parse_json_dict((dist_row or {}).get("advisory_quality"))
+        dist_unified = dist_quality.get("unified_score")
+        dist_conf = (dist_row or {}).get("confidence")
+        dist_type = _norm_text((dist_row or {}).get("type"))
+        dist_id = _norm_text((dist_row or {}).get("distillation_id"))
+        dist_statement = _norm_text((dist_row or {}).get("refined_statement") or (dist_row or {}).get("statement"))
+        dist_created = _to_float((dist_row or {}).get("created_at"), 0.0)
+        if not memory_text and dist_statement:
+            memory_text = dist_statement
+            memory_source = "eidos:distillation"
+            memory_context = memory_context or "Backfilled from EIDOS distillation statement."
+
+        retrieval = retrieval_by_trace.get(trace_id, {})
+        retrieval_context = (
+            f"route={_norm_text(retrieval.get('route')) or '-'}; "
+            f"reason={_norm_text(retrieval.get('reason')) or '-'}; "
+            f"primary={_norm_text(retrieval.get('primary_count')) or '0'}; "
+            f"returned={_norm_text(retrieval.get('returned_count')) or '0'}; "
+            f"top={_norm_text(retrieval.get('primary_top_score')) or '-'}; "
+            f"over_budget={_norm_text(retrieval.get('fast_path_over_budget')) or '-'}"
+        )
+
+        decision = decision_by_trace.get(trace_id, {})
+        decision_extra = decision.get("extra") if isinstance(decision.get("extra"), dict) else {}
+        decision_context = (
+            f"event={_norm_text(decision.get('event')) or '-'}; "
+            f"outcome={_norm_text(decision.get('outcome')) or '-'}; "
+            f"retrieved={_norm_text(decision_extra.get('retrieved')) or '-'}; "
+            f"emitted_count={_norm_text(decision_extra.get('emitted_count')) or '-'}; "
+            f"gate_reason={_norm_text(decision.get('gate_reason') or decision_extra.get('gate_reason')) or '-'}"
+        )
+
+        outcome = outcome_by_trace.get(trace_id, {})
+        feedback = feedback_by_trace_advice.get((trace_id, advice_id), {})
+        implicit = implicit_by_trace.get(trace_id, {})
+        quality_context = (
+            f"helpfulness={_norm_text(row.get('helpfulness_label') or row.get('helpful_label')) or 'unknown'}; "
+            f"followed={_norm_text(row.get('followed')) or '-'}; "
+            f"judge={_norm_text(row.get('judge_source')) or '-'}; "
+            f"impact={_norm_text(row.get('impact_score')) or '-'}; "
+            f"usefulness={_norm_text(row.get('usefulness_score')) or '-'}"
+        )
+        feedback_context = (
+            f"explicit(status={_norm_text(feedback.get('status')) or '-'}, helpful={_norm_text(feedback.get('helpful')) or '-'}, source={_norm_text(feedback.get('source')) or '-'})"
+            if feedback
+            else "explicit(-)"
+        )
+        implicit_context = (
+            f"implicit(signal={_norm_text(implicit.get('signal')) or '-'}, tool={_norm_text(implicit.get('tool')) or '-'})"
+            if implicit
+            else "implicit(-)"
+        )
+        outcome_text = _norm_text(outcome.get("text"))
+        outcome_context = (
+            f"{_norm_text(outcome.get('event_type')) or '-'}; polarity={_norm_text(outcome.get('polarity')) or '-'}; text={_short(outcome_text, 180)}"
+            if outcome
+            else "-"
+        )
+        evidence_refs = "; ".join(
+            [
+                f"capture=queue/events.jsonl#{trace_id or '-'}",
+                f"memory=cognitive_insights.json#{insight_key or '-'}",
+                f"meta=meta_ralph/roast_history.json#{_norm_text((roast_row or {}).get('timestamp')) or '-'}",
+                f"dist=eidos.db#{dist_id or '-'}",
+                f"retrieval=advisor/retrieval_router.jsonl#{trace_id or '-'}",
+                f"decision={decision_source}#{trace_id or '-'}",
+                f"quality=advisor/advisory_quality_events.jsonl#{advice_id or '-'}",
+            ]
+        )
+
+        lineage_rows.append(
+            {
+                "emitted_ts": emitted_ts,
+                "trace_id": trace_id,
+                "tool": tool,
+                "advice_id": advice_id,
+                "run_id": run_id,
+                "source_hint": source_hint,
+                "insight_key": insight_key,
+                "capture_event": capture_event,
+                "capture_text": capture_text,
+                "memory_text": memory_text,
+                "memory_source": memory_source,
+                "memory_created": memory_created,
+                "memory_reliability": memory_reliability,
+                "memory_validated": memory_validated,
+                "memory_contradicted": memory_contradicted,
+                "memory_context": memory_context,
+                "memory_readiness": memory_readiness,
+                "memory_unified": memory_unified,
+                "meta_verdict": roast_verdict or "-",
+                "meta_total": roast_total,
+                "meta_actionability": roast_score.get("actionability"),
+                "meta_reasoning": roast_score.get("reasoning"),
+                "meta_specificity": roast_score.get("specificity"),
+                "meta_outcome_linked": roast_score.get("outcome_linked"),
+                "meta_ts": _norm_text((roast_row or {}).get("timestamp")),
+                "dist_id": dist_id,
+                "dist_type": dist_type,
+                "dist_conf": dist_conf,
+                "dist_unified": dist_unified,
+                "dist_created_ts": dist_created,
+                "dist_statement": dist_statement,
+                "retrieval_context": retrieval_context,
+                "decision_context": decision_context,
+                "advice_text": advice_text,
+                "synthetic": _is_synthetic_quality(row),
+                "quality_context": quality_context,
+                "feedback_context": feedback_context,
+                "implicit_context": implicit_context,
+                "outcome_context": outcome_context,
+                "evidence_refs": evidence_refs,
+                "capture_row": pre_row or post_row or {},
+                "memory_row": memory_row or {},
+                "meta_row": roast_row or {},
+                "dist_row": dist_row or {},
+                "retrieval_row": retrieval or {},
+                "decision_row": decision or {},
+                "quality_row": row,
+                "feedback_row": feedback or {},
+                "implicit_row": implicit or {},
+                "outcome_row": outcome or {},
+            }
+        )
+
+    with_capture = sum(1 for row in lineage_rows if row.get("capture_text") and row.get("capture_text") != "-")
+    with_memory = sum(1 for row in lineage_rows if _norm_text(row.get("memory_text")))
+    with_meta = sum(1 for row in lineage_rows if _norm_text(row.get("meta_verdict")) not in {"", "-"})
+    eidos_items = [row for row in lineage_rows if _norm_text(row.get("source_hint")) == "eidos" or _norm_text(row.get("advice_id")).startswith("eidos:")]
+    with_dist = sum(1 for row in eidos_items if _norm_text(row.get("dist_id")))
+    with_retrieval = sum(1 for row in lineage_rows if "route=" in _norm_text(row.get("retrieval_context")))
+    with_decision = sum(1 for row in lineage_rows if "event=" in _norm_text(row.get("decision_context")))
+    with_outcome = sum(1 for row in lineage_rows if _norm_text(row.get("outcome_context")) != "-")
+    synthetic_rows = sum(1 for row in lineage_rows if bool(row.get("synthetic")))
+
+    lines = [
+        "---",
+        "title: Advisory Emission Lineage Deep Dive",
+        "tags:",
+        "  - observatory",
+        "  - advisory",
+        "  - lineage",
+        "  - context-first",
+        "  - stage-trace",
+        "---",
+        "",
+        "# Advisory Emission Lineage Deep Dive",
+        "",
+        f"> {flow_link()} | [[stages/01-event_capture|Stage 1]] -> [[stages/08-advisory|Stage 8]] -> [[stages/11-predictions|Stage 11]]",
+        f"> Decision source: `{decision_source}`",
+        "",
+        "This page traces each emitted advisory item through the full stage chain with raw context.",
+        "Use it to answer: what was observed, what was stored, what scored where, and what finally emitted.",
+        "",
+        "## Coverage Snapshot",
+        "",
+        f"- Emitted advisory items analyzed: `{len(lineage_rows)}`",
+        f"- Synthetic replay rows in sample: `{synthetic_rows}` ({_fmt_pct(synthetic_rows, max(len(lineage_rows), 1))})",
+        f"- With Stage 1/2 capture evidence: `{with_capture}` ({_fmt_pct(with_capture, max(len(lineage_rows), 1))})",
+        f"- With Stage 4 memory source text: `{with_memory}` ({_fmt_pct(with_memory, max(len(lineage_rows), 1))})",
+        f"- With Stage 5 Meta-Ralph score evidence: `{with_meta}` ({_fmt_pct(with_meta, max(len(lineage_rows), 1))})",
+        f"- EIDOS-sourced advisories with Stage 7 distillation match: `{with_dist}` / `{len(eidos_items)}` ({_fmt_pct(with_dist, max(len(eidos_items), 1))})",
+        f"- With retrieval context: `{with_retrieval}` ({_fmt_pct(with_retrieval, max(len(lineage_rows), 1))})",
+        f"- With decision/gate context: `{with_decision}` ({_fmt_pct(with_decision, max(len(lineage_rows), 1))})",
+        f"- With outcome context: `{with_outcome}` ({_fmt_pct(with_outcome, max(len(lineage_rows), 1))})",
+        "",
+    ]
+    if with_meta == 0:
+        lines.append("- Stage 5 blind spot: no trace-bound Meta-Ralph roast linkage was found for this sample.")
+    if with_outcome < max(5, len(lineage_rows) // 10):
+        lines.append("- Stage 10 blind spot: limited outcome linkage for emitted traces in this sample window.")
+    if with_meta == 0 or with_outcome < max(5, len(lineage_rows) // 10):
+        lines.append("")
+
+    lines.extend(
+        [
+            f"## Stage Chain Table (Latest {len(lineage_rows)})",
+            "",
+            "| emitted ts | trace | row type | tool | advice_id | source | insight key | stage1/2 observation | stage4 memory text (stored) | stage4 memory scores | stage5 meta-ralph | stage7 distillation | stage8 retrieval | stage8 decision/gate | stage9 emitted advisory | stage10 quality/outcome | evidence refs |",
+            "|------------|-------|----------|------|-----------|--------|-------------|----------------------|-----------------------------|----------------------|-------------------|---------------------|------------------|----------------------|------------------------|-------------------------|---------------|",
+        ]
+    )
+
+    for row in lineage_rows:
+        memory_scores = (
+            f"readiness={_norm_text(row.get('memory_readiness')) or '-'}; "
+            f"unified={_norm_text(row.get('memory_unified')) or '-'}; "
+            f"reliability={_norm_text(row.get('memory_reliability')) or '-'}; "
+            f"val={_norm_text(row.get('memory_validated')) or '-'}; "
+            f"contra={_norm_text(row.get('memory_contradicted')) or '-'}"
+        )
+        meta_scores = (
+            f"{_norm_text(row.get('meta_verdict')) or '-'}; "
+            f"total={_norm_text(row.get('meta_total')) or '-'}; "
+            f"a={_norm_text(row.get('meta_actionability')) or '-'}; "
+            f"r={_norm_text(row.get('meta_reasoning')) or '-'}; "
+            f"s={_norm_text(row.get('meta_specificity')) or '-'}; "
+            f"o={_norm_text(row.get('meta_outcome_linked')) or '-'}"
+        )
+        dist_scores = (
+            f"id={_norm_text(row.get('dist_id')) or '-'}; "
+            f"type={_norm_text(row.get('dist_type')) or '-'}; "
+            f"conf={_norm_text(row.get('dist_conf')) or '-'}; "
+            f"unified={_norm_text(row.get('dist_unified')) or '-'}; "
+            f"statement={_short(_norm_text(row.get('dist_statement')), 130)}"
+        )
+        quality_outcome = (
+            f"{_short(_norm_text(row.get('quality_context')), 190)}; "
+            f"{_short(_norm_text(row.get('feedback_context')), 120)}; "
+            f"{_short(_norm_text(row.get('implicit_context')), 100)}; "
+            f"{_short(_norm_text(row.get('outcome_context')), 170)}"
+        )
+        capture_summary = _short(
+            f"{_norm_text(row.get('capture_event'))}: {_norm_text(row.get('capture_text'))}",
+            250,
+        )
+        lines.append(
+            f"| {_fmt_ts(_to_float(row.get('emitted_ts'), 0.0))} | `{_short(_norm_text(row.get('trace_id')), 24) or '-'}` | "
+            f"{'synthetic' if bool(row.get('synthetic')) else 'runtime'} | {_md_escape(row.get('tool'))} | `{_short(_norm_text(row.get('advice_id')), 24)}` | {_md_escape(row.get('source_hint'))} | "
+            f"`{_short(_norm_text(row.get('insight_key')), 34) or '-'}` | {_md_escape(capture_summary)} | "
+            f"{_md_escape(_short(_norm_text(row.get('memory_text')), 220))} | {_md_escape(_short(memory_scores, 170))} | "
+            f"{_md_escape(_short(meta_scores, 170))} | {_md_escape(_short(dist_scores, 190))} | "
+            f"{_md_escape(_short(_norm_text(row.get('retrieval_context')), 170))} | {_md_escape(_short(_norm_text(row.get('decision_context')), 170))} | "
+            f"{_md_escape(_short(_norm_text(row.get('advice_text')), 220))} | {_md_escape(_short(quality_outcome, 220))} | "
+            f"{_md_escape(_short(_norm_text(row.get('evidence_refs')), 180))} |"
+        )
+    lines.append("")
+
+    lines.extend(
+        [
+            "## Per-Item Dossiers (Latest 25)",
+            "",
+            "Use these when you need exact stage-by-stage context before tuning rules or thresholds.",
+            "",
+        ]
+    )
+    for idx, row in enumerate(lineage_rows[:25], start=1):
+        lines.extend(
+            [
+                f"### {idx}. `{_norm_text(row.get('trace_id')) or '-'} :: {_norm_text(row.get('advice_id')) or '-'}",
+                "",
+                f"- Emitted: `{_fmt_ts(_to_float(row.get('emitted_ts'), 0.0))}` | row_type=`{'synthetic' if bool(row.get('synthetic')) else 'runtime'}` | tool=`{_norm_text(row.get('tool')) or '?'}` | source=`{_norm_text(row.get('source_hint')) or '?'}` | run_id=`{_norm_text(row.get('run_id')) or '-'}`",
+                f"- Stage 1/2 observation: `{_norm_text(row.get('capture_event')) or '-'}` -> {_norm_text(row.get('capture_text')) or '-'}",
+                f"- Stage 4 memory key: `{_norm_text(row.get('insight_key')) or '-'}` | source=`{_norm_text(row.get('memory_source')) or '-'}` | created=`{_norm_text(row.get('memory_created')) or '-'}`",
+                f"- Stage 4 stored text: {_norm_text(row.get('memory_text')) or '-'}",
+                f"- Stage 4 memory context: {_norm_text(row.get('memory_context')) or '-'}",
+                f"- Stage 4 memory scores: readiness=`{_norm_text(row.get('memory_readiness')) or '-'}` unified=`{_norm_text(row.get('memory_unified')) or '-'}` reliability=`{_norm_text(row.get('memory_reliability')) or '-'}` validated=`{_norm_text(row.get('memory_validated')) or '-'}` contradicted=`{_norm_text(row.get('memory_contradicted')) or '-'}`",
+                f"- Stage 5 Meta-Ralph: verdict=`{_norm_text(row.get('meta_verdict')) or '-'}` total=`{_norm_text(row.get('meta_total')) or '-'}` actionability=`{_norm_text(row.get('meta_actionability')) or '-'}` reasoning=`{_norm_text(row.get('meta_reasoning')) or '-'}` specificity=`{_norm_text(row.get('meta_specificity')) or '-'}` outcome_linked=`{_norm_text(row.get('meta_outcome_linked')) or '-'}` timestamp=`{_norm_text(row.get('meta_ts')) or '-'}`",
+                f"- Stage 7 distillation: id=`{_norm_text(row.get('dist_id')) or '-'}` type=`{_norm_text(row.get('dist_type')) or '-'}` confidence=`{_norm_text(row.get('dist_conf')) or '-'}` unified=`{_norm_text(row.get('dist_unified')) or '-'}` created=`{_fmt_ts(_to_float(row.get('dist_created_ts'), 0.0))}`",
+                f"- Stage 7 distillation statement: {_norm_text(row.get('dist_statement')) or '-'}",
+                f"- Stage 8 retrieval: {_norm_text(row.get('retrieval_context')) or '-'}",
+                f"- Stage 8 decision/gate: {_norm_text(row.get('decision_context')) or '-'}",
+                f"- Stage 9 emitted advisory: {_norm_text(row.get('advice_text')) or '-'}",
+                f"- Stage 10 quality/outcome: {_norm_text(row.get('quality_context')) or '-'}",
+                f"- Stage 10 explicit feedback: {_norm_text(row.get('feedback_context')) or '-'}",
+                f"- Stage 10 implicit feedback: {_norm_text(row.get('implicit_context')) or '-'}",
+                f"- Stage 10 outcome stream: {_norm_text(row.get('outcome_context')) or '-'}",
+                f"- Evidence refs: {_norm_text(row.get('evidence_refs')) or '-'}",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## Raw Evidence Bundles (Latest 12)",
+            "",
+            "Raw snippets for direct inspection of what each stage actually saw/stored/scored.",
+            "",
+        ]
+    )
+    for idx, row in enumerate(lineage_rows[:12], start=1):
+        bundle = {
+            "trace_id": _norm_text(row.get("trace_id")),
+            "advice_id": _norm_text(row.get("advice_id")),
+            "source_hint": _norm_text(row.get("source_hint")),
+            "insight_key": _norm_text(row.get("insight_key")),
+            "capture_row": row.get("capture_row") or {},
+            "memory_row": row.get("memory_row") or {},
+            "meta_row": row.get("meta_row") or {},
+            "distillation_row": row.get("dist_row") or {},
+            "retrieval_row": row.get("retrieval_row") or {},
+            "decision_row": row.get("decision_row") or {},
+            "quality_row": row.get("quality_row") or {},
+            "feedback_row": row.get("feedback_row") or {},
+            "implicit_row": row.get("implicit_row") or {},
+            "outcome_row": row.get("outcome_row") or {},
+        }
+        lines.extend(
+            [
+                f"### {idx}. Raw `{_norm_text(row.get('trace_id')) or '-'} :: {_norm_text(row.get('advice_id')) or '-'}`",
+                "",
+                f"- Refs: {_norm_text(row.get('evidence_refs')) or '-'}",
+                "",
+                "```json",
+                _json_preview(bundle, max_chars=7000),
+                "```",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## Trace Drill",
+            "",
+            "For any row above, run:",
+            "",
+            "```bash",
+            "python scripts/trace_query.py --trace-id <trace_id>",
+            "```",
+            "",
+        ]
+    )
+
+    return "\n".join(lines)
 
 
 def _trace_lineage_page(data: dict[int, dict[str, Any]]) -> str:
@@ -1919,6 +2610,7 @@ def generate_advisory_context_pages(data: dict[int, dict[str, Any]]) -> dict[str
     """Generate additional observatory pages for context-rich advisory diagnostics."""
     return {
         "advisory_trace_lineage.md": _trace_lineage_page(data),
+        "advisory_emission_lineage_deep.md": _advisory_emission_lineage_deep_page(),
         "advisory_unknown_helpfulness_burndown.md": _unknown_helpfulness_page(data),
         "advisory_suppression_replay.md": _suppression_replay_page(),
         "advisory_context_drift.md": _context_drift_page(),

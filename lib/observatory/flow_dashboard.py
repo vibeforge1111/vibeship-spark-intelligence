@@ -291,6 +291,7 @@ def generate_flow_dashboard(data: dict[int, dict[str, Any]]) -> str:
     sections.append("- [[changes_since_last_regen|Changes Since Last Regen]] - track metric deltas after each regeneration")
     sections.append("- [[advisory_reverse_engineering|Advisory Reverse Engineering]] - full path map, suppressor diagnostics, and tuning plan")
     sections.append("- [[advisory_trace_lineage|Advisory Trace Lineage]] - trace-level lineage from capture through feedback")
+    sections.append("- [[advisory_emission_lineage_deep|Advisory Emission Lineage Deep Dive]] - per-emission stage chain with observation, stored memory text, scores, retrieval, gate, and outcome")
     sections.append("- [[advisory_unknown_helpfulness_burndown|Unknown Helpfulness Burn-Down]] - daily unknown-label reduction and queue health")
     sections.append("- [[advisory_suppression_replay|Suppression Decision Replay]] - blocked advisories with reason replay and trace drill")
     sections.append("- [[advisory_context_drift|Context Drift Panel]] - distribution drift across tools, routes, providers, and suppression")
