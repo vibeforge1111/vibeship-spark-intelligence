@@ -472,6 +472,22 @@ def _dedupe_advice_items(advice_items: List[Any]) -> List[Any]:
     return out
 
 
+def _gate_suppression_summary(gate_result: Any) -> Dict[str, Any]:
+    """Summarize gate suppressions so non-emits carry concrete reasons."""
+    counts: Dict[str, int] = {}
+    for decision in list(getattr(gate_result, "suppressed", []) or []):
+        reason = str(getattr(decision, "reason", "") or "").strip() or "unspecified"
+        counts[reason] = int(counts.get(reason, 0) or 0) + 1
+    if not counts:
+        return {"gate_reason": "no_emit_unknown", "suppressed": 0}
+    top_reason = max(counts.items(), key=lambda item: item[1])[0]
+    return {
+        "gate_reason": top_reason,
+        "suppressed": int(sum(counts.values())),
+        "gate_reason_counts": counts,
+    }
+
+
 def _is_repeat_blocked(state: Any, tool_name: str, text_fingerprint: str, context_fingerprint: str) -> bool:
     if not state:
         return False
@@ -691,6 +707,7 @@ def on_pre_tool(
         )
         if not gate_result.emitted:
             save_state(state)
+            suppression = _gate_suppression_summary(gate_result)
             _log_alpha(
                 "gate_no_emit",
                 session_id=session_id,
@@ -698,7 +715,10 @@ def on_pre_tool(
                 trace_id=resolved_trace_id,
                 emitted=False,
                 elapsed_ms=(time.time() - start) * 1000.0,
-                extra={"retrieved": len(advice_items)},
+                extra={
+                    "retrieved": len(advice_items),
+                    **suppression,
+                },
             )
             return None
 

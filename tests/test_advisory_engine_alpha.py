@@ -488,3 +488,69 @@ def test_on_pre_tool_blocks_normalized_text_repeat(monkeypatch, tmp_path):
 
     assert out is None
     assert emitted_calls["count"] == 0
+
+
+def test_on_pre_tool_logs_gate_suppression_reason(monkeypatch, tmp_path):
+    _patch_state_and_store(monkeypatch, tmp_path)
+    _patch_pre_tool_runtime(monkeypatch)
+    monkeypatch.setattr(alpha_engine, "ADVISORY_GLOBAL_DEDUPE_FILE", tmp_path / "advisory_global_dedupe.jsonl")
+
+    suppression_reason = "tool Edit on cooldown"
+    monkeypatch.setattr(
+        advisory_gate,
+        "evaluate",
+        lambda advice_items, state, tool_name, tool_input, recent_global_emissions=None: advisory_gate.GateResult(
+            decisions=[
+                advisory_gate.GateDecision(
+                    advice_id="aid-1",
+                    authority=advisory_gate.AuthorityLevel.NOTE,
+                    emit=False,
+                    reason=suppression_reason,
+                    adjusted_score=0.2,
+                    original_score=0.9,
+                )
+            ],
+            emitted=[],
+            suppressed=[
+                advisory_gate.GateDecision(
+                    advice_id="aid-1",
+                    authority=advisory_gate.AuthorityLevel.NOTE,
+                    emit=False,
+                    reason=suppression_reason,
+                    adjusted_score=0.2,
+                    original_score=0.9,
+                )
+            ],
+            phase="implementation",
+            total_retrieved=len(advice_items),
+        ),
+    )
+
+    out = alpha_engine.on_pre_tool(
+        "s-alpha-no-emit",
+        "Edit",
+        {"file_path": "src/app.py"},
+        trace_id="trace-alpha-no-emit",
+    )
+
+    assert out is None
+
+    rows = [
+        json.loads(line)
+        for line in alpha_engine.ALPHA_LOG.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    gate_rows = [row for row in rows if str(row.get("event") or "") == "gate_no_emit"]
+    assert gate_rows
+    extra = gate_rows[-1].get("extra") if isinstance(gate_rows[-1].get("extra"), dict) else {}
+    assert extra.get("gate_reason") == suppression_reason
+    assert int(extra.get("suppressed") or 0) >= 1
+
+    ledger_rows = [
+        json.loads(line)
+        for line in alpha_engine.ADVISORY_DECISION_LEDGER_FILE.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    blocked = [row for row in ledger_rows if str(row.get("outcome") or "") == "blocked"]
+    assert blocked
+    assert blocked[-1].get("gate_reason") == suppression_reason
