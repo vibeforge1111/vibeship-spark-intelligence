@@ -34,6 +34,30 @@ def test_classify_flags_low_signal_conversational_directive():
     assert decision.rule == "conversational_fragment"
 
 
+def test_classify_flags_chunk_id_error_telemetry():
+    decision = classify("exec_command failed: Chunk ID: c6305b")
+    assert decision.is_noise is True
+    assert decision.rule == "chunk_id_telemetry"
+
+
+def test_classify_flags_css_fragments():
+    decision = classify("#sky-egg { position: relative; display: block; padding: 2px; }")
+    assert decision.is_noise is True
+    assert decision.rule == "css_fragment"
+
+
+def test_classify_flags_localhost_conversational_directive():
+    decision = classify("it worked, can we now run localhost")
+    assert decision.is_noise is True
+    assert decision.rule == "conversational_fragment"
+
+
+def test_classify_allows_actionable_always_validate_guidance():
+    decision = classify("Always validate authentication tokens against canonical schema before deploy.")
+    assert decision.is_noise is False
+    assert decision.rule == "none"
+
+
 def test_classify_allows_conversational_technical_instruction():
     decision = classify("Can you enforce schema validation at the API boundary to prevent payload drift?")
     assert decision.is_noise is False

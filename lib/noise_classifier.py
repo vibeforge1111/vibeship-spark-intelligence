@@ -69,6 +69,12 @@ _TOOL_USAGE_RE = re.compile(r"\bheavy\s+\w+\s+usage\b|\busage\s*\(\d+\s*calls?\)
 _WORKFLOW_EXEC_RE = re.compile(r"^workflow execution\s+\d{1,2}/\d{1,2}/\d{4}", re.I)
 _TOOL_CHAIN_RE = re.compile(r"\b\w+\s*(?:->|→)\s*\w+\b", re.I)
 _SHORT_METRIC_RE = re.compile(r"^\d+%?\s+(success|failure|error)\b", re.I)
+_CHUNK_ID_TELEMETRY_RE = re.compile(r"\b(exec_command failed|chunk id)\b", re.I)
+_CSS_FRAGMENT_RE = re.compile(
+    r"\{[^{}]{0,360}\b(position|display|padding|margin|font|color|z-index|overflow)\b[^{}]*\}",
+    re.I,
+)
+_GENERIC_SENTIMENT_RE = re.compile(r"\b(user expressed satisfaction|great response|nice work)\b", re.I)
 _QUESTION_START_RE = re.compile(
     r"^\s*(what|why|how|where|who)\b|"
     r"^\s*when\s+(do|does|did|should|would|could|can|is|are|will)\b|"
@@ -78,7 +84,7 @@ _QUESTION_START_RE = re.compile(
 _LOW_SIGNAL_DIRECTIVE_RE = re.compile(
     r"\b(do that|this too|that too|as well|whatever works|if you want|if needed)\b|"
     r"^\s*(ok|okay|sure|sounds good|lets do it|let's do it|go ahead)\b|"
-    r"\b(let me know|can you|could you|would you|please)\b",
+    r"\b(let me know|can you|could you|would you|please|can we now run|run localhost)\b",
     re.I,
 )
 _REUSABLE_SIGNAL_RE = re.compile(
@@ -93,6 +99,10 @@ _ACTIONABLE_REQUEST_RE = re.compile(
     r"(enforce|add|set|run|validate|check|update|fix|remove|use|switch|enable|disable|include)\b|"
     r"^\s*please\s+"
     r"(enforce|add|set|run|validate|check|update|fix|remove|use|switch|enable|disable|include)\b",
+    re.I,
+)
+_ACTIONABLE_STANDALONE_RE = re.compile(
+    r"^\s*(always\s+)?(use|enforce|validate|check|add|remove|fix|decompose|refactor|gate|benchmark)\b",
     re.I,
 )
 
@@ -140,7 +150,16 @@ def classify(text: str | None, *, context: str = "generic") -> NoiseDecision:
         return NoiseDecision(True, "session_boilerplate")
     if is_primitive_text(sample):
         return NoiseDecision(True, "primitive_pattern")
-    if is_common_noise(sample):
+    if _CHUNK_ID_TELEMETRY_RE.search(sample):
+        return NoiseDecision(True, "chunk_id_telemetry")
+    if _CSS_FRAGMENT_RE.search(sample):
+        return NoiseDecision(True, "css_fragment")
+    if _GENERIC_SENTIMENT_RE.search(sample):
+        return NoiseDecision(True, "generic_sentiment")
+    has_actionable_signal = bool(_ACTIONABLE_STANDALONE_RE.search(sample)) and bool(
+        _REUSABLE_SIGNAL_RE.search(lower)
+    )
+    if is_common_noise(sample) and not has_actionable_signal:
         return NoiseDecision(True, "common_noise")
     if _XML_RE.search(sample):
         return NoiseDecision(True, "xml_telemetry")
