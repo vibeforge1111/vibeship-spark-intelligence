@@ -48,22 +48,29 @@ def _run_json_command(args: list[str]) -> Tuple[bool, Dict[str, Any] | None, str
     return True, payload, ""
 
 
-def evaluate_alpha_preflight(*, bridge_stale_s: int = 90) -> Dict[str, Any]:
+def evaluate_alpha_preflight(*, bridge_stale_s: int = 90, ci_mode: bool = False) -> Dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat()
 
-    integration = get_full_status()
-    services = service_status(bridge_stale_s=bridge_stale_s)
+    if ci_mode:
+        integration = {"status": "CI_MODE", "all_ok": True, "checks": []}
+        services = {}
+    else:
+        integration = get_full_status()
+        services = service_status(bridge_stale_s=bridge_stale_s)
 
     metrics = load_live_metrics()
     production = evaluate_gates(metrics)
 
-    codex_ok, codex_obs, codex_err = _run_json_command(
-        [sys.executable, str(ROOT / "scripts" / "codex_hooks_observatory.py"), "--json-only"]
-    )
+    if ci_mode:
+        codex_ok, codex_obs, codex_err = True, {"summary": {"available": False, "mode": "ci_skip"}, "gates": {}, "alert": {"level": "ok"}}, ""
+    else:
+        codex_ok, codex_obs, codex_err = _run_json_command(
+            [sys.executable, str(ROOT / "scripts" / "codex_hooks_observatory.py"), "--json-only"]
+        )
 
     core_services = ("sparkd", "bridge_worker", "scheduler", "watchdog")
-    core_services_running = all(bool((services.get(name) or {}).get("running")) for name in core_services)
-    codex_bridge_running = bool((services.get("codex_bridge") or {}).get("running"))
+    core_services_running = True if ci_mode else all(bool((services.get(name) or {}).get("running")) for name in core_services)
+    codex_bridge_running = True if ci_mode else bool((services.get("codex_bridge") or {}).get("running"))
 
     codex_summary = codex_obs.get("summary", {}) if isinstance(codex_obs, dict) else {}
     codex_gates = codex_obs.get("gates", {}) if isinstance(codex_obs, dict) else {}
@@ -81,8 +88,16 @@ def evaluate_alpha_preflight(*, bridge_stale_s: int = 90) -> Dict[str, Any]:
 
     checks = [
         {"name": "integration.all_ok", "ok": bool(integration.get("all_ok")), "value": integration.get("status")},
-        {"name": "services.core_running", "ok": core_services_running, "value": {k: (services.get(k) or {}).get("running") for k in core_services}},
-        {"name": "services.codex_bridge_running", "ok": codex_bridge_running, "value": (services.get("codex_bridge") or {})},
+        {
+            "name": "services.core_running",
+            "ok": core_services_running,
+            "value": ({k: (services.get(k) or {}).get("running") for k in core_services} if not ci_mode else {"skipped": True, "reason": "ci_mode"}),
+        },
+        {
+            "name": "services.codex_bridge_running",
+            "ok": codex_bridge_running,
+            "value": ((services.get("codex_bridge") or {}) if not ci_mode else {"skipped": True, "reason": "ci_mode"}),
+        },
         {"name": "codex_hooks.observable", "ok": codex_ok and bool(codex_summary.get("available")), "value": codex_summary if codex_ok else codex_err},
         {"name": "codex_hooks.observe_mode", "ok": codex_ok and str(codex_summary.get("mode")) == "observe", "value": codex_summary.get("mode") if codex_ok else codex_err},
         {
@@ -108,9 +123,22 @@ def evaluate_alpha_preflight(*, bridge_stale_s: int = 90) -> Dict[str, Any]:
         {"name": "production_gates.ready", "ok": bool(production.get("ready")), "value": {"passed": production.get("passed"), "total": production.get("total")}},
     ]
 
-    ready = all(bool(c.get("ok")) for c in checks)
+    if ci_mode:
+        # CI has no long-running services or hook telemetry; enforce contract + gate checks only.
+        for row in checks:
+            if str(row.get("name")).startswith("codex_hooks."):
+                row["ok"] = True
+                row["value"] = {"skipped": True, "reason": "ci_mode"}
+        ready = all(
+            bool(c.get("ok"))
+            for c in checks
+            if str(c.get("name")) in {"integration.all_ok", "config.alpha_env_contract", "production_gates.ready"}
+        )
+    else:
+        ready = all(bool(c.get("ok")) for c in checks)
     return {
         "timestamp": now,
+        "ci_mode": bool(ci_mode),
         "ready": ready,
         "checks": checks,
         "integration": integration,
@@ -137,10 +165,11 @@ def _print_human(payload: Dict[str, Any]) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Run a bundled alpha preflight gate.")
     ap.add_argument("--bridge-stale-s", type=int, default=90, help="bridge stale threshold in seconds")
+    ap.add_argument("--ci-mode", action="store_true", help="CI-safe mode (skip live service/hook checks)")
     ap.add_argument("--json-only", action="store_true", help="Emit JSON only")
     args = ap.parse_args()
 
-    payload = evaluate_alpha_preflight(bridge_stale_s=int(args.bridge_stale_s))
+    payload = evaluate_alpha_preflight(bridge_stale_s=int(args.bridge_stale_s), ci_mode=bool(args.ci_mode))
     if args.json_only:
         print(json.dumps(payload, indent=2, ensure_ascii=True))
     else:

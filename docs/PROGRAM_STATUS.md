@@ -15,6 +15,7 @@ Navigation hub: `docs/DOCS_INDEX.md`
 4. Codex observability gates are now passing.
    - `python scripts/codex_hooks_observatory.py --json-only`: all required gates pass (`observe.success_ratio`, `observe.latency_p95_ms`, `shadow.unknown_exit_ratio`).
    - `python scripts/alpha_preflight_bundle.py --json-only`: `ready=true` and includes `config.alpha_env_contract`.
+   - CI enforcement path is live via `python scripts/alpha_preflight_bundle.py --ci-mode --json-only` + `python scripts/production_loop_report.py` in `.github/workflows/ci.yml`.
 5. Observatory and alpha flow tracker are live.
    - `python scripts/reset_alpha_observatory.py --yes`: rebuilds local + Obsidian vault observatory surfaces.
    - `python scripts/alpha_intelligence_flow_status.py --json-only`: writes alpha flow snapshot and appends tracker row (`~/.spark/logs/alpha_intelligence_tracker.jsonl`).

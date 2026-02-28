@@ -45,6 +45,21 @@ jobs:
         run: |
           python scripts/alpha_guardrail_ci.py --max-advisory-files 4 --max-tuneable-keys 320 --max-distillation-files 3 --max-lib-jsonl-runtime-ext-refs 140 --max-runtime-cycles 0
 
+      - name: Alpha Gate Burn-In (CI)
+        if: matrix.python-version == '3.11'
+        run: |
+          python scripts/alpha_gate_burn_in.py --run-label ci --strict-margin 1 --distillation-margin 1
+
+      - name: Alpha Production Gates
+        if: matrix.python-version == '3.11'
+        run: |
+          python scripts/production_loop_report.py
+
+      - name: Alpha Preflight Bundle (CI Mode)
+        if: matrix.python-version == '3.11'
+        run: |
+          python scripts/alpha_preflight_bundle.py --ci-mode --json-only
+
   integration-smoke:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest

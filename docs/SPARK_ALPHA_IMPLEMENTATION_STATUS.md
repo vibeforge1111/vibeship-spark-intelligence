@@ -1270,6 +1270,32 @@ Notable metrics now:
   - `python scripts/production_loop_report.py --json` -> `READY (19/19 passed)`
   - `python scripts/alpha_gap_audit.py` -> `advisory_files=4`, `tuneable_keys=289`, `distillation_files=3`, `lib_jsonl_runtime_ext_refs=121`
 
+### Latest CI + burn-in execution delta (2026-02-28, PR enforcement + bounded replay pack)
+
+- Added CI-safe preflight mode in `scripts/alpha_preflight_bundle.py`:
+  - new flag: `--ci-mode`
+  - skips live service/codex-hook requirements not available in CI
+  - still enforces:
+    - `config.alpha_env_contract`
+    - `production_gates.ready`
+- Added tests for CI-mode contract behavior:
+  - `tests/test_alpha_preflight_bundle_ci_mode.py`
+  - verifies ready/not-ready transitions based on env contract + production gate outcomes
+- Updated CI workflow to enforce alpha readiness checks on PRs (`.github/workflows/ci.yml`, Python 3.11 lane):
+  - `python scripts/alpha_gate_burn_in.py --run-label ci --strict-margin 1 --distillation-margin 1`
+  - `python scripts/production_loop_report.py`
+  - `python scripts/alpha_preflight_bundle.py --ci-mode --json-only`
+- Local validation:
+  - `pytest tests/test_alpha_preflight_bundle_ci_mode.py tests/test_doctor_alpha_env_contract.py -q` -> `6 passed`
+  - `python scripts/alpha_gate_burn_in.py --run-label ci_local --strict-margin 1 --distillation-margin 1` -> final gates `ready=true`
+  - `python scripts/production_loop_report.py` -> `READY (19/19 passed)`
+  - `python scripts/alpha_preflight_bundle.py --ci-mode --json-only` -> `ready=true`
+  - `python scripts/alpha_preflight_bundle.py --json-only` -> `ready=true`
+- Burn-in replay evidence (bounded matrix) captured:
+  - source arena runs: `benchmarks/out/replay_arena_burnin/spark_alpha_replay_arena_20260228_040435.json`, `...040603.json`, `...040801.json`
+  - aggregated summary: `benchmarks/out/alpha_cutover/alpha_burnin_replay_summary_20260228_041236.json`
+  - aggregate rates: `alpha_win_rate=1.0`, `promotion_pass_rate=1.0` across `3` runs
+
 ## Not done yet
 
 These are still pending relative to the broader Simplification/Fast-Track goals:
