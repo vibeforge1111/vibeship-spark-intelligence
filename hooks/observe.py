@@ -1349,7 +1349,7 @@ def process_hook_payload(input_data: Dict[str, Any]) -> int:
 
     # ── Intake filter: reject obvious noise before queueing ──────────
     try:
-        from lib.intake_filter import should_queue_event, persist_intake_snapshot, get_intake_filter_stats
+        from lib.intake_filter import should_queue_event, persist_intake_snapshot
         _should_q, _drop_reason = should_queue_event(
             event_type=event_type,
             tool_name=tool_name,
@@ -1357,13 +1357,13 @@ def process_hook_payload(input_data: Dict[str, Any]) -> int:
             data=data,
             hook_event=hook_event,
         )
-        # Persist intake stats every 20 events (this process owns the data).
-        _if_stats = get_intake_filter_stats()
-        if _if_stats.get("total_events", 0) % 20 == 0 and _if_stats.get("total_events", 0) > 0:
-            try:
-                persist_intake_snapshot()
-            except Exception:
-                pass
+        # Persist on every invocation — each hook call is a separate process,
+        # so in-memory stats reset each time.  persist_intake_snapshot() reads
+        # the existing file and merges additively.
+        try:
+            persist_intake_snapshot()
+        except Exception:
+            pass
         if not _should_q:
             _emit_observe_telemetry(
                 _build_observe_telemetry_row(

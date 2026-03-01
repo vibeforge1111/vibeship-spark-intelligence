@@ -197,21 +197,46 @@ def get_intake_decision_log() -> list:
 
 
 def persist_intake_snapshot() -> None:
-    """Write current stats + recent decisions to ~/.spark/intake_snapshot.json.
+    """Accumulate current stats + decisions into ~/.spark/intake_snapshot.json.
 
-    Called periodically by bridge_cycle for dashboard reads.
+    Called from hooks/observe.py on every event.  Since each hook invocation
+    is a separate process, in-memory _stats reset each time.  This function
+    reads the existing snapshot, merges the new data, and writes back.
     """
     import json
     from pathlib import Path
 
     spark_dir = Path.home() / ".spark"
     spark_dir.mkdir(parents=True, exist_ok=True)
+    out_path = spark_dir / "intake_snapshot.json"
+
+    # Read existing snapshot to accumulate.
+    existing: Dict[str, Any] = {}
+    try:
+        if out_path.exists():
+            existing = json.loads(out_path.read_text(encoding="utf-8"))
+    except Exception:
+        existing = {}
+
+    existing_stats = existing.get("stats", {})
+    existing_decisions = existing.get("recent_decisions", [])
+
+    # Merge stats additively (current process stats on top of persisted).
+    merged_stats: Dict[str, Any] = {}
+    all_keys = set(existing_stats.keys()) | set(_stats.keys())
+    for k in all_keys:
+        merged_stats[k] = existing_stats.get(k, 0) + _stats.get(k, 0)
+
+    # Append new decisions, keep bounded at 200.
+    merged_decisions = existing_decisions + list(_decision_log)
+    if len(merged_decisions) > 200:
+        merged_decisions = merged_decisions[-200:]
+
     snapshot = {
-        "stats": dict(_stats),
-        "recent_decisions": list(_decision_log[-100:]),  # last 100
+        "stats": merged_stats,
+        "recent_decisions": merged_decisions,
         "snapshot_ts": time.time(),
     }
-    out_path = spark_dir / "intake_snapshot.json"
     try:
         out_path.write_text(json.dumps(snapshot, default=str), encoding="utf-8")
     except Exception:
