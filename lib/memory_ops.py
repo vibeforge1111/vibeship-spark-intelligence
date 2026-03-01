@@ -59,6 +59,28 @@ def get_memory_ops_stats() -> dict:
     }
 
 
+def persist_memory_ops_snapshot() -> None:
+    """Write current ops stats + recent decisions to ~/.spark/memory_ops_snapshot.json.
+
+    Called periodically by bridge_cycle for dashboard reads.
+    """
+    import json
+    from pathlib import Path
+
+    spark_dir = Path.home() / ".spark"
+    spark_dir.mkdir(parents=True, exist_ok=True)
+    snapshot = {
+        "stats": get_memory_ops_stats(),
+        "recent_decisions": list(_ops_decision_log[-100:]),
+        "snapshot_ts": time.time(),
+    }
+    out_path = spark_dir / "memory_ops_snapshot.json"
+    try:
+        out_path.write_text(json.dumps(snapshot, default=str), encoding="utf-8")
+    except Exception:
+        pass  # fail-open
+
+
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------

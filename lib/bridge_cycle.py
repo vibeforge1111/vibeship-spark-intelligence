@@ -797,10 +797,13 @@ def run_bridge_cycle(
         except Exception as e:
             log_debug("bridge_worker", f"activation maintenance failed ({e})", None)
 
-        # --- Intake filter snapshot (for dashboard visibility) ---
+        # --- Memory ops snapshot (for dashboard visibility) ---
+        # NOTE: intake_filter persistence moved to hooks/observe.py (correct process).
+        # memory_ops runs inside pipeline which runs inside bridge_cycle, so this
+        # IS the correct process for memory_ops snapshot persistence.
         try:
-            from lib.intake_filter import persist_intake_snapshot
-            persist_intake_snapshot()
+            from lib.memory_ops import persist_memory_ops_snapshot
+            persist_memory_ops_snapshot()
         except Exception:
             pass  # fail-open: dashboard data is nice-to-have
 
