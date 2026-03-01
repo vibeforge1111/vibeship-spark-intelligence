@@ -44,6 +44,9 @@ DEFAULT_CONFIG = {
     "index_backfill_limit": 500,
     "index_cache_ttl_seconds": 120,
     "exclude_categories": [],
+    # If strict noise filtering wipes all candidates, keep a constrained
+    # semantic fallback so retrieval does not collapse to always-empty.
+    "noise_filter_relax_on_empty": True,
     "trigger_rules_file": "~/.spark/trigger_rules.yaml",
     "category_caps": {
         "cognitive": 3,
@@ -463,6 +466,20 @@ class SemanticRetriever:
             query_words = set(re.findall(r"[a-z0-9]+", query_lower))
             if not query_words:
                 return 0
+            tool_hint = ""
+            parts = [p for p in re.findall(r"[a-z0-9_]+", context.lower()) if p]
+            if parts:
+                head = parts[0]
+                if head in {"edit", "write", "read", "grep", "glob", "bash", "task", "webfetch", "websearch"}:
+                    tool_hint = head
+            tool_bridge_terms: Dict[str, set[str]] = {
+                "edit": {"edit", "write", "file", "path", "patch", "change"},
+                "write": {"write", "edit", "file", "path", "save"},
+                "read": {"read", "inspect", "file", "context", "verify"},
+                "grep": {"grep", "search", "pattern", "match", "filter"},
+                "glob": {"glob", "pattern", "path", "files", "verify"},
+                "bash": {"command", "shell", "run", "script", "terminal"},
+            }
             scored: List[Tuple[float, str, Any]] = []
             for key, insight in insights.items():
                 if key in seen:
@@ -474,21 +491,55 @@ class SemanticRetriever:
                 if not combined_words:
                     continue
                 overlap = len(query_words & combined_words)
-                if overlap == 0:
-                    continue
-                jaccard = overlap / len(query_words | combined_words)
-                scored.append((jaccard, key, insight))
+                jaccard = overlap / len(query_words | combined_words) if (query_words | combined_words) else 0.0
+
+                # Soft overlap catches near matches when query terms are path-heavy
+                # and do not exactly match stored insight wording.
+                soft_hits = 0
+                if overlap <= 0:
+                    query_tokens = [t for t in query_words if len(t) >= 4]
+                    doc_tokens = [t for t in combined_words if len(t) >= 4]
+                    for qt in query_tokens:
+                        qpref = qt[:4]
+                        if any(dt.startswith(qpref) for dt in doc_tokens):
+                            soft_hits += 1
+                    soft_overlap = (soft_hits / max(1, len(query_tokens))) if query_tokens else 0.0
+                else:
+                    soft_overlap = 0.0
+
+                tool_bridge = 0.0
+                if tool_hint:
+                    bridge_terms = tool_bridge_terms.get(tool_hint) or set()
+                    if bridge_terms and (combined_words & bridge_terms):
+                        tool_bridge = 1.0
+
+                reliability = float(getattr(insight, "reliability", 0.5) or 0.5)
+
+                if overlap > 0:
+                    score = jaccard
+                else:
+                    # Best-effort rescue: preserve non-empty retrieval when lexical
+                    # overlap is absent but tool/domain hints suggest relevance.
+                    score = (0.55 * soft_overlap) + (0.30 * tool_bridge) + (0.15 * reliability)
+                    if score < 0.12:
+                        continue
+                scored.append((score, key, insight))
             if not scored:
                 return 0
             scored.sort(key=lambda t: t[0], reverse=True)
             added = 0
-            for jaccard, key, insight in scored[: limit * 2]:
+            for score, key, insight in scored[: limit * 2]:
                 if key in seen:
                     continue
                 seen.add(key)
                 added += 1
-                # Map jaccard to a pseudo-similarity score.
-                pseudo_sim = min(1.0, 0.5 + jaccard)
+                # Map score to pseudo-similarity.
+                pseudo_sim = min(1.0, 0.5 + max(0.0, score))
+                why_suffix = "exact-keyword"
+                if score < 0.2:
+                    why_suffix = "rescue-keyword"
+                elif tool_hint:
+                    why_suffix = f"tool-bridge:{tool_hint}"
                 results.append(
                     SemanticResult(
                         insight_key=key,
@@ -497,7 +548,7 @@ class SemanticRetriever:
                         source_type="semantic",
                         category=self._infer_category(insight),
                         priority=self._infer_priority(pseudo_sim),
-                        why=f"Keyword: {jaccard:.2f} overlap {reason_suffix}",
+                        why=f"Keyword: {score:.2f} {why_suffix} {reason_suffix}",
                     )
                 )
             return added
@@ -617,18 +668,43 @@ class SemanticRetriever:
         for r in results:
             insight = insights.get(r.insight_key)
             if insight:
-                r.recency_score = self._compute_recency(insight)
+                r.recency_score = self._compute_recency(insight, insight_key=r.insight_key)
                 r.outcome_score = self._get_outcome_effectiveness(r.insight_key, insight)
 
         raw_result_count = len(results)
 
         # Filter noise insights from results (semantic only, triggers are pre-curated)
+        pre_noise_results = list(results)
         noise_fn = self._get_noise_filter()
         if noise_fn:
             results = [
                 r for r in results
                 if r.source_type == "trigger" or not noise_fn(r.insight_text)
             ]
+            if (
+                not results
+                and pre_noise_results
+                and bool(self.config.get("noise_filter_relax_on_empty", True))
+            ):
+                relaxed: List[SemanticResult] = []
+                for item in pre_noise_results:
+                    if item.source_type == "trigger":
+                        if "noise_relaxed_fallback" not in item.why:
+                            item.why = f"{item.why} [noise_relaxed_fallback]".strip()
+                        relaxed.append(item)
+                        continue
+                    insight = insights.get(item.insight_key)
+                    reliability = float(getattr(insight, "reliability", 0.0) or 0.0)
+                    if item.semantic_sim >= 0.25 or reliability >= 0.70:
+                        if "noise_relaxed_fallback" not in item.why:
+                            item.why = f"{item.why} [noise_relaxed_fallback]".strip()
+                        relaxed.append(item)
+                if not relaxed:
+                    relaxed = pre_noise_results[: max(1, limit)]
+                    for item in relaxed:
+                        if "noise_relaxed_fallback" not in item.why:
+                            item.why = f"{item.why} [noise_relaxed_fallback]".strip()
+                results = relaxed
         post_noise_count = len(results)
 
         # Category exclusions (semantic results only)
@@ -820,7 +896,27 @@ class SemanticRetriever:
 
             r.fusion_score = max(0.0, min(1.0, normalized))
 
-    def _compute_recency(self, insight: Any) -> float:
+    def _compute_recency(self, insight: Any, insight_key: str = "") -> float:
+        """Compute recency/frequency score.
+
+        Tries ACT-R activation model first (power-law decay with frequency).
+        Falls back to simple exponential half-life decay.
+        """
+        # ACT-R activation (frequency + recency combined).
+        if insight_key:
+            try:
+                from lib.activation import get_activation_store
+                store = get_activation_store()
+                activation = store.compute_activation(insight_key)
+                if activation != 0.0:
+                    # Record this retrieval access.
+                    store.record_access(insight_key, "retrieval")
+                    # Normalize to [0, 1] via sigmoid for fusion compatibility.
+                    return store.activation_to_probability(activation)
+            except Exception:
+                pass
+
+        # Fallback: exponential half-life decay.
         ts = getattr(insight, "last_validated_at", None) or getattr(insight, "created_at", None)
         if not ts:
             return 0.5

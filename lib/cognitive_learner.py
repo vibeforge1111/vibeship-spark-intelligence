@@ -856,6 +856,13 @@ class CognitiveLearner:
             insight.times_contradicted += contradicted_delta
         if validated_delta or contradicted_delta:
             insight.last_validated_at = _now_iso()
+            # Record access for ACT-R activation model.
+            try:
+                from lib.activation import get_activation_store
+                key = self._generate_key(insight.category, insight.insight[:40].lower().replace(" ", "_"))
+                get_activation_store().record_access(key, "validation")
+            except Exception:
+                pass
 
     def _generate_key(self, category: CognitiveCategory, identifier: str) -> str:
         """Generate a unique key for an insight."""
@@ -1899,6 +1906,13 @@ class CognitiveLearner:
         except Exception as e:
             logging.getLogger(__name__).debug("Semantic indexing unavailable: %s", e)
             pass  # Don't block writes if semantic indexing fails
+
+        # Record access for ACT-R activation model (best-effort)
+        try:
+            from lib.activation import get_activation_store
+            get_activation_store().record_access(key, "storage")
+        except Exception:
+            pass
 
         return self.insights[key]
 

@@ -30,7 +30,8 @@ def _get_backend() -> str:
         _BACKEND = "none"
         return _BACKEND
 
-    requested = os.environ.get("SPARK_EMBED_BACKEND", "auto").strip().lower()
+    # Default to tfidf for stable low-latency local retrieval unless explicitly overridden.
+    requested = os.environ.get("SPARK_EMBED_BACKEND", "tfidf").strip().lower()
     if requested not in {"auto", "tfidf", "fastembed", "none"}:
         requested = "auto"
     _BACKEND = requested

@@ -1346,7 +1346,37 @@ def process_hook_payload(input_data: Dict[str, Any]) -> int:
     tool_input_truncated = _has_truncated_tool_input_fields(tool_input_payload)
     if tool_input_truncated:
         telemetry_payload_truncated = True
-    
+
+    # ── Intake filter: reject obvious noise before queueing ──────────
+    try:
+        from lib.intake_filter import should_queue_event
+        _should_q, _drop_reason = should_queue_event(
+            event_type=event_type,
+            tool_name=tool_name,
+            tool_input=kwargs.get("tool_input"),
+            data=data,
+            hook_event=hook_event,
+        )
+        if not _should_q:
+            _emit_observe_telemetry(
+                _build_observe_telemetry_row(
+                    session_id=session_id,
+                    source=data.get("source") or source_hint or "claude_code",
+                    hook_event=hook_event,
+                    event_type=event_type,
+                    tool_name=str(tool_name or ""),
+                    payload_truncated=telemetry_payload_truncated,
+                    tool_input_truncated=tool_input_truncated,
+                    tool_result_captured=tool_result_captured,
+                    tool_result_truncated=tool_result_truncated,
+                    captured=False,
+                )
+            )
+            return 0
+    except Exception:
+        pass  # fail-open: if intake filter errors, queue the event normally
+    # ─────────────────────────────────────────────────────────────────
+
     captured = quick_capture(event_type, session_id, data, **kwargs)
     if not captured:
         log_debug(

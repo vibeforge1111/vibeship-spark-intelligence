@@ -781,6 +781,29 @@ def run_bridge_cycle(
             except Exception as e:
                 log_debug("bridge_worker", "meta_ralph flush failed", e)
 
+        # --- ACT-R activation maintenance ---
+        try:
+            from lib.activation import get_activation_store
+            _act_store = get_activation_store()
+            _act_cycle = stats.get("_activation_cycle_counter", 0) + 1
+            stats["_activation_cycle_counter"] = _act_cycle
+            if _act_cycle % 10 == 0:
+                _pruned = _act_store.prune_old_accesses()
+                if _pruned:
+                    stats["activation_pruned"] = _pruned
+            _recomputed = _act_store.batch_recompute_stale(max_items=50)
+            if _recomputed:
+                stats["activation_recomputed"] = _recomputed
+        except Exception as e:
+            log_debug("bridge_worker", f"activation maintenance failed ({e})", None)
+
+        # --- Intake filter snapshot (for dashboard visibility) ---
+        try:
+            from lib.intake_filter import persist_intake_snapshot
+            persist_intake_snapshot()
+        except Exception:
+            pass  # fail-open: dashboard data is nice-to-have
+
         # --- Memory cleanup (prevent accumulation across cycles) ---
         # Clear event references to allow GC
         events = None

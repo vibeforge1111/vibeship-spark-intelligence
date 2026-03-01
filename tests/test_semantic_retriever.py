@@ -113,3 +113,41 @@ def test_embeddings_empty_search_falls_back_to_keyword_overlap(monkeypatch):
 
     assert results
     assert any("embedding-empty" in (r.why or "") for r in results)
+
+
+def test_keyword_fallback_uses_tool_bridge_when_exact_overlap_absent(monkeypatch):
+    retriever = _make_retriever(rescue_enabled=True)
+    monkeypatch.setattr(semantic_retriever_module, "embed_text", lambda _q: None)
+
+    insights = {
+        "k1": SimpleNamespace(insight="Verify file path before write and edit", reliability=0.9),
+        "k2": SimpleNamespace(insight="Use auth token rotation in middleware", reliability=0.8),
+    }
+    results = retriever.retrieve("Edit csrf middleware hardening", insights, limit=3)
+
+    assert results
+    assert any("tool-bridge:edit" in (r.why or "") for r in results)
+
+
+def test_noise_filter_relax_fallback_prevents_total_collapse(monkeypatch):
+    retriever = _make_retriever(rescue_enabled=True)
+    retriever.config["min_similarity"] = 0.0
+    retriever.config["min_fusion_score"] = 0.0
+    retriever.config["noise_filter_relax_on_empty"] = True
+
+    monkeypatch.setattr(semantic_retriever_module, "embed_text", lambda _q: [1.0])
+    monkeypatch.setattr(
+        retriever.index,
+        "search",
+        lambda _vec, limit=10: [("k1", 0.91), ("k2", 0.72)][:limit],
+    )
+    monkeypatch.setattr(retriever, "_get_noise_filter", lambda: (lambda _text: True))
+
+    insights = {
+        "k1": SimpleNamespace(insight="Validate auth tokens in middleware", reliability=0.9),
+        "k2": SimpleNamespace(insight="Check retries for flaky network calls", reliability=0.8),
+    }
+    results = retriever.retrieve("auth middleware validation", insights, limit=3)
+
+    assert results
+    assert any("noise_relaxed_fallback" in (r.why or "") for r in results)

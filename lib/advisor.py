@@ -162,7 +162,7 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "gate_strategy": "minimal",  # minimal | extended
         "include_bank_advice": False,
         "include_tool_specific_advice": False,
-        "semantic_use_embeddings": False,
+        "semantic_use_embeddings": True,
         "semantic_limit": 8,
         "max_queries": 2,
         "agentic_query_limit": 2,
@@ -213,7 +213,7 @@ DEFAULT_RETRIEVAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "gate_strategy": "minimal",
         "include_bank_advice": False,
         "include_tool_specific_advice": False,
-        "semantic_use_embeddings": False,
+        "semantic_use_embeddings": True,
         "semantic_limit": 10,
         "max_queries": 2,
         "agentic_query_limit": 1,
@@ -5234,6 +5234,17 @@ class SparkAdvisor:
         # Default trust when no data: 0.5 (neutral, not penalizing)
         if trust < 0.1:
             trust = 0.50
+
+        # --- ACT-R activation boost (frequency + recency) ---
+        try:
+            from lib.activation import get_activation_store
+            _act_store = get_activation_store()
+            _act_score = _act_store.get_activation_cached(a.insight_key) if a.insight_key else None
+            if _act_score is not None:
+                _act_norm = _act_store.activation_to_probability(_act_score)
+                trust = 0.7 * trust + 0.3 * _act_norm
+        except Exception:
+            pass
 
         # --- Additive blend (relevance-heavy, tuned 2026-02-22) ---
         score = (0.50 * relevance) + (0.25 * quality) + (0.25 * trust)

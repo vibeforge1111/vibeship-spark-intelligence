@@ -783,16 +783,54 @@ def store_deep_learnings(
 
             if roast_result.verdict == RoastVerdict.QUALITY or allow_low_volume_pass:
                 # Use refined version if MetaRalph improved it
-                # NOTE: Intentional direct add_insight() — pipeline already ran Meta-Ralph
-                # above, so routing through validate_and_store would double-roast.
                 final_text = roast_result.refined_version or insight_text
-                ok = bool(learner.add_insight(
-                    category=category,
-                    insight=final_text,
-                    context=context,
-                    confidence=confidence,
-                    source="pipeline_macro",
-                ))
+
+                # ── Memory ops: ADD/UPDATE/DELETE/NOOP ──────────────
+                try:
+                    from lib.memory_ops import get_memory_ops_engine, execute_decision
+                    from lib.activation import get_activation_store
+                    _ops_engine = get_memory_ops_engine()
+                    _act_store = get_activation_store()
+                    _decision = _ops_engine.decide(
+                        new_text=final_text,
+                        new_category=category_text,
+                        existing_insights=learner.insights,
+                        activation_store=_act_store,
+                    )
+                    log_intelligence_flow_event(
+                        stage="pipeline_memory_ops",
+                        action=_decision.op.value,
+                        text=final_text,
+                        source=source,
+                        category=category_text,
+                        context=context,
+                        trace_id=trace_hint or None,
+                        item_id=item_id,
+                        reason=_decision.reason,
+                        extra=_decision.to_dict(),
+                    )
+                    _result = execute_decision(
+                        decision=_decision,
+                        learner=learner,
+                        new_text=final_text,
+                        new_category=category,
+                        new_context=context,
+                        new_confidence=confidence,
+                        source="pipeline_macro",
+                        activation_store=_act_store,
+                    )
+                    ok = _result is not None
+                except Exception:
+                    # Fail-open: fall back to direct add_insight.
+                    ok = bool(learner.add_insight(
+                        category=category,
+                        insight=final_text,
+                        context=context,
+                        confidence=confidence,
+                        source="pipeline_macro",
+                    ))
+                # ────────────────────────────────────────────────────
+
                 if ok:
                     debug["stored"] = int(debug.get("stored", 0)) + 1
                     log_intelligence_flow_event(
@@ -804,7 +842,7 @@ def store_deep_learnings(
                         context=context,
                         trace_id=trace_hint or None,
                         item_id=item_id,
-                        reason="pipeline_add_insight",
+                        reason="pipeline_memory_ops",
                         stored=True,
                     )
                 else:
