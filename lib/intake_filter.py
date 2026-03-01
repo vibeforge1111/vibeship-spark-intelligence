@@ -35,8 +35,16 @@ except ImportError:
 # Tools whose successful POST_TOOL events carry almost zero learning signal.
 _READ_ONLY_TOOLS = frozenset({"Read", "Glob", "Grep", "Grep_search", "Search"})
 
-# Mutation tools — NEVER filter these.
+# Mutation tools — queue POST_TOOL results for these (but NOT PRE_TOOL).
 _MUTATION_TOOLS = frozenset({"Edit", "Write", "Bash", "NotebookEdit"})
+
+# Bash commands that are operational / zero learning signal.
+_BASH_OPERATIONAL_PREFIXES = (
+    "taskkill", "kill ", "netstat", "curl ", "wget ",
+    "ls ", "ls\n", "dir ", "pwd", "echo ",
+    "cat ", "head ", "tail ", "wc ", "type ",
+    "findstr ", "find /", "where ",
+)
 
 # High-value event types — NEVER filter these.
 _ALWAYS_QUEUE_EVENTS: frozenset = frozenset()  # populated after EventType import
@@ -113,46 +121,49 @@ def should_queue_event(
     tool_name = (tool_name or "").strip()
     _et = str(event_type)
 
+    # Shorthand for passing context through to the log.
+    _ti = tool_input  # tool_input dict (may be None)
+
     # ------------------------------------------------------------------
     # Rule 0: Always queue high-value event types.
     # ------------------------------------------------------------------
     if _ALWAYS_QUEUE_EVENTS and event_type in _ALWAYS_QUEUE_EVENTS:
-        _log_decision(_et, tool_name, True, "high_value_event")
+        _log_decision(_et, tool_name, True, "high_value_event", _ti, data)
         return _accept()
 
     # ------------------------------------------------------------------
-    # Rule 1: Always queue mutation tool successes.
-    # ------------------------------------------------------------------
-    if tool_name in _MUTATION_TOOLS:
-        _log_decision(_et, tool_name, True, "mutation_tool")
-        return _accept()
-
-    # ------------------------------------------------------------------
-    # Rule 2: Skip PRE_TOOL events for read-only tools.
-    #         PRE_TOOL for mutations still passes (Rule 1 won't catch
-    #         PRE_TOOL since event_type differs, so we check explicitly).
+    # Rule 1: Drop ALL PRE_TOOL events.
+    #         POST_TOOL has the actual result — PRE_TOOL is just
+    #         "about to run X" which is redundant.
     # ------------------------------------------------------------------
     if EventType is not None and event_type == EventType.PRE_TOOL:
-        if tool_name in _READ_ONLY_TOOLS:
-            _log_decision(_et, tool_name, False, "pretool_read_noop")
-            return _drop("pretool_read_noop")
-        # PRE_TOOL for mutation tools — let it through.
-        if tool_name in _MUTATION_TOOLS:
-            _log_decision(_et, tool_name, True, "pretool_mutation")
-            return _accept()
-        # PRE_TOOL for unknown tools — keep to be safe.
-        _log_decision(_et, tool_name, True, "pretool_unknown_pass")
+        _log_decision(_et, tool_name, False, "pretool_noop", _ti, data)
+        return _drop("pretool_noop")
+
+    # ------------------------------------------------------------------
+    # Rule 2: Queue mutation tool results (Edit, Write, Bash, Notebook).
+    #         For Bash: skip operational commands (curl, taskkill, ls, etc.)
+    #         that carry zero learning signal.
+    # ------------------------------------------------------------------
+    if tool_name in _MUTATION_TOOLS:
+        # Bash operational command filter.
+        if tool_name == "Bash" and _ti and isinstance(_ti, dict):
+            if _is_bash_operational(_ti.get("command") or ""):
+                _log_decision(_et, tool_name, False, "bash_operational", _ti, data)
+                return _drop("bash_operational")
+        _log_decision(_et, tool_name, True, "mutation_tool", _ti, data)
         return _accept()
 
     # ------------------------------------------------------------------
     # Rule 3: Skip POST_TOOL successes for read-only tools (no error).
+    #         (PRE_TOOL already dropped by Rule 1 above.)
     # ------------------------------------------------------------------
     if EventType is not None and event_type == EventType.POST_TOOL:
         if tool_name in _READ_ONLY_TOOLS:
             # Check whether there's an error or interesting result.
             error = data.get("error") or ""
             if not error:
-                _log_decision(_et, tool_name, False, "read_success_noop")
+                _log_decision(_et, tool_name, False, "read_success_noop", _ti, data)
                 return _drop("read_success_noop")
             # If there IS an error on a read-only tool, still queue.
 
@@ -164,7 +175,7 @@ def should_queue_event(
         readiness = advisory.get("readiness_hint", 1.0)
         error = data.get("error") or ""
         if readiness < _MIN_READINESS_HINT and not error:
-            _log_decision(_et, tool_name, False, "low_readiness_noop")
+            _log_decision(_et, tool_name, False, "low_readiness_noop", _ti, data)
             return _drop("low_readiness_noop")
 
     # ------------------------------------------------------------------
@@ -175,14 +186,14 @@ def should_queue_event(
         now = time.time()
         last_ts = _last_seen.get(dupe_key)
         if last_ts is not None and (now - last_ts) < _DUPE_WINDOW_S:
-            _log_decision(_et, tool_name, False, "consecutive_dupe")
+            _log_decision(_et, tool_name, False, "consecutive_dupe", _ti, data)
             return _drop("consecutive_dupe")
         _record_seen(dupe_key, now)
 
     # ------------------------------------------------------------------
     # Default: queue the event.
     # ------------------------------------------------------------------
-    _log_decision(_et, tool_name, True, "default_pass")
+    _log_decision(_et, tool_name, True, "default_pass", _ti, data)
     return _accept()
 
 
@@ -266,8 +277,111 @@ def _drop(reason: str) -> Tuple[bool, str]:
     return False, reason
 
 
+def _is_bash_operational(cmd: str) -> bool:
+    """Classify a Bash command as operational (zero learning signal).
+
+    Handles:
+    - Simple operational commands: curl, taskkill, ls, netstat, etc.
+    - cd-chained commands: ``cd path && curl ...`` → check after &&
+    - Diagnostic python one-liners: ``python -c "import json..."``
+    """
+    cmd = cmd.lstrip()
+    if not cmd:
+        return False
+
+    # Strip leading ``cd ... &&`` or ``cd ... ;`` to find the real command.
+    # e.g. ``cd /some/path && python test.py`` → ``python test.py``
+    effective = cmd
+    if effective.startswith("cd "):
+        for sep in (" && ", " ; "):
+            idx = effective.find(sep)
+            if idx != -1:
+                effective = effective[idx + len(sep):].lstrip()
+                break
+        else:
+            # Pure ``cd path`` with no chained command — definitely operational.
+            return True
+
+    # Check against known operational prefixes.
+    if any(effective.startswith(p) for p in _BASH_OPERATIONAL_PREFIXES):
+        return True
+
+    # Diagnostic python one-liners that just read/print data.
+    if effective.startswith("python -c ") or effective.startswith("python3 -c "):
+        low = effective.lower()
+        # If it only does imports + reads + prints → operational.
+        # If it writes files, modifies state → NOT operational.
+        write_signals = ("write_text", "open(", ".write(", "mkdir", "remove", "unlink",
+                         "shutil", "subprocess", "os.system")
+        if not any(s in low for s in write_signals):
+            return True
+
+    return False
+
+
+def _extract_context(
+    tool_name: str, tool_input: Optional[Dict[str, Any]], data: Optional[Dict[str, Any]]
+) -> str:
+    """Extract a human-readable context string from tool_input/data.
+
+    Shows WHAT the event is about — file path, command, pattern, etc.
+    Stored in full with no truncation — the dashboard controls display.
+    """
+    if tool_input and isinstance(tool_input, dict):
+        # File-based tools
+        fp = tool_input.get("file_path") or ""
+        if fp:
+            return _clean(fp)
+        # Bash command
+        cmd = tool_input.get("command") or ""
+        if cmd:
+            return _clean(cmd)
+        # Search/Glob pattern
+        pat = tool_input.get("pattern") or ""
+        path = tool_input.get("path") or ""
+        if pat:
+            ctx = pat
+            if path:
+                ctx = f"{pat} in {path}"
+            return _clean(ctx)
+        # Query-based tools
+        query = tool_input.get("query") or tool_input.get("prompt") or ""
+        if query:
+            return _clean(query)
+        # Fallback: first non-empty string value
+        for v in tool_input.values():
+            if isinstance(v, str) and v.strip():
+                return _clean(v)
+
+    # For non-tool events, pull from data
+    if data and isinstance(data, dict):
+        # STOP/SessionEnd: session segment summary injected by observe.py
+        summary = data.get("session_summary") or ""
+        if summary and isinstance(summary, str):
+            return _clean(summary)
+        # USER_PROMPT: user's message is in data.payload.text
+        payload = data.get("payload")
+        if isinstance(payload, dict):
+            txt = payload.get("text") or ""
+            if txt and isinstance(txt, str):
+                return _clean(txt)
+        # Generic fallback
+        msg = data.get("message") or data.get("content") or data.get("text") or ""
+        if msg and isinstance(msg, str):
+            return _clean(msg)
+
+    return ""
+
+
+def _clean(s: str) -> str:
+    """Clean string for storage — collapse whitespace, no truncation."""
+    return s.replace("\r", "").replace("\n", " ").strip()
+
+
 def _log_decision(
-    event_type: str, tool_name: str, queued: bool, reason: str
+    event_type: str, tool_name: str, queued: bool, reason: str,
+    tool_input: Optional[Dict[str, Any]] = None,
+    data: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Append to bounded in-memory decision log for dashboard visibility."""
     _decision_log.append({
@@ -276,6 +390,7 @@ def _log_decision(
         "tool_name": tool_name or "",
         "queued": queued,
         "reason": reason,
+        "context": _extract_context(tool_name, tool_input, data),
     })
     # Trim to max size.
     while len(_decision_log) > _DECISION_LOG_MAX:

@@ -734,6 +734,83 @@ def _has_truncated_tool_input_fields(tool_input_payload: Any) -> bool:
     return any(str(k).endswith("_truncated") and bool(v) for k, v in tool_input_payload.items())
 
 
+def _build_session_segment_summary() -> str:
+    """Summarize what happened since the last USER_PROMPT.
+
+    Reads the intake snapshot, walks backwards from the end to the most
+    recent USER_PROMPT, and produces a one-line summary like:
+      "user: 'fix the context display' → 3 edits (intake_filter.py, index.html), 1 bash"
+
+    This gives STOP events actual content — the problem→action narrative.
+    Target: <20ms (one file read + simple loop).
+    """
+    import json as _json
+    snap_path = Path.home() / ".spark" / "intake_snapshot.json"
+    try:
+        if not snap_path.exists():
+            return ""
+        snap = _json.loads(snap_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+
+    decisions = snap.get("recent_decisions", [])
+    if not decisions:
+        return ""
+
+    # Walk backwards to find the most recent USER_PROMPT.
+    user_msg = ""
+    segment_start = 0
+    for i in range(len(decisions) - 1, -1, -1):
+        d = decisions[i]
+        if "USER_PROMPT" in (d.get("event_type") or ""):
+            user_msg = (d.get("context") or "").strip()
+            segment_start = i + 1
+            break
+
+    # Collect actions between USER_PROMPT and now (end of list).
+    actions = decisions[segment_start:]
+    if not actions and not user_msg:
+        return ""
+
+    # Count by tool + collect unique file targets.
+    tool_counts: Dict[str, int] = {}
+    files_touched: list = []
+    for a in actions:
+        if not a.get("queued"):
+            continue  # only count queued (non-dropped) actions
+        tn = a.get("tool_name") or "unknown"
+        tool_counts[tn] = tool_counts.get(tn, 0) + 1
+        ctx = a.get("context") or ""
+        # Extract filename from paths.
+        if ctx and ("\\" in ctx or "/" in ctx):
+            parts = ctx.replace("\\", "/").split("/")
+            fname = parts[-1] if parts else ""
+            if fname and fname not in files_touched and len(files_touched) < 5:
+                files_touched.append(fname)
+
+    # Build summary string.
+    parts = []
+    if user_msg:
+        short_msg = user_msg[:80] + ("..." if len(user_msg) > 80 else "")
+        parts.append(f'user: "{short_msg}"')
+
+    action_parts = []
+    for tn, cnt in sorted(tool_counts.items(), key=lambda x: -x[1]):
+        if tn in ("", "unknown", "--"):
+            continue
+        action_parts.append(f"{cnt} {tn.lower()}")
+    if action_parts:
+        actions_str = ", ".join(action_parts)
+        if files_touched:
+            actions_str += f" ({', '.join(files_touched[:4])})"
+        parts.append(actions_str)
+
+    if not parts:
+        return ""
+
+    return " → ".join(parts)
+
+
 def _build_observe_telemetry_row(
     *,
     session_id: str,
@@ -1346,6 +1423,16 @@ def process_hook_payload(input_data: Dict[str, Any]) -> int:
     tool_input_truncated = _has_truncated_tool_input_fields(tool_input_payload)
     if tool_input_truncated:
         telemetry_payload_truncated = True
+
+    # ── Synthesize session summary for STOP events ───────────────────
+    # STOP events carry no content from Claude Code's hook system.
+    # Read the intake snapshot to summarize what happened since last
+    # USER_PROMPT, giving the pipeline a problem→action→outcome narrative.
+    if hook_event in ("Stop", "SessionEnd"):
+        try:
+            data["session_summary"] = _build_session_segment_summary()
+        except Exception:
+            pass  # fail-open
 
     # ── Intake filter: reject obvious noise before queueing ──────────
     try:
