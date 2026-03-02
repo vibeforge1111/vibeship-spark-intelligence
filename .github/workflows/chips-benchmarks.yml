@@ -49,7 +49,7 @@ jobs:
           test -f benchmarks/out/ci/report.md
 
       - name: Upload Benchmark Artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: chips-benchmark-report
           path: benchmarks/out/ci/
