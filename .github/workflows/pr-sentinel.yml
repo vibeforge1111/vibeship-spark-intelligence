@@ -127,7 +127,7 @@ jobs:
           python scripts/pr_sentinel_report.py
 
       - name: Upload Sentinel artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: pr-sentinel-${{ github.run_id }}
           path: |
