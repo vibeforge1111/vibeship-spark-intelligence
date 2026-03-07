@@ -1,6 +1,6 @@
 # Spark Chips: Pluggable Intelligence for Every Domain
 
-> *"Chips are to Spark what apps are to a smartphone — they teach it how to think about your world."*
+> _"Chips are to Spark what apps are to a smartphone — they teach it how to think about your world."_
 
 ---
 
@@ -17,16 +17,18 @@ This document mixes architecture vision with implementation details.
 
 ## Executive Summary
 
-Spark Chips transform Spark from a monolithic learning system into an **open platform for domain-specific intelligence**. Instead of Spark knowing only how to learn from code and tools, chips teach Spark how to learn from *anything* — marketing campaigns, sales deals, factory operations, team dynamics, financial decisions, and beyond.
+Spark Chips transform Spark from a monolithic learning system into an **open platform for domain-specific intelligence**. Instead of Spark knowing only how to learn from code and tools, chips teach Spark how to learn from _anything_ — marketing campaigns, sales deals, factory operations, team dynamics, financial decisions, and beyond.
 
 **The Problem Today:**
+
 - Spark learns one way about everything (tool patterns, user preferences)
 - No domain expertise — doesn't understand what "success" means in marketing vs. engineering vs. sales
 - Can't evolve its learning strategies based on domain-specific outcomes
 - Intelligence is locked, not extensible
 
 **The Chips Solution:**
-- Pluggable modules that teach Spark *how to think* about a domain
+
+- Pluggable modules that teach Spark _how to think_ about a domain
 - Each chip defines: what to observe, what patterns matter, what success looks like
 - Chips evolve themselves based on outcomes
 - Open ecosystem — anyone can create and share chips
@@ -38,8 +40,9 @@ Spark Chips transform Spark from a monolithic learning system into an **open pla
 A **Chip** is a YAML specification that teaches Spark how to be intelligent about a specific domain.
 
 Think of it like this:
-- A smartphone is powerful, but apps make it *useful*
-- Spark is the learning engine, but chips make it *intelligent about your world*
+
+- A smartphone is powerful, but apps make it _useful_
+- Spark is the learning engine, but chips make it _intelligent about your world_
 
 ### Chip Components
 
@@ -62,6 +65,7 @@ Think of it like this:
 ```
 
 Guardrails (required fields in `chip`):
+
 - human_benefit
 - harm_avoidance
 - risk_level (low/medium/high)
@@ -104,15 +108,15 @@ Events → Queue → Chip Router ───────────────�
 
 ### Integration Points
 
-| Spark Component | How Chips Integrate |
-|-----------------|---------------------|
-| **Queue (events.jsonl)** | Chips subscribe to event types via triggers |
-| **Pattern Detection** | Core chip = existing detectors; other chips add domain-specific detection |
-| **Cognitive Learner** | Chips have namespaced insight stores |
-| **Outcome Log** | Chips define domain-specific outcomes |
-| **Validation Loop** | Chips validate their own predictions |
-| **Bridge Worker** | Iterates over active chips each cycle |
-| **Context Sync** | Chips contribute domain-specific context |
+| Spark Component          | How Chips Integrate                                                       |
+| ------------------------ | ------------------------------------------------------------------------- |
+| **Queue (events.jsonl)** | Chips subscribe to event types via triggers                               |
+| **Pattern Detection**    | Core chip = existing detectors; other chips add domain-specific detection |
+| **Cognitive Learner**    | Chips have namespaced insight stores                                      |
+| **Outcome Log**          | Chips define domain-specific outcomes                                     |
+| **Validation Loop**      | Chips validate their own predictions                                      |
+| **Bridge Worker**        | Iterates over active chips each cycle                                     |
+| **Context Sync**         | Chips contribute domain-specific context                                  |
 
 ---
 
@@ -534,6 +538,7 @@ integrations:
 **Chip:** `marketing.chip.yaml` (above)
 
 **What Spark Learns:**
+
 - "Instagram Stories with user testimonials get 3x more engagement than product shots"
 - "Email campaigns sent Tuesday 10am have 40% higher open rates"
 - "Paid ads targeting 'small business owners' convert at 2x the rate of 'entrepreneurs'"
@@ -620,6 +625,7 @@ evolution:
 ```
 
 **What Spark Learns:**
+
 - "Deals with a technical champion close 3x faster"
 - "When 'budget concerns' raised, offering a pilot converts 60% of stalled deals"
 - "Deals touching 4+ stakeholders have 80% win rate vs 30% for single-threaded"
@@ -656,7 +662,7 @@ observers:
       - files_changed
       - lines_added
       - lines_removed
-      - change_type  # feature, bugfix, refactor
+      - change_type # feature, bugfix, refactor
       - author
       - review_time
       - test_coverage_delta
@@ -704,6 +710,7 @@ outcomes:
 ```
 
 **What Spark Learns:**
+
 - "PRs reviewed by @alice have 50% fewer bugs"
 - "Deploys on Friday have 3x incident rate — avoid"
 - "Features touching the billing module need extra testing"
@@ -751,7 +758,7 @@ observers:
   - name: machine_event
     capture:
       - machine_id
-      - event_type  # start, stop, maintenance, breakdown
+      - event_type # start, stop, maintenance, breakdown
       - duration
       - cause
 
@@ -765,7 +772,8 @@ observers:
 learners:
   - name: defect_predictors
     type: correlation
-    input: [machine_id, operator_id, shift, material_batch, temperature, humidity]
+    input:
+      [machine_id, operator_id, shift, material_batch, temperature, humidity]
     output: [defect_rate, scrap_rate]
     learn:
       - "Machine #7 after 4 hours continuous run increases defects 40%"
@@ -802,6 +810,7 @@ evolution:
 ```
 
 **What Spark Learns:**
+
 - "Machine #3 needs maintenance when vibration exceeds 0.5g — prevents 80% of breakdowns"
 - "Operator training program reduced defects 35%"
 - "Material from Supplier A + Machine #7 = optimal quality"
@@ -838,7 +847,7 @@ observers:
       - metric_name
       - value
       - period
-      - trend  # up, down, flat
+      - trend # up, down, flat
       - vs_target
 
   - name: strategic_decision
@@ -882,6 +891,7 @@ outcomes:
 ```
 
 **What Spark Learns:**
+
 - "Decisions made with data take 2x longer but succeed 3x more often"
 - "Q4 always underperforms projections by 15% — adjust forecasts"
 - "Acquisitions proposed by BD team have 30% success rate vs 70% from product team"
@@ -927,7 +937,7 @@ observers:
   - name: resolution
     capture:
       - ticket_id
-      - resolution_type  # solved, workaround, feature_request, wont_fix
+      - resolution_type # solved, workaround, feature_request, wont_fix
       - solution_used
       - reopen_count
 
@@ -959,6 +969,7 @@ outcomes:
 ```
 
 **What Spark Learns:**
+
 - "Agent Sarah resolves billing issues 40% faster than average"
 - "Integration issues from Enterprise customers need engineering escalation 80% of time"
 - "Proactive status updates reduce escalations by 50%"
@@ -1000,7 +1011,7 @@ observers:
   - name: result
     capture:
       - experiment_id
-      - outcome  # confirmed, rejected, inconclusive
+      - outcome # confirmed, rejected, inconclusive
       - effect_size
       - confidence
       - unexpected_findings
@@ -1193,12 +1204,14 @@ spark-chip-hub/
 ## Implementation Roadmap
 
 ### Phase 1: Foundation (Week 1-2)
+
 - [ ] Chip specification parser (YAML → Python objects)
 - [ ] Chip loader and registry
 - [ ] Basic trigger matching
 - [ ] Integration with existing event queue
 
 ### Phase 2: Observers & Learners (Week 3-4)
+
 - [ ] Observer execution engine
 - [ ] Field extraction from events
 - [ ] Basic correlation learner
@@ -1206,18 +1219,21 @@ spark-chip-hub/
 - [ ] Per-chip insight storage
 
 ### Phase 3: Outcomes & Validation (Week 5-6)
+
 - [ ] Outcome definition parsing
 - [ ] Outcome detection and logging
 - [ ] Chip-specific prediction/validation loop
 - [ ] Accuracy tracking per chip
 
 ### Phase 4: Evolution (Week 7-8)
+
 - [ ] Evolution rule execution
 - [ ] Self-modification capabilities
 - [ ] Evolution logging and rollback
 - [ ] Chip health metrics
 
 ### Phase 5: Ecosystem (Week 9-10)
+
 - [ ] Chip export/import
 - [ ] Version management
 - [ ] Chip composition (chips using other chips)
@@ -1231,36 +1247,43 @@ This section is the practical target for the first "mediumweight" chips system.
 It is heavier than a pure YAML parser, but lighter than a full ML platform.
 
 ### 1) Hard-required event schema (small but enforced)
+
 - Require SparkEventV1 fields (v, source, kind, ts, session_id, payload).
 - Validate JSON shape and types before any chip executes.
 - Treat schema violations as soft errors (log + skip), not fatal.
 
 ### 2) Extraction library + validators (avoid regex fragility)
+
 - Provide a small extraction DSL and keyword maps.
 - Allow structured extraction in addition to regex (key paths, enums, lookups).
 - Built-in validators for required fields, types, ranges, and enum values.
 
 ### 3) Prediction -> Outcome linking
+
 - Every prediction includes a stable prediction_id.
 - Outcomes link via time window + entity refs (repo, PR, issue, incident, deploy).
 - Maintain a thin matching layer (time window, entity refs, optional semantic text).
 
 ### 4) Chip permissions + data scopes
+
 - Chips declare scopes for the data they need (events, MCPs, integrations).
 - Default to least-privilege: deny scopes unless explicitly enabled.
 - Community chips must be opt-in per scope.
 
 ### 5) Replay + evaluation (show value quickly)
+
 - Run chip replay against a saved event log.
 - Compute precision, recall, and outcome-coverage for each chip.
 - Output a readable report to make ROI obvious.
 
 ### 6) CLI and packaging (spark-chips repo)
+
 - `spark chips validate` to lint spec and check permissions.
 - `spark chips run` and `spark chips replay` for local testing.
 - Chips can be installed from file, URL, or registry.
 
 ### Repo boundary note
+
 - Spark core stays stable and minimal.
 - The chips runtime lives in the `vibeship-spark-chips` repo.
 - Spark core depends on a thin compatibility shim (loader + router hooks).
@@ -1270,10 +1293,11 @@ It is heavier than a pure YAML parser, but lighter than a full ML platform.
 ## Vibecoding Chip (v1) Overview
 
 This is the first reference chip. It is focused on engineering and "vibe coding"
-signals across code, tooling, delivery, and outcomes. The full spec lives in
-`docs/CHIP_VIBECODING.md`.
+signals across code, tooling, delivery, and outcomes. The full spec is defined in
+the chip schema and operational guidelines.
 
 ### MCP profiles and categories (v1)
+
 - VibeShip: Idearalph, Mind, Spawner, Scanner, Suparalph, Knowledge Base.
 - Repo / PR / diff / review signals.
 - CI / tests / coverage signals.
@@ -1284,6 +1308,7 @@ signals across code, tooling, delivery, and outcomes. The full spec lives in
 - Support / feedback signals.
 
 ### Primary outcomes (examples)
+
 - PR merged without rollback within N days.
 - CI failures decreased after a fix.
 - Production error rate or latency improved after a change.
@@ -1359,26 +1384,31 @@ evolutions = runner.check_evolution()
 ## Design Principles
 
 ### 1. Progressive Complexity
+
 - Simple chips work with minimal configuration
 - Advanced features (evolution, integrations) are optional
 - Start capturing data, add learners later
 
 ### 2. Graceful Degradation
+
 - Chips work without external integrations
 - Missing fields don't break observation
 - Partial data still generates insights
 
 ### 3. Transparency
+
 - All chip decisions are logged
 - Evolution changes are reversible
 - Users can inspect/override any learning
 
 ### 4. Composability
+
 - Chips can reference other chips
 - Insights from one chip can trigger another
 - Build complex intelligence from simple pieces
 
 ### 5. Privacy First
+
 - Chips define what data to capture explicitly
 - No hidden data collection
 - User controls what leaves their machine
@@ -1387,24 +1417,24 @@ evolutions = runner.check_evolution()
 
 ## Glossary
 
-| Term | Definition |
-|------|------------|
-| **Chip** | A YAML specification that teaches Spark how to learn about a domain |
-| **Trigger** | A pattern or event that activates a chip |
-| **Observer** | A component that captures data when triggered |
-| **Learner** | A component that extracts patterns/correlations from observed data |
-| **Outcome** | A definition of what success/failure looks like |
-| **Evolution** | Rules for how a chip improves itself over time |
-| **Insight** | A learned pattern or correlation |
-| **Prediction** | A forecast based on learned patterns |
-| **Validation** | Checking if predictions match actual outcomes |
+| Term           | Definition                                                          |
+| -------------- | ------------------------------------------------------------------- |
+| **Chip**       | A YAML specification that teaches Spark how to learn about a domain |
+| **Trigger**    | A pattern or event that activates a chip                            |
+| **Observer**   | A component that captures data when triggered                       |
+| **Learner**    | A component that extracts patterns/correlations from observed data  |
+| **Outcome**    | A definition of what success/failure looks like                     |
+| **Evolution**  | Rules for how a chip improves itself over time                      |
+| **Insight**    | A learned pattern or correlation                                    |
+| **Prediction** | A forecast based on learned patterns                                |
+| **Validation** | Checking if predictions match actual outcomes                       |
 
 ---
 
 ## FAQ
 
 **Q: How is this different from just writing code?**
-A: Chips are declarative specifications. You describe *what* to learn, not *how* to learn it. Spark handles the learning mechanics. This makes chips accessible to non-programmers and consistent across domains.
+A: Chips are declarative specifications. You describe _what_ to learn, not _how_ to learn it. Spark handles the learning mechanics. This makes chips accessible to non-programmers and consistent across domains.
 
 **Q: Can chips conflict with each other?**
 A: Chips are namespaced. Each chip has its own insight store. If multiple chips trigger on the same event, each processes it independently. Future versions may support chip coordination.
@@ -1429,4 +1459,4 @@ A: Yes. Chips work at the Spark layer, which is LLM-agnostic. The insights chips
 
 ---
 
-*Spark Chips: Teaching AI how to think about your world.*
+_Spark Chips: Teaching AI how to think about your world._
